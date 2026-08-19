@@ -2,7 +2,7 @@
 
 **Generated:** 2026-08-19
 **Based on:** PRD.md (VB-PRD-2026-08-18)
-**Status:** IN PROGRESS — M0.5 (Safety Baseline) ✅ DONE, M1 (Phase 1 debate) ✅ DONE, M2 (Observable UI) ✅ DONE, M3 (Self-Improvement) ✅ 70% (memory store, idea tree, auto_capture, review_fork, dream_review built; technique-library UI + review_fork wiring + cron remaining)
+**Status:** IN PROGRESS — M0.5 (Safety Baseline) ✅ DONE, M1 (Phase 1 debate) ✅ DONE, M2 (Observable UI) ✅ DONE, M3 (Self-Improvement) ✅ DONE (memory store, idea tree, auto_capture, review_fork, dream_review, scheduler, UI panel)
 **Supersedes:** all prior "✅ Working" claims about Phase 2 code.
 
 > **2026-08-19 decision (per SAFETY_REVIEW.md):** the current Phase 2 code
