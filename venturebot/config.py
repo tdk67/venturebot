@@ -24,6 +24,8 @@ STATE_FILE = Path(os.environ.get("VENTUREBOT_STATE", BASE_DIR / "state.json"))
 DATA_DIR = Path(os.environ.get("VENTUREBOT_DATA", BASE_DIR / "data"))
 DB_PATH = Path(os.environ.get("VENTUREBOT_DB", DATA_DIR / "venturebot.db"))
 SANDBOX_DIR = Path(os.environ.get("VENTUREBOT_SANDBOX", BASE_DIR / "sandbox"))
+CHECKPOINT_DIR = Path(os.environ.get("VENTUREBOT_CHECKPOINT_DIR", DATA_DIR / "checkpoints"))
+ARCHIVE_DIR = Path(os.environ.get("VENTUREBOT_ARCHIVE_DIR", DATA_DIR / "archives"))
 
 # ── Loop budget ────────────────────────────────────────────────────────
 MAX_ITERATIONS = int(os.environ.get("VENTUREBOT_MAX_ITERATIONS", "5"))

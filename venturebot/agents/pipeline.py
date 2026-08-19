@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import tempfile
 import time
 from dataclasses import dataclass, field
 
@@ -94,6 +96,110 @@ def _save_sessions_metadata() -> None:
 
 # Load sessions on module import
 _load_sessions()
+
+# ── Checkpoint persistence (crash-safe resume) ─────────────────────────
+
+# Ordered phases for resume logic.
+_PHASES = ["research", "advocate", "critic", "judge", "prd_writer", "auditor"]
+
+
+def _checkpoint_path(run_id: str) -> Path:
+    return config.CHECKPOINT_DIR / f"{run_id}.json"
+
+
+def _archive_path(run_id: str) -> Path:
+    return config.ARCHIVE_DIR / f"{run_id}.json"
+
+
+def save_checkpoint(result: DebateResult, phase: str) -> None:
+    """Atomically persist DebateResult at the current phase.
+
+    Called after each agent turn completes. On restart, a fresh
+    pipeline can resume from the last saved phase.
+    """
+    if not result.events:
+        return  # Nothing to save — don't write empty checkpoints
+    run_id = run_manager.manager.run_id
+    if not run_id:
+        return
+    snapshot = {
+        "idea": result.idea,
+        "run_id": run_id,
+        "current_phase": phase,
+        "status": result.status,
+        "research_brief": result.research_brief,
+        "advocate_argument": result.advocate_argument,
+        "critic_rebuttal": result.critic_rebuttal,
+        "verdict_text": result.verdict_text,
+        "verdict": result.verdict,
+        "prd": result.prd,
+        "security_audit": result.security_audit,
+        "error": result.error,
+        "saved_at": time.time(),
+    }
+    config.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=str(config.CHECKPOINT_DIR))
+    try:
+        with os.fdopen(tmp_fd, "w") as f:
+            json.dump(snapshot, f, indent=2)
+        os.replace(tmp_path, str(_checkpoint_path(run_id)))
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        # Best-effort; never crash the pipeline over a checkpoint write
+
+
+def load_checkpoint(run_id: str) -> dict | None:
+    """Load a checkpoint snapshot from disk. Returns None if not found."""
+    path = _checkpoint_path(run_id)
+    try:
+        if path.exists():
+            return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        pass
+    return None
+
+
+def list_checkpoints() -> list[dict]:
+    """Return metadata about all checkpointed runs for the dashboard."""
+    snapshots: list[dict] = []
+    try:
+        config.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
+        for p in sorted(config.CHECKPOINT_DIR.glob("*.json"),
+                        key=lambda x: x.stat().st_mtime, reverse=True):
+            try:
+                data = json.loads(p.read_text())
+                snapshots.append({
+                    "run_id": data.get("run_id", p.stem),
+                    "idea": data.get("idea", "")[:200],
+                    "phase": data.get("current_phase", "unknown"),
+                    "status": data.get("status", "unknown"),
+                    "saved_at": data.get("saved_at", 0),
+                })
+            except (json.JSONDecodeError, OSError):
+                pass
+    except OSError:
+        pass
+    return snapshots
+
+
+def finalize_checkpoint(run_id: str) -> None:
+    """Move a completed checkpoint to the archive directory."""
+    src = _checkpoint_path(run_id)
+    if not src.exists():
+        return
+    config.ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(str(src), str(_archive_path(run_id)))
+    except OSError:
+        pass
+
+
+def _checkpoint_and_log(result: DebateResult, phase: str) -> None:
+    """Convenience: save checkpoint after each agent turn."""
+    save_checkpoint(result, phase)
 
 
 def _text_from_event(ev) -> str | None:
@@ -229,6 +335,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         )
         result.research_brief = brief
         store.update_task("t1", "done")
+        _checkpoint_and_log(result, "advocate")
         run_manager.manager.check()
 
         # 2. Advocate (blind: brief only) — steering checkpoint
@@ -244,6 +351,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         )
         result.advocate_argument = argument
         store.update_task("t2", "done")
+        _checkpoint_and_log(result, "critic")
         run_manager.manager.check()
 
         # 3. Critic (has web search) — steering checkpoint
@@ -259,6 +367,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         )
         result.critic_rebuttal = rebuttal
         store.update_task("t3", "done")
+        _checkpoint_and_log(result, "judge")
         run_manager.manager.check()
 
         # 4. Judge (structured verdict) — steering checkpoint
@@ -275,6 +384,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         result.verdict_text = verdict_text
         result.verdict = _parse_verdict(verdict_text)
         store.update_task("t4", "done")
+        _checkpoint_and_log(result, "verdict")
         run_manager.manager.check()
 
         # 5. Verdict gate
@@ -321,6 +431,7 @@ async def _write_prd(result: DebateResult, session_service, sid, user_id,
     )
     result.prd = prd
     store.update_task("t5", "done")
+    _checkpoint_and_log(result, "auditor")
 
     # S10 — proof-read gate: deterministic scanner + LLM Security Auditor.
     store.log("System", "core", "Security Auditor proof-reading the PRD...")
@@ -350,6 +461,7 @@ async def _write_prd(result: DebateResult, session_service, sid, user_id,
 
     result.status = "needs_approval"
     store.log("System", "core", "PRD ready — awaiting human approval.")
+    _checkpoint_and_log(result, "needs_approval")
     _save_session(run_id, result, session_service, sid, user_id)
     return result
 
