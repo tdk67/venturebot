@@ -28,9 +28,15 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from .. import config, run_manager, store
+from ..memory.auto_capture import capture_turn
+from ..memory.sqlite_store import get_store
 from ..steering import SteeringInbox
 from ..url_fetch import fetch_urls
 from .agents import ALL_AGENTS
+
+
+# Per-session throttle state for the auto_capture fork (see _throttle).
+_THROTTLE: dict[str, dict] = {}
 
 
 @dataclass
@@ -118,6 +124,9 @@ async def _run_agent(agent, session_service, session_id, user_id, message: str,
         if t and not ev.partial:
             result.events.append({"agent": agent_label, "text": t})
             store.log(agent_label, getattr(agent.model, "model", "?"), t[:200])
+            # Fork 1: auto_capture — persist the completed turn (best-effort).
+            capture_turn(session_id, agent_label, "agent_message", t,
+                         _THROTTLE.setdefault(session_id, {}))
     return _final_text_of(events)
 
 
@@ -153,6 +162,12 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
     result = DebateResult(idea=idea)
     run_id = store.start_run()["run_id"]
     run_manager.manager.start(run_id)
+
+    # Record the idea in the idea tree (M3) for later dream-review pruning.
+    try:
+        get_store().create_idea(idea[:200])
+    except Exception:
+        pass  # memory is best-effort; never block the debate
 
     guarded = guard_input(idea)
     if guarded["blocked"]:

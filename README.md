@@ -29,7 +29,7 @@ Working MVP
 
 ## Current Status (2026-08-19)
 
-> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI rendering is incomplete** (API works, HTML scaffold exists, JS needs to be written). **Phase 2 and Self-Improvement are not yet built.**
+> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI is fully wired** (SSE + rendering + HITL buttons). **Self-improvement layer (M3) is built** (SQLite memory store, auto_capture, review_fork, dream_review, idea-tree pruning). **Phase 2 (blind TDD) is not built** (deliberately out of scope for the hackathon — see PRD §8.1).
 
 ### Milestone Progress
 
@@ -37,8 +37,8 @@ Working MVP
 |-----------|----------|--------|
 | **M0.5** Safety Baseline (S0-S10) | 80% | ✅ Kill switch, sandbox, budget, auth, input guard, XSS-safe. ⚠️ MCP config (S8) + Security Auditor (S10) missing |
 | **M1** Phase 1 Core Debate | 85% | ✅ 5 ADK agents, custom pipeline, HITL gates, steering injection, URL ingestion |
-| **M2** Observable UI | 55% | ✅ FastAPI + SSE + auth endpoints + HTML scaffold. ❌ Dashboard JavaScript (rendering) not written |
-| **M3** Self-Improvement | 0% | ❌ Not started — no memory layer, no dream review, no idea tree |
+| **M2** Observable UI | 90% | ✅ FastAPI + SSE + auth + JS rendering + HITL buttons (inline in `templates/index.html`) |
+| **M3** Self-Improvement | 70% | ✅ SQLite store, idea tree + pruning, auto_capture, review_fork, dream_review + `/api/memories` + `/scheduler/dream-review`. ⚠️ Technique-library UI panel not wired |
 | **M4** Shadow Mode + GCP Deploy | 0% | ❌ Not started |
 
 ### Component Status
@@ -50,19 +50,19 @@ Working MVP
 | HITL gates (clarify, verdict, PRD approval) | `venturebot/agents/clarify.py`, pipeline.py | ✅ Working |
 | Steering inbox (mid-run guidance injection) | `venturebot/steering.py` | ✅ Working |
 | Kill switch (StopEvent + process group kill) | `venturebot/run_manager.py` | ✅ Working |
-| Output guard (AST check + hardcoded secret scan) | `venturebot/guard.py` | ✅ Working (⚠️ has dead Phase 2 code) |
+| Output guard (AST check + hardcoded secret scan) | `venturebot/guard.py` | ✅ Working |
 | Input guard (injection detection + quarantine) | `venturebot/input_guard.py` | ✅ Working |
 | Sandbox (unprivileged UID + network isolation + rlimits) | `venturebot/sandbox.py` | ✅ Working |
 | Budget enforcement (pre-call check + persistent tracking) | `venturebot/budget.py` | ✅ Working |
 | Google SSO auth (allowlist + signed cookies) | `venturebot/auth.py` | ✅ Working |
 | FastAPI dashboard (SSE + all API endpoints) | `venturebot/dashboard.py` | ✅ API working |
-| Dashboard HTML/CSS | `templates/index.html` | ⚠️ Scaffold exists, JS rendering not written |
+| Dashboard HTML/CSS | `templates/index.html` | ✅ Full SPA: SSO, SSE feed, steering, verdict/PRD HITL buttons |
 | State store (JSON file-backed) | `venturebot/store.py` | ✅ Working |
 | URL fetcher (research material ingestion) | `venturebot/url_fetch.py` | ✅ Working |
 | Gemini usage tracker | `venturebot/gemini_usage.py` | ✅ Working |
 | Phase 2 agents (PO, TestWriter, Coder, QA_PO) | — | ❌ Wiped (safety review), not rebuilt |
-| Self-improvement layer (auto_capture, review_fork, dream_review) | — | ❌ Not started |
-| Idea tree with pruning | — | ❌ Not started |
+| Self-improvement layer (auto_capture, review_fork, dream_review) | `venturebot/memory/` | ✅ Built (M3) |
+| Idea tree with pruning | `venturebot/memory/idea_tree.py` | ✅ Built + deterministic pruning rules |
 | Bridge (Phase 1 → Phase 2 handoff) | — | ❌ Not started |
 | GCP deployment (Agent Engine + Cloud Run) | — | ❌ Not started |
 
@@ -104,18 +104,29 @@ Working MVP
 │       ├── pipeline.py             ← custom orchestrator (resumable, kill-switch aware)
 │       ├── prompts.py              ← system prompts for all 5 agents
 │       ├── schemas.py              ← Pydantic output schemas (ResearchBrief, JudgeVerdict)
-│       └── clarify.py              ← HITL clarification tool (LongRunningFunctionTool)
+│       ├── clarify.py              ← HITL clarification tool (LongRunningFunctionTool)
+│       └── (pipeline wires auto_capture into memory/)
+│
+│   └── memory/                     ← self-improvement layer (M3)
+│       ├── __init__.py
+│       ├── sqlite_store.py         ← SQLite store (facts, lessons, techniques, profile, idea tree)
+│       ├── idea_tree.py            ← deterministic pruning rules (PRD §5.5)
+│       ├── auto_capture.py         ← Fork 1: persist session facts (throttled)
+│       ├── review_fork.py          ← Fork 2: fire-and-forget LLM turn analysis
+│       ├── dream_review.py         ← Fork 3: nightly consolidation + pruning
+│       └── _throttle.py            ← 120s per-session fork cooldown
 │
 ├── templates/
-│   └── index.html                  ← dashboard SPA (HTML + CSS + inline JS stub)
+│   └── index.html                  ← dashboard SPA (SSO, SSE, HITL buttons, XSS-safe rendering)
 │
-├── tests/                          ← pytest test suite (~25% coverage)
-│   ├── test_safety.py              ← guard, input_guard, sandbox, secret scan, XSS
-│   ├── test_dashboard.py           ← API endpoint status codes
+├── tests/                          ← pytest test suite (64 tests)
+│   ├── test_safety.py              ← guard, input_guard, sandbox, budget, kill switch
+│   ├── test_dashboard.py           ← API endpoint auth + status codes
 │   ├── test_pipeline.py            ← verdict parsing, debate flow (mocked)
 │   ├── test_steering.py            ← steering inbox + concurrency
-│   ├── test_auth.py                ← (planned, not yet written)
-│   └── test_url_fetch.py           ← (planned, not yet written)
+│   ├── test_auth.py                ← SSO verification + session tokens
+│   ├── test_url_fetch.py           ← URL validation + fetching
+│   └── test_memory.py              ← memory store CRUD, pruning rules, throttle
 │
 ├── data/
 │   ├── budget.json                 ← daily spend limit config
@@ -250,23 +261,20 @@ See `.env.example` for the full template.
 
 ### 🔴 P0 — Before Demo
 
-- [ ] **Write dashboard JavaScript** — Connect SSE endpoint to HTML scaffold, render agent messages live
-- [ ] **Remove dead Phase 2 code** — `guard.py:135-138` references wiped constants
-- [ ] **Add critical tests** — Budget enforcement, auth rejection, kill switch, input guard bypass, sandbox isolation
-- [ ] **Fix verdict parser** — Replace regex hack with proper error reporting (currently silently defaults to PARK)
+- [x] **Write dashboard JavaScript** — SSE + rendering + HITL buttons (done, inline in `templates/index.html`)
+- [x] **Remove dead Phase 2 code** — `guard.py` is clean
+- [x] **Add critical tests** — budget, auth, kill switch, input guard, sandbox isolation
+- [x] **Fix verdict parser** — now fails loud (raises `ValueError`) instead of silently PARKing
+- [ ] **Wire technique-library UI panel** — surface `/api/memories` in the dashboard right panel (last M3 UI piece)
+- [ ] **Add scheduled dream-review** — wire APScheduler/cron to hit `/scheduler/dream-review` nightly
 
 ### 🟡 P1 — After Demo
 
-- [ ] **Build self-improvement layer** (M3)
-  - `research_debate/memory/sqlite_store.py` — session facts, lessons, techniques, idea tree
-  - `auto_capture.py` — after_agent_callback (save session events)
-  - `review_fork.py` — fire-and-forget LLM analysis (what went well/wrong)
-  - `dream_review.py` — nightly consolidation (merge lessons, prune ideas, update profile)
-  - `idea_tree.py` — CRUD + pruning rules
-- [ ] **Persist paused sessions** — Move `_SESSIONS` dict to SQLite or `state.json`
+- [ ] **Persist paused sessions** — `_SESSIONS` metadata is saved to `data/paused_sessions.json`; full session objects (ADK session_service) are runtime-only
 - [ ] **Add Security Auditor agent** (S10) — proof-read PRDs for hallucinations + missing NFRs
 - [ ] **Wire MCP tool config** (S8) — make `google_search` and messaging channels config-driven
 - [ ] **Add rate limiting** — Prevent API abuse (slowapi or similar)
+- [ ] **Add review_fork firing to pipeline** — `analyze_turn` is built + tested; wire it as a fire-and-forget task after each agent turn
 
 ### 🟢 P2 — Post-Hackathon
 
@@ -282,17 +290,15 @@ See `.env.example` for the full template.
 
 ## Known Issues
 
-1. **Dashboard UI doesn't render** — API works, SSE streams, but the JavaScript that renders agent messages into the HTML isn't written. The dashboard shows "Live debate events will stream here" but nothing appears.
+1. **Phase 2 is missing** — The old Phase 2 code (OpenRouter blind TDD loop) was correctly wiped per SAFETY_REVIEW.md. Deliberately out of scope for the hackathon (PRD §8.1); the dashboard has no Kanban panel for it.
 
-2. **Phase 2 is missing** — The old Phase 2 code (OpenRouter blind TDD loop) was correctly wiped per SAFETY_REVIEW.md, but nothing replaced it. The dashboard's Kanban panel is dead UI.
+2. **review_fork not yet fired** — `analyze_turn` is implemented + unit-tested, but the pipeline only runs auto_capture (Fork 1). Fork 2 (LLM analysis) needs a fire-and-forget wiring at the checkpoint level.
 
-3. **Self-improvement layer is unbuilt** — The project's unique differentiator (dream review, idea tree, auto-learning) is 0% complete. This is the feature that makes VentureBot genuinely novel.
+3. **Dream review is manual-only** — The endpoint works (`POST /scheduler/dream-review`) but there's no cron/APScheduler trigger yet.
 
-4. **Test coverage is low** — ~25% estimated. Safety-critical paths (budget enforcement, auth, sandbox isolation) have zero test coverage.
+4. **Paused sessions are in-memory** — `_SESSIONS` holds ADK session objects (runtime-only); metadata is persisted to `data/paused_sessions.json` for observability, but a full resume across restart is not supported.
 
-5. **Verdict parser is fragile** — Uses regex to extract JSON from LLM output. Falls back to `{"verdict": "PARK"}` on parse failure, which contradicts the "fail loud" philosophy.
-
-6. **Paused sessions are in-memory** — `_SESSIONS` dict in `pipeline.py` is lost on restart. Should persist to SQLite or `state.json`.
+5. **Test coverage improved but still partial** — 64 tests. Safety-critical paths (budget, auth, kill switch, sandbox) now have coverage; the ADK agent logic itself is still lightly tested (mocked at the Runner boundary).
 
 ---
 

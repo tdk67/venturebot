@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,6 +19,8 @@ from fastapi.staticfiles import StaticFiles
 
 from . import auth, budget, config, run_manager, store
 from .agents.pipeline import DebateResult, paused_run_ids, resume_debate, run_debate
+from .memory.dream_review import run_dream_review
+from .memory.sqlite_store import get_store
 from .steering import SteeringInbox
 
 app = FastAPI(title="VentureBot Command Center")
@@ -206,6 +209,29 @@ async def api_resume(request: Request):
 async def api_paused(request: Request):
     auth.get_current_user(request)
     return {"paused_runs": paused_run_ids()}
+
+
+# ── Self-improvement (M3) ────────────────────────────────────────────
+@app.get("/api/memories")
+async def api_memories(request: Request):
+    """Snapshot of the self-improvement state (PRD §6.1 right panel)."""
+    auth.get_current_user(request)
+    s = get_store()
+    return {
+        "lessons": s.get_lessons(active_only=True, limit=50),
+        "techniques": s.get_techniques(active_only=True),
+        "profile": s.get_profile(),
+        "idea_tree": s.get_idea_tree(),
+    }
+
+
+@app.post("/scheduler/dream-review")
+async def api_dream_review(request: Request):
+    """Manually trigger the nightly consolidation (PRD §5.4)."""
+    auth.get_current_user(request)
+    summary = await asyncio.to_thread(run_dream_review)
+    await _broadcast("dream_review", summary)
+    return summary
 
 
 # ── SSE stream ─────────────────────────────────────────────────────────
