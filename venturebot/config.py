@@ -60,6 +60,7 @@ ALLOWED_EMAILS = [
     for e in os.environ.get("VENTUREBOT_ALLOWED_EMAILS", "").split(",")
     if e.strip()
 ]
+COOKIE_SECURE = os.environ.get("VENTUREBOT_COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 
 # ── Credential resolution ──────────────────────────────────────────────
 def google_api_key() -> str:

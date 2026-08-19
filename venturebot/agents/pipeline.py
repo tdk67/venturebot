@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from dataclasses import dataclass, field
 
 from google.adk import Runner
@@ -49,6 +50,41 @@ class DebateResult:
 # Persisted resumable state, keyed by run_id. Lets the dashboard resume a
 # paused debate (verdict/PRD gate) without losing the prior agents' work.
 _SESSIONS: dict[str, dict] = {}
+_SESSIONS_FILE = config.DATA_DIR / "paused_sessions.json"
+
+def _load_sessions() -> None:
+    """Load persisted sessions from disk on startup."""
+    global _SESSIONS
+    if _SESSIONS_FILE.exists():
+        try:
+            data = json.loads(_SESSIONS_FILE.read_text())
+            # We can only restore metadata, not the full session objects
+            # (session_service, sid, user_id are runtime-only)
+            # For now, just log that sessions were lost
+            if data:
+                store.log("System", "core", f"Warning: {len(data)} paused sessions lost on restart (in-memory sessions cannot persist)")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+def _save_sessions_metadata() -> None:
+    """Save session metadata to disk for observability (not resumable)."""
+    try:
+        config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+        metadata = {
+            run_id: {
+                "status": session["result"].status,
+                "idea": session["result"].idea[:200],
+                "verdict": session["result"].verdict,
+                "timestamp": time.time(),
+            }
+            for run_id, session in _SESSIONS.items()
+        }
+        _SESSIONS_FILE.write_text(json.dumps(metadata, indent=2))
+    except OSError:
+        pass  # Non-critical: metadata save failure shouldn't break the pipeline
+
+# Load sessions on module import
+_load_sessions()
 
 
 def _text_from_event(ev) -> str | None:
@@ -305,6 +341,7 @@ def _save_session(run_id: str, result: DebateResult, session_service, sid, user_
         "sid": sid,
         "user_id": user_id,
     }
+    _save_sessions_metadata()  # Persist metadata for observability
 
 
 def paused_run_ids() -> list[str]:
@@ -312,19 +349,33 @@ def paused_run_ids() -> list[str]:
 
 
 def _parse_verdict(text: str) -> dict:
+    """Parse the Judge's raw output into a verdict dict.
+
+    The Judge agent declares output_schema=JudgeVerdict, but the pipeline
+    extracts raw text (see _final_text_of), so the verdict must still be
+    parsed here. Fail loud: if no verdict can be determined, raise ValueError
+    — never silently default to PARK.
+    """
     if not text:
-        return {}
+        raise ValueError("Judge produced no output — cannot determine a verdict")
+    # 1. Structured JSON (the normal output_schema path).
     try:
         m = re.search(r"\{.*\}", text, re.DOTALL)
         if m:
-            return json.loads(m.group(0))
-    except json.JSONDecodeError:
-        pass
+            parsed = json.loads(m.group(0))
+            if isinstance(parsed, dict) and parsed.get("verdict") in ("PROCEED", "PARK", "PRUNE"):
+                return parsed
+    except json.JSONDecodeError as e:
+        store.log("System", "core", f"Judge JSON was not valid ({e}); falling back to keyword search.")
+    # 2. Keyword search over prose output.
     upper = text.upper()
     for kw in ("PROCEED", "PARK", "PRUNE"):
         if kw in upper:
             return {"verdict": kw}
-    return {"verdict": "PARK"}
+    # 3. Fail loud — an uninterpretable verdict must surface, not silently PARK.
+    raise ValueError(
+        f"Could not determine verdict from Judge output. Raw output: {text[:200]!r}"
+    )
 
 
 def _overall_average(verdict: dict) -> float | None:

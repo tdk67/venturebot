@@ -22,7 +22,8 @@ from .steering import SteeringInbox
 
 app = FastAPI(title="VentureBot Command Center")
 
-# In-memory SSE fan-out (per-client queues)
+# In-memory SSE fan-out (per-client queues). Max 50 concurrent clients.
+_MAX_SSE_CLIENTS = 50
 _SSE_CLIENTS: set[asyncio.Queue] = set()
 
 # Shared steering inbox — drained at checkpoints, never mid-turn
@@ -67,9 +68,11 @@ async def auth_google(request: Request):
         raise e
     token = auth.create_session_token(user["email"], user["name"], user["picture"])
     resp = JSONResponse({"authenticated": True, **user})
+    # secure=True when behind HTTPS (production), False for local dev
+    is_secure = request.url.scheme == "https" or os.environ.get("VENTUREBOT_SECURE_COOKIES", "").lower() in ("1", "true", "yes")
     resp.set_cookie(
         "vb_session", token,
-        httponly=True, samesite="lax", secure=False,  # secure=True behind HTTPS
+        httponly=True, samesite="lax", secure=is_secure,
         max_age=30 * 24 * 3600,
     )
     return resp
@@ -209,6 +212,8 @@ async def api_paused(request: Request):
 @app.get("/api/events")
 async def api_events(request: Request):
     auth.get_current_user(request)
+    if len(_SSE_CLIENTS) >= _MAX_SSE_CLIENTS:
+        raise HTTPException(503, "Too many SSE clients — try again later")
     q: asyncio.Queue = asyncio.Queue(maxsize=1000)
     _SSE_CLIENTS.add(q)
     async def gen():

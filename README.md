@@ -1,46 +1,70 @@
 # VentureBot
 
-**An observable, self-evolving research machine** — a small mesh of autonomous
-agents that turns a PRD into working, tested code through a **blind TDD loop**,
-streamed live to a web dashboard.
+**A self-improving, multi-agent research & development system** built on Google ADK.  
+Takes a vague idea → researches it → debates it (Advocate vs Critic vs Judge) → produces a scored PRD → builds a working MVP through blind TDD.
+
+**Target:** Google Hackathon — Track 2: The Collaborative Partner
 
 ```
-PRD ──▶ PO ──▶ TestWriter ──▶ pytest ──▶ Coder ──▶ QA_PO ──▶ APPROVE/REVISE
-                (sees PRD)      (failures only)          (sees everything)
+Vague Idea
+  ↓
+Research Agent (google_search) → Research Brief
+  ↓
+[Human Clarification if needed]
+  ↓
+Advocate → Critic → Judge (asymmetric info access)
+  ↓
+[Human: Proceed / Abort]
+  ↓
+PRD Writer → Structured PRD
+  ↓
+[Human: Approve / Changes / Reject]
+  ↓
+Phase 2: Blind TDD (PO → TestWriter → pytest → Coder → QA_PO)
+  ↓
+Working MVP
 ```
 
 ---
 
-## Status
+## Current Status (2026-08-19)
 
-> ✅ **Working end-to-end.** The blind TDD loop runs with real LLM calls
-> (OpenRouter), persists state to disk, and streams progress to a live dashboard.
+> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI rendering is incomplete** (API works, HTML scaffold exists, JS needs to be written). **Phase 2 and Self-Improvement are not yet built.**
 
-| Component | State |
-|-----------|-------|
-| Live dashboard (FastAPI + HTML) | ✅ working (`:8080`) |
-| File-backed state store (`sim_store.py`) | ✅ working (single source of truth) |
-| Blind TDD agent loop (`venturebot_harness.py`) | ✅ working — real LLM calls |
-| Real LLM calls (OpenRouter) | ✅ working (verified 2026-08-18) |
-| PRD / README | ✅ this repo |
+### Milestone Progress
 
----
+| Milestone | Progress | Status |
+|-----------|----------|--------|
+| **M0.5** Safety Baseline (S0-S10) | 80% | ✅ Kill switch, sandbox, budget, auth, input guard, XSS-safe. ⚠️ MCP config (S8) + Security Auditor (S10) missing |
+| **M1** Phase 1 Core Debate | 85% | ✅ 5 ADK agents, custom pipeline, HITL gates, steering injection, URL ingestion |
+| **M2** Observable UI | 55% | ✅ FastAPI + SSE + auth endpoints + HTML scaffold. ❌ Dashboard JavaScript (rendering) not written |
+| **M3** Self-Improvement | 0% | ❌ Not started — no memory layer, no dream review, no idea tree |
+| **M4** Shadow Mode + GCP Deploy | 0% | ❌ Not started |
 
-## What It Does
+### Component Status
 
-1. You feed it a **PRD** (a plain-text product requirement).
-2. The **PO** agent parses acceptance criteria.
-3. The **TestWriter** agent writes unit tests *blind* (from the PRD only).
-4. `pytest` runs; failures are handed to the **Coder** agent *blind*
-   (it never sees the PRD or the tests, only the failure output).
-5. The loop repeats until tests pass or an iteration cap is hit.
-6. The **QA/PO** agent reviews the result against the PRD and approves or
-   sends it back.
-7. Every step is streamed to a **live dashboard** (Kanban + debate feed).
-
-The "blind" separation prevents an LLM from cheating — it can't write tests that
-just rubber-stamp code it already read, and it can't write code that only passes
-tests it has seen.
+| Component | File(s) | State |
+|-----------|---------|-------|
+| Phase 1 agents (Researcher, Advocate, Critic, Judge, PRD Writer) | `venturebot/agents/agents.py` | ✅ Working on ADK 2.7.1 |
+| Pipeline orchestrator (resumable, kill-switch aware) | `venturebot/agents/pipeline.py` | ✅ Working |
+| HITL gates (clarify, verdict, PRD approval) | `venturebot/agents/clarify.py`, pipeline.py | ✅ Working |
+| Steering inbox (mid-run guidance injection) | `venturebot/steering.py` | ✅ Working |
+| Kill switch (StopEvent + process group kill) | `venturebot/run_manager.py` | ✅ Working |
+| Output guard (AST check + hardcoded secret scan) | `venturebot/guard.py` | ✅ Working (⚠️ has dead Phase 2 code) |
+| Input guard (injection detection + quarantine) | `venturebot/input_guard.py` | ✅ Working |
+| Sandbox (unprivileged UID + network isolation + rlimits) | `venturebot/sandbox.py` | ✅ Working |
+| Budget enforcement (pre-call check + persistent tracking) | `venturebot/budget.py` | ✅ Working |
+| Google SSO auth (allowlist + signed cookies) | `venturebot/auth.py` | ✅ Working |
+| FastAPI dashboard (SSE + all API endpoints) | `venturebot/dashboard.py` | ✅ API working |
+| Dashboard HTML/CSS | `templates/index.html` | ⚠️ Scaffold exists, JS rendering not written |
+| State store (JSON file-backed) | `venturebot/store.py` | ✅ Working |
+| URL fetcher (research material ingestion) | `venturebot/url_fetch.py` | ✅ Working |
+| Gemini usage tracker | `venturebot/gemini_usage.py` | ✅ Working |
+| Phase 2 agents (PO, TestWriter, Coder, QA_PO) | — | ❌ Wiped (safety review), not rebuilt |
+| Self-improvement layer (auto_capture, review_fork, dream_review) | — | ❌ Not started |
+| Idea tree with pruning | — | ❌ Not started |
+| Bridge (Phase 1 → Phase 2 handoff) | — | ❌ Not started |
+| GCP deployment (Agent Engine + Cloud Run) | — | ❌ Not started |
 
 ---
 
@@ -48,160 +72,249 @@ tests it has seen.
 
 ```
 /root/venturebot/
-├── PRD.md                  ← product requirements (this project's own spec)
-├── README.md               ← you are here
-├── config.py               ← env-driven config + API key resolution
-├── llm_client.py           ← OpenRouter wrapper (JSON-mode + raw text)
-├── agents.py               ← PO / TestWriter / Coder / QA_PO agent logic
-├── venturebot_harness.py   ← the blind TDD loop orchestrator (CLI)
-├── sim_store.py            ← file-backed JSON state (single source of truth)
-├── dashboard.py            ← FastAPI app: /api/state, /api/reset, / (HTML UI)
-├── workspace/              ← generated tests + implementation land here
-│   ├── conftest.py         ← puts workspace on sys.path for pytest
-│   ├── test_venture.py     ← generated by TestWriter
-│   └── venture.py          ← generated by Coder
-├── state.json              ← current persisted state
-├── setup.sh                ← venv bootstrap
-└── venv/                   ← python3.11 virtualenv
+├── PRD.md                          ← product requirements (VB-PRD-2026-08-18)
+├── IMPLEMENTATION_PLAN.md          ← detailed build plan + task breakdown
+├── SAFETY_REVIEW.md                ← safety audit that gated all work
+├── Review-PRD.md                   ← hackathon alignment + demo strategy
+├── README.md                       ← you are here
+├── .env                            ← live secrets (NEVER committed)
+├── .env.example                    ← env var template
+├── .gitignore                      ← excludes .env, state.json, data/, venv/
+├── state.json                      ← current pipeline state (resumable)
+│
+├── venturebot/                     ← Python package
+│   ├── __init__.py
+│   ├── config.py                   ← env-driven config (models, budgets, paths)
+│   ├── dashboard.py                ← FastAPI app: SSE, auth, HITL, all /api/* endpoints
+│   ├── store.py                    ← JSON file-backed state (single source of truth)
+│   ├── auth.py                     ← Google SSO (jwt verification + allowlist)
+│   ├── budget.py                   ← cumulative LLM spend enforcement
+│   ├── run_manager.py              ← kill switch (StopEvent + process group kill)
+│   ├── guard.py                    ← post-LLM output guard (AST check + secret scan)
+│   ├── input_guard.py              ← pre-LLM injection guard + quarantine convention
+│   ├── sandbox.py                  ← pytest isolation (unshare, setuid, rlimits)
+│   ├── steering.py                 ← user guidance inbox (drained at checkpoints)
+│   ├── url_fetch.py                ← fetches user-provided URLs for research material
+│   ├── gemini_usage.py             ← Gemini token/cost tracker
+│   ├── llm_client.py               ← legacy OpenRouter client (kept for reference)
+│   │
+│   └── agents/                     ← Phase 1 ADK agents
+│       ├── __init__.py
+│       ├── agents.py               ← 5 LlmAgent definitions (Researcher→PRD Writer)
+│       ├── pipeline.py             ← custom orchestrator (resumable, kill-switch aware)
+│       ├── prompts.py              ← system prompts for all 5 agents
+│       ├── schemas.py              ← Pydantic output schemas (ResearchBrief, JudgeVerdict)
+│       └── clarify.py              ← HITL clarification tool (LongRunningFunctionTool)
+│
+├── templates/
+│   └── index.html                  ← dashboard SPA (HTML + CSS + inline JS stub)
+│
+├── tests/                          ← pytest test suite (~25% coverage)
+│   ├── test_safety.py              ← guard, input_guard, sandbox, secret scan, XSS
+│   ├── test_dashboard.py           ← API endpoint status codes
+│   ├── test_pipeline.py            ← verdict parsing, debate flow (mocked)
+│   ├── test_steering.py            ← steering inbox + concurrency
+│   ├── test_auth.py                ← (planned, not yet written)
+│   └── test_url_fetch.py           ← (planned, not yet written)
+│
+├── data/
+│   ├── budget.json                 ← daily spend limit config
+│   └── gemini_usage.json           ← cumulative LLM cost log
+│
+├── scripts/
+│   ├── secret_scan.sh              ← git pre-push secret scanner
+│   └── check_gemini_credits.sh     ← Gemini API quota checker
+│
+├── venv/                           ← Python 3.11 virtualenv (google-adk, fastapi, etc.)
+└── .git/                           ← git repo (pre-push hook runs secret_scan.sh)
 ```
 
-**State flows:** agents → `sim_store.py` → `state.json` ← `dashboard.py` polls it.
-`sim_store.py` is the single source of truth — no in-memory singletons remain.
+---
+
+## Key Design Decisions
+
+### 1. Custom Orchestrator over SequentialAgent
+The pipeline uses a custom orchestrator (`pipeline.py`) instead of ADK's `SequentialAgent` because:
+- SequentialAgent is deprecated in ADK 2.7
+- SequentialAgent runs all sub-agents unconditionally (no conditional verdict gate)
+- Custom orchestrator polls the kill switch between agents
+- Steering messages are injected at checkpoints (between agents), never mid-turn
+- Pipeline is resumable: paused state survives across human decisions
+
+### 2. Asymmetric Information Access (Blind Debate)
+- **Advocate** has NO tools — argues only from the research brief
+- **Critic** HAS `google_search` — can fact-check with live web evidence
+- This eliminates single-model confirmation bias
+
+### 3. Fail Loud, Fail Honest
+No silent fallbacks. When something fails:
+1. Stop (don't continue degraded)
+2. Report (full context: component, error type, what was attempted)
+3. Preserve state (save what was computed)
+4. Suggest fix (if known)
+
+### 4. Three-Layer Defense
+1. **Pre-LLM** (`input_guard.py`) — injection detection + quarantine convention
+2. **Post-LLM** (`guard.py`) — AST check (banned constructs) + hardcoded secret scan
+3. **Runtime** (`sandbox.py`) — unprivileged UID, network isolation, rlimits, filesystem restrictions
 
 ---
 
 ## Quick Start
 
-### 1. Dashboard (works today)
+### Prerequisites
 
 ```bash
 cd /root/venturebot
-./venv/bin/uvicorn dashboard:app --host 0.0.0.0 --port 8080
-# open http://<host>:8080
+source venv/bin/activate
+
+# Verify ADK is installed
+python -c "from google.adk.agents import LlmAgent; print('ADK OK')"
+
+# Verify Gemini API key
+python -c "from google.adk.models import Gemini; m = Gemini(model='gemini-2.0-flash'); print('Gemini OK')"
 ```
 
-Endpoints:
-
-| Route | Method | Description |
-|-------|--------|-------------|
-| `/` | GET | Live HTML dashboard |
-| `/api/state` | GET | Full current state (JSON) |
-| `/api/reset` | POST | Reset state to initial |
-| `/api/run` | POST | (stub) starts a run — see below |
-| `/api/stop` | POST | sets status to `stopped` |
-
-### 2. Environment
+### Run the Dashboard
 
 ```bash
-# Only provider config v1 needs (see config section in PRD.md)
-export OPENROUTER_API_KEY=sk-or-...   # or it auto-reads ~/.pi/agent/auth.json
-export VENTUREBOT_WORKSPACE=/root/venturebot/workspace
-export VENTUREBOT_MAX_ITERATIONS=5
+cd /root/venturebot
+uvicorn venturebot.dashboard:app --host 0.0.0.0 --port 8080
 ```
 
-### 3. Run the loop
+Open http://localhost:8080 — the dashboard will show:
+- ✅ API endpoints are live (check `/api/state`, `/api/auth/me`)
+- ⚠️ UI rendering is incomplete (SSE events stream but aren't rendered yet)
+
+### API Endpoints
+
+| Method | Path | Description | Auth |
+|--------|------|-------------|------|
+| GET | `/` | Dashboard HTML | No (static) |
+| GET | `/api/auth/client-id` | Google OAuth client ID | No |
+| GET | `/api/auth/me` | Current user (or `authenticated: false`) | No |
+| POST | `/api/auth/google` | Verify Google credential, set session cookie | No |
+| POST | `/api/auth/logout` | Clear session cookie | No |
+| GET | `/api/state` | Full pipeline state + budget | ✅ |
+| POST | `/api/reset` | Reset state to initial | ✅ |
+| POST | `/api/stop` | Cancel active run (kill switch) | ✅ |
+| POST | `/api/run-phase1` | Start debate with `{"idea": "..."}` | ✅ |
+| POST | `/api/steering` | Queue guidance for next checkpoint | ✅ |
+| GET | `/api/steering` | Current steering inbox state | ✅ |
+| POST | `/api/resume` | Resume paused debate with decision | ✅ |
+| GET | `/api/paused` | List of paused run IDs | ✅ |
+| GET | `/api/events` | SSE stream of pipeline events | ✅ |
+| POST | `/api/budget/raise` | Raise daily budget limit | ✅ |
+
+### Run Tests
 
 ```bash
-# Run with an inline PRD (short string)
-./venv/bin/python venturebot_harness.py --prd "Build a function that..."
-
-# Or run with a PRD file
-./venv/bin/python venturebot_harness.py --prd path/to/PRD.md
-
-# Reset state first
-./venv/bin/python venturebot_harness.py --reset --prd path/to/PRD.md
+cd /root/venturebot
+pytest tests/ -v
 ```
 
-> **Note:** `/api/run` is currently a stub that only resets state. The actual
-> loop runs via the CLI above. Wiring `/api/run` to trigger the harness in the
-> background is a P1 roadmap item.
+Current test coverage: ~25% (safety tests are solid; most modules undertested)
 
 ---
 
-## LLM Provider
-
-VentureBot uses **OpenRouter** exclusively (single working provider, single
-credential source). Verified working on 2026-08-18:
-
-| Model | Role |
-|-------|------|
-| `deepseek/deepseek-v4-pro` | PO, QA_PO (strong reasoning) |
-| `deepseek/deepseek-chat-v3-0324` | TestWriter, Coder (fast, non-thinking) |
-
-> **Why `deepseek-chat-v3-0324` for code generation?** Thinking models
-> (`deepseek-r1`, `qwen3.8-max`) burn `max_tokens` on reasoning and can return
-> empty `content`, stalling the loop. `deepseek-chat-v3-0324` is fast (~2.5s)
-> and always returns code in `content`.
-
-Credential resolution order:
-1. `OPENROUTER_API_KEY` env var
-2. `openrouter.key` in `/root/.pi/agent/auth.json`
-
-> The `QWEN_API_KEY` in `/root/pi-a2a-server/.env` is **invalid** and the
-> `OPENROUTER_API_KEY` there is empty — do not source that file for VentureBot.
-
----
-
-## How the Blind Loop Works (target)
-
-```
-run_start
-   │
-   ▼
-┌──────────────┐   criteria.json   ┌──────────────────┐
-│   PO agent   │ ────────────────▶ │  TestWriter agent │  writes test_*.py
-└──────────────┘                   └──────────────────┘
-                                          │
-                                          ▼
-                                   pytest (workspace)
-                                          │
-                          ┌───────────────┴───────────────┐
-                          ▼                                ▼
-                     all pass                        failures only
-                          │                                │
-                          ▼                                ▼
-                 ┌──────────────────┐           ┌──────────────┐
-                 │  QA_PO agent     │◀──────────│  Coder agent │ writes *.py
-                 └──────────────────┘           └──────────────┘
-                          │
-              APPROVE ────┴──── REVISE(reason) ──▶ loop (≤ MAX_ITERATIONS)
-```
-
-Every agent transition updates `state.json` → dashboard reflects it within 1s.
-
----
-
-## Roadmap
-
-- [x] **P0 — Wire real LLM calls.** ✅ done — `agents.py` + `llm_client.py`
-- [x] **P0 — Schema guard** for structured agent outputs (retry on parse failure). ✅ done
-- [x] **P0 — Delete legacy modules** (`bus.py`, `sim_state.py`, `sim_run.py`,
-      `reset_state.py`, `test_sync.py`). ✅ done — collapsed onto `sim_store.py`
-- [ ] **P1 — Async run lifecycle** (`/api/run` triggers the harness in the
-      background; add `run_id` polling).
-- [ ] **P1 — Workspace sandboxing** (no network/shell for generated code in v2).
-- [ ] **P2 — Prompt-injection guard rails** (borrow the reference impl from the
-      A2A server's `check_guard_rails()`).
-- [ ] **P2 — Multi-provider fallback** (Anthropic verified working; add as tier 2).
-- [ ] **P2 — Per-run workspace** under `runs/<run_id>/` with artifact retention.
-
----
-
-## Testing
+## Environment Variables
 
 ```bash
-./venv/bin/pip install pytest
-./venv/bin/python -m pytest workspace/
+# Required
+GEMINI_API_KEY=AIza...                    # Google AI Studio API key
+
+# Phase 1 models (all configurable)
+VENTUREBOT_MODEL_RESEARCHER=gemini-2.5-flash
+VENTUREBOT_MODEL_ADVOCATE=gemini-2.5-flash
+VENTUREBOT_MODEL_CRITIC=gemini-2.5-pro
+VENTUREBOT_MODEL_JUDGE=gemini-2.5-pro
+VENTUREBOT_MODEL_PRD_WRITER=gemini-2.5-pro
+
+# Google SSO (for dashboard auth)
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+VENTUREBOT_ALLOWED_EMAILS=you@gmail.com
+
+# Budget
+VENTUREBOT_DAILY_BUDGET_LIMIT=20.0        # USD, default $20
+
+# Sandbox
+VENTUREBOT_SANDBOX_USER=nobody
+VENTUREBOT_SANDBOX_GROUP=nogroup
 ```
 
-The bundled `workspace/test_venture.py` is a placeholder (`assert True`). Real
-tests are generated by the TestWriter agent during a run.
+See `.env.example` for the full template.
 
 ---
 
-## Related Projects
+## What's Next (Priority Order)
 
-- **Pi A2A mesh** (`/root/pi-a2a-server/`) — the 3-agent cluster (Pisti/Sisi/Nori)
-  VentureBot may later join. Contains the guard-rail + rate-limit reference impl
-  and the mesh-wide auth token.
-- **PRD.md** — this project's full product requirements and config matrix.
+### 🔴 P0 — Before Demo
+
+- [ ] **Write dashboard JavaScript** — Connect SSE endpoint to HTML scaffold, render agent messages live
+- [ ] **Remove dead Phase 2 code** — `guard.py:135-138` references wiped constants
+- [ ] **Add critical tests** — Budget enforcement, auth rejection, kill switch, input guard bypass, sandbox isolation
+- [ ] **Fix verdict parser** — Replace regex hack with proper error reporting (currently silently defaults to PARK)
+
+### 🟡 P1 — After Demo
+
+- [ ] **Build self-improvement layer** (M3)
+  - `research_debate/memory/sqlite_store.py` — session facts, lessons, techniques, idea tree
+  - `auto_capture.py` — after_agent_callback (save session events)
+  - `review_fork.py` — fire-and-forget LLM analysis (what went well/wrong)
+  - `dream_review.py` — nightly consolidation (merge lessons, prune ideas, update profile)
+  - `idea_tree.py` — CRUD + pruning rules
+- [ ] **Persist paused sessions** — Move `_SESSIONS` dict to SQLite or `state.json`
+- [ ] **Add Security Auditor agent** (S10) — proof-read PRDs for hallucinations + missing NFRs
+- [ ] **Wire MCP tool config** (S8) — make `google_search` and messaging channels config-driven
+- [ ] **Add rate limiting** — Prevent API abuse (slowapi or similar)
+
+### 🟢 P2 — Post-Hackathon
+
+- [ ] **Build Phase 2** — Rebuild blind TDD loop on ADK architecture (PO → TestWriter → Coder → QA_PO)
+- [ ] **Bridge Phase 1 → Phase 2** — Pass approved PRD from debate to TDD harness
+- [ ] **Shadow mode** — Run ADK coder alongside custom coder, compare metrics
+- [ ] **Anti-degradation gate** — Auto-revert if ADK pass rate drops below 80%
+- [ ] **GCP deployment** — Agent Engine + Cloud Run + Memory Bank
+- [ ] **Multi-provider fallback** — Add OpenRouter as tier 2 if Gemini is unavailable
+- [ ] **Per-run workspace** — Isolate artifacts under `runs/<run_id>/`
+
+---
+
+## Known Issues
+
+1. **Dashboard UI doesn't render** — API works, SSE streams, but the JavaScript that renders agent messages into the HTML isn't written. The dashboard shows "Live debate events will stream here" but nothing appears.
+
+2. **Phase 2 is missing** — The old Phase 2 code (OpenRouter blind TDD loop) was correctly wiped per SAFETY_REVIEW.md, but nothing replaced it. The dashboard's Kanban panel is dead UI.
+
+3. **Self-improvement layer is unbuilt** — The project's unique differentiator (dream review, idea tree, auto-learning) is 0% complete. This is the feature that makes VentureBot genuinely novel.
+
+4. **Test coverage is low** — ~25% estimated. Safety-critical paths (budget enforcement, auth, sandbox isolation) have zero test coverage.
+
+5. **Verdict parser is fragile** — Uses regex to extract JSON from LLM output. Falls back to `{"verdict": "PARK"}` on parse failure, which contradicts the "fail loud" philosophy.
+
+6. **Paused sessions are in-memory** — `_SESSIONS` dict in `pipeline.py` is lost on restart. Should persist to SQLite or `state.json`.
+
+---
+
+## Documentation
+
+- **PRD.md** — Full product requirements (1268 lines)
+- **IMPLEMENTATION_PLAN.md** — Detailed task breakdown with estimates (1473 lines)
+- **SAFETY_REVIEW.md** — Safety audit that gated all work
+- **Review-PRD.md** — Hackathon alignment, uniqueness analysis, demo strategy
+- **PLAN_REVIEW.md** — Plan critique and risk mitigation
+- **CODE_REVIEW_FINAL.md** — Principal engineer code review (2026-08-19)
+- **idea-01.md, idea-02.md** — Original concept documents
+- **GEMINI_CREDITS.md** — Gemini API quota and cost tracking
+
+---
+
+## License
+
+Private — hackathon submission.
+
+---
+
+## Contact
+
+Built for the Google ADK Hackathon 2026. Track 2: The Collaborative Partner.

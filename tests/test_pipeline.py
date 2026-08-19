@@ -16,8 +16,21 @@ def test_parse_verdict_prose():
     assert _parse_verdict("The verdict is PRUNE because...")["verdict"] == "PRUNE"
 
 
-def test_parse_verdict_empty():
-    assert _parse_verdict("") == {}
+def test_parse_verdict_rejects_invalid_json_keyword():
+    # JSON present but missing a valid verdict -> keyword search over prose
+    assert _parse_verdict('{"scores": {"novelty": {"score": 3}}} PARK')["verdict"] == "PARK"
+
+
+def test_parse_verdict_empty_fails_loud():
+    import pytest
+    with pytest.raises(ValueError):
+        _parse_verdict("")
+
+
+def test_parse_verdict_uninterpretable_fails_loud():
+    import pytest
+    with pytest.raises(ValueError):
+        _parse_verdict("The judge discussed the weather and nothing else.")
 
 
 def test_overall_average():

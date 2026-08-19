@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from venturebot import guard, input_guard, budget  # noqa: E402
+from venturebot import guard, input_guard, budget, run_manager  # noqa: E402
 
 
 def test_guard_blocks_subprocess():
@@ -100,3 +100,23 @@ def test_sandbox_blocks_env_and_network():
     ok_env, _ = sandbox.run_pytest_sandboxed(tmp, timeout=60)
     # env test passes (env not readable); net test fails (blocked)
     assert ok_env is False  # because test_net.py fails = network blocked
+
+
+def test_kill_switch_check_raises_after_stop():
+    """run_manager.check() must raise RunCancelled after stop() (S2)."""
+    import pytest
+    run_manager.manager.start("test-run")
+    assert run_manager.manager.should_stop() is False
+    run_manager.manager.stop("test kill")
+    assert run_manager.manager.should_stop() is True
+    with pytest.raises(run_manager.RunCancelled):
+        run_manager.manager.check()
+
+
+def test_kill_switch_deadline_triggers():
+    """Dead-man ceiling latches should_stop() even without an explicit stop."""
+    run_manager.manager.start("test-run", deadline_seconds=-1)  # already expired
+    assert run_manager.manager.should_stop() is True
+    # Latched: a fresh start clears it
+    run_manager.manager.start("test-run-2", deadline_seconds=60)
+    assert run_manager.manager.should_stop() is False
