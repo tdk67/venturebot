@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VentureBot — Command Center</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  #debate-feed .msg { white-space: pre-wrap; word-break: break-word; }
+</style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+
+<!-- Login gate -->
+<div id="loginGate" class="fixed inset-0 bg-slate-950 flex items-center justify-center z-50">
+  <div class="bg-slate-900 border border-slate-700 rounded-2xl p-8 max-w-md w-full text-center shadow-2xl">
+    <h1 class="text-3xl font-black text-white mb-2">VentureBot</h1>
+    <p class="text-slate-400 mb-6">Sign in to access the command center</p>
+    <button id="googleBtn" class="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-100 text-slate-800 font-bold py-3 rounded-lg transition-colors">
+      <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+      Sign in with Google
+    </button>
+    <p id="authError" class="text-red-400 text-sm mt-4 hidden"></p>
+  </div>
+</div>
+
+<!-- Main app -->
+<div id="app" class="hidden max-w-7xl mx-auto p-8">
+  <header class="mb-8 flex justify-between items-center border-b border-slate-800 pb-4">
+    <div>
+      <h1 class="text-3xl font-black text-white">VentureBot <span class="text-blue-500">Command Center</span></h1>
+      <div class="flex items-center gap-3 mt-2">
+        <span id="status-badge" class="px-3 py-1 text-xs font-bold rounded-full border bg-slate-600">IDLE</span>
+        <span id="budget-badge" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400">budget: —</span>
+        <span id="user-badge" class="text-xs text-slate-500"></span>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <button onclick="doStop()" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg">⏹ Stop</button>
+      <button onclick="doLogout()" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">Logout</button>
+    </div>
+  </header>
+
+  <!-- Idea input -->
+  <div class="mb-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
+    <label class="block text-sm font-bold text-slate-300 mb-2">Pitch an idea to the debate</label>
+    <div class="flex gap-3">
+      <input id="idea-input" type="text" placeholder="e.g. An app that helps gardeners track watering schedules"
+             class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
+      <button onclick="doRun()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg">▶ Debate</button>
+    </div>
+  </div>
+
+  <!-- Verdict gate (hidden until verdict) -->
+  <div id="verdict-card" class="hidden mb-8 bg-slate-950 p-6 rounded-2xl border border-amber-500/40">
+    <h2 class="text-xl font-bold text-amber-400 mb-3">Verdict — human decision required</h2>
+    <div id="verdict-scores" class="mb-4 grid grid-cols-3 gap-4"></div>
+    <p id="verdict-rationale" class="text-slate-300 text-sm mb-4"></p>
+    <div class="flex gap-3">
+      <button onclick="verdictAction('proceed')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg">PROCEED ANYWAY</button>
+      <button onclick="verdictAction('abort')" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg">ABORT</button>
+    </div>
+  </div>
+
+  <!-- PRD approval (hidden until PRD) -->
+  <div id="prd-card" class="hidden mb-8 bg-slate-950 p-6 rounded-2xl border border-emerald-500/40">
+    <h2 class="text-xl font-bold text-emerald-400 mb-3">PRD — approve?</h2>
+    <pre id="prd-text" class="text-slate-200 text-sm whitespace-pre-wrap bg-slate-900 p-4 rounded-lg max-h-96 overflow-y-auto"></pre>
+    <div class="flex gap-3 mt-4">
+      <button onclick="prdAction('approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg">APPROVE</button>
+      <button onclick="prdAction('reject')" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg">REJECT</button>
+    </div>
+  </div>
+
+  <!-- Debate feed -->
+  <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800">
+    <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
+    <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
+  </div>
+</div>
+
+<script>
+let authChecked = false;
+
+// ── Auth ───────────────────────────────────────────────────────────────
+async function initAuth() {
+  const res = await fetch('/api/auth/me');
+  const data = await res.json();
+  if (data.authenticated) {
+    showApp(data);
+  } else {
+    const cid = await (await fetch('/api/auth/client-id')).json();
+    if (cid.client_id && window.google && window.google.accounts) {
+      window.google.accounts.id.initialize({
+        client_id: cid.client_id,
+        callback: handleCredential,
+      });
+      document.getElementById('googleBtn').addEventListener('click', () => {
+        window.google.accounts.id.prompt();
+      });
+    } else {
+      document.getElementById('authError').textContent = 'Google Sign-In not configured (GOOGLE_CLIENT_ID missing).';
+      document.getElementById('authError').classList.remove('hidden');
+    }
+  }
+}
+
+async function handleCredential(response) {
+  try {
+    const res = await fetch('/api/auth/google', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ credential: response.credential }),
+    });
+    const data = await res.json();
+    if (res.ok && data.authenticated) {
+      showApp(data);
+    } else {
+      const el = document.getElementById('authError');
+      el.textContent = data.message || data.detail || 'Login failed.';
+      el.classList.remove('hidden');
+    }
+  } catch (e) {
+    const el = document.getElementById('authError');
+    el.textContent = 'Network error.';
+    el.classList.remove('hidden');
+  }
+}
+
+function showApp(user) {
+  document.getElementById('loginGate').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('user-badge').textContent = user.email || '';
+  connectSSE();
+  fetchState();
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', {method: 'POST'});
+  location.reload();
+}
+
+// ── XSS-safe rendering: ALWAYS use textContent, never innerHTML ────────
+function el(tag, className, text) {
+  const e = document.createElement(tag);
+  if (className) e.className = className;
+  if (text !== undefined) e.textContent = text;  // safe
+  return e;
+}
+
+// ── Debate feed ────────────────────────────────────────────────────────
+const feed = () => document.getElementById('debate-feed');
+
+function addMessage(agent, text) {
+  const div = el('div', 'msg p-3 rounded-lg bg-slate-800 text-slate-100 text-xs font-mono');
+  const head = el('span', 'text-yellow-400', '[' + agent + '] ');
+  div.appendChild(head);
+  div.appendChild(document.createTextNode(text));  // safe
+  feed().appendChild(div);
+  feed().scrollTop = feed().scrollHeight;
+}
+
+// ── State ──────────────────────────────────────────────────────────────
+async function fetchState() {
+  const res = await fetch('/api/state');
+  if (res.status === 401) { location.reload(); return; }
+  const data = await res.json();
+  const badge = document.getElementById('status-badge');
+  badge.textContent = (data.status || 'idle').toUpperCase();
+  badge.className = 'px-3 py-1 text-xs font-bold rounded-full border ' +
+    ({idle:'bg-slate-600', running:'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+      approved:'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+      failed:'bg-red-500/10 text-red-400 border-red-400/20',
+      stopped:'bg-amber-500/10 text-amber-400 border-amber-400/20'}[data.status] || 'bg-slate-600');
+  if (data.budget) {
+    document.getElementById('budget-badge').textContent =
+      `budget: $${data.budget.spent}/${data.budget.limit}`;
+  }
+}
+
+// ── Control ────────────────────────────────────────────────────────────
+async function doRun() {
+  const idea = document.getElementById('idea-input').value.trim();
+  if (!idea) return;
+  const res = await fetch('/api/run-phase1', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ idea }),
+  });
+  const data = await res.json();
+  addMessage('System', 'Debate started: ' + idea);
+}
+
+async function doStop() {
+  await fetch('/api/stop', {method: 'POST'});
+  addMessage('System', '⏹ Stop requested.');
+}
+
+async function verdictAction(action) {
+  addMessage('Human', action === 'proceed' ? 'PROCEED ANYWAY' : 'ABORT');
+  document.getElementById('verdict-card').classList.add('hidden');
+  // Proceed = force PRD writer; abort = stop. (Phase 2 bridge comes later.)
+  if (action === 'proceed') {
+    addMessage('System', 'Proceeding to PRD Writer...');
+  }
+}
+
+async function prdAction(action) {
+  addMessage('Human', action === 'approve' ? 'APPROVED PRD' : 'REJECTED PRD');
+  document.getElementById('prd-card').classList.add('hidden');
+}
+
+// ── SSE ────────────────────────────────────────────────────────────────
+function connectSSE() {
+  const es = new EventSource('/api/events');
+  es.addEventListener('agent_message', (e) => {
+    const d = JSON.parse(e.data);
+    addMessage(d.agent, d.text);
+  });
+  es.addEventListener('run_finished', (e) => {
+    const d = JSON.parse(e.data);
+    if (d.verdict) showVerdict(d.verdict);
+    if (d.has_prd) fetch('/api/state').then(r=>r.json()).then(s => {
+      if (s.prd) showPRD(s.prd);
+    });
+    if (d.error) addMessage('System', 'ERROR: ' + d.error);
+    fetchState();
+  });
+  es.addEventListener('stopped', () => fetchState());
+  es.onerror = () => { /* EventSource auto-reconnects */ };
+}
+
+function showVerdict(v) {
+  document.getElementById('verdict-card').classList.remove('hidden');
+  const scoresEl = document.getElementById('verdict-scores');
+  scoresEl.innerHTML = '';
+  const s = v.scores || {};
+  ['novelty', 'feasibility', 'market_fit'].forEach(k => {
+    const item = s[k] || {};
+    const cell = el('div', 'bg-slate-800 p-3 rounded-lg');
+    cell.appendChild(el('div', 'text-xs uppercase text-slate-400', k));
+    cell.appendChild(el('div', 'text-2xl font-black', String(item.score ?? '—')));
+    cell.appendChild(el('div', 'text-xs text-slate-400', item.rationale || ''));
+    scoresEl.appendChild(cell);
+  });
+  document.getElementById('verdict-rationale').textContent = v.verdict_rationale || '';
+}
+
+function showPRD(prd) {
+  document.getElementById('prd-card').classList.remove('hidden');
+  document.getElementById('prd-text').textContent = prd;  // safe
+}
+
+window.onload = initAuth;
+setInterval(fetchState, 3000);
+</script>
+</body>
+</html>
