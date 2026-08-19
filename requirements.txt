@@ -1,0 +1,28 @@
+# VentureBot — runtime dependencies (pinned to the verified venv)
+# Install: pip install -r requirements.txt
+#
+# Note: these are the direct runtime deps. Transitive deps are resolved by pip.
+# The full freeze is `venv/bin/pip freeze` (82 packages) if you need an exact lockfile.
+
+# Web + dashboard
+fastapi==0.141.1
+uvicorn==0.52.3
+sse-starlette==3.4.8
+starlette==1.6.0
+python-multipart==0.0.32
+
+# Google ADK (Phase 1 agents) + Gemini models
+google-adk==2.7.1
+google-genai==2.18.1
+google-auth==2.56.3
+
+# Auth (session cookies) + env loading
+itsdangerous==2.2.0
+python-dotenv==1.2.3
+
+# Self-improvement layer (M3)
+aiosqlite==0.22.1
+APScheduler==3.11.3
+
+# HTTP client (URL fetch / tooling)
+httpx==0.28.1

@@ -1,0 +1,13 @@
+# Runtime files (never committed, never in the image)
+.env
+state.json
+data/
+workspace/
+sandbox/
+*.db
+*.sqlite
+__pycache__/
+.pytest_cache/
+*.pyc
+venv/
+.venv/

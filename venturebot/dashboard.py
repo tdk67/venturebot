@@ -16,7 +16,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 
 from . import auth, budget, config, run_manager, store
 from .agents.pipeline import DebateResult, paused_run_ids, resume_debate, run_debate
