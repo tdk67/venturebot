@@ -42,6 +42,7 @@ MODEL_ADVOCATE = os.environ.get("VENTUREBOT_MODEL_ADVOCATE", "gemini-3.7-flash")
 MODEL_CRITIC = os.environ.get("VENTUREBOT_MODEL_CRITIC", "gemini-3.1-pro-preview")
 MODEL_JUDGE = os.environ.get("VENTUREBOT_MODEL_JUDGE", "gemini-3.1-pro-preview")
 MODEL_PRD_WRITER = os.environ.get("VENTUREBOT_MODEL_PRD_WRITER", "gemini-3.1-pro-preview")
+MODEL_AUDITOR = os.environ.get("VENTUREBOT_MODEL_AUDITOR", "gemini-3.1-pro-preview")
 
 # ── Models: Phase 2 (OpenRouter) ───────────────────────────────────────
 MODEL_PO = os.environ.get("VENTUREBOT_MODEL_PO", "deepseek/deepseek-v4-pro")

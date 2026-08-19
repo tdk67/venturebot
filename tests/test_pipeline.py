@@ -49,3 +49,6 @@ def test_agents_have_correct_tool_separation():
     assert len(ALL_AGENTS["critic"].tools) == 1  # has search
     assert len(ALL_AGENTS["researcher"].tools) == 2  # search + clarify
     assert len(ALL_AGENTS["judge"].tools) == 0
+    # S10 Security Auditor: no tools, structured output schema
+    assert len(ALL_AGENTS["auditor"].tools) == 0
+    assert ALL_AGENTS["auditor"].output_schema is not None

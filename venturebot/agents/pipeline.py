@@ -28,6 +28,7 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
 from .. import config, run_manager, store
+from ..artifact_scanner import proof_read_gate, scan_artifact
 from ..memory.auto_capture import capture_turn
 from ..memory.review_fork import analyze_turn
 from ..memory.sqlite_store import get_store
@@ -49,6 +50,7 @@ class DebateResult:
     verdict_text: str | None = None
     verdict: dict | None = None
     prd: str | None = None
+    security_audit: dict | None = None
     status: str = "running"  # running | needs_clarification | needs_verdict | needs_approval | done | stopped | failed
     error: str | None = None
     events: list[dict] = field(default_factory=list)
@@ -306,7 +308,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
 
 async def _write_prd(result: DebateResult, session_service, sid, user_id,
                      inbox: SteeringInbox, run_id: str) -> DebateResult:
-    """Run the PRD Writer after a PROCEED verdict."""
+    """Run the PRD Writer + Security Auditor after a PROCEED verdict."""
     store.update_task("t5", "in_progress")
     store.log("System", "core", "PRD Writer drafting the PRD...")
     prd_msg = _inject_steering(
@@ -319,6 +321,33 @@ async def _write_prd(result: DebateResult, session_service, sid, user_id,
     )
     result.prd = prd
     store.update_task("t5", "done")
+
+    # S10 — proof-read gate: deterministic scanner + LLM Security Auditor.
+    store.log("System", "core", "Security Auditor proof-reading the PRD...")
+    scan = scan_artifact(prd or "", kind="text")
+    audit_text = await _run_agent(
+        ALL_AGENTS["auditor"], session_service, sid, user_id,
+        (
+            f"Proof-read this PRD (and research brief for context).\n\n"
+            f"RESEARCH BRIEF:\n{result.research_brief}\n\n"
+            f"PRD:\n{prd}\n\n"
+            f"Return your structured verdict."
+        ),
+        "Security Auditor", result,
+    )
+    audit = _parse_audit(audit_text)
+    result.security_audit = proof_read_gate(
+        scanner_ok=scan.ok,
+        audit_verdict=audit.get("verdict") if audit else None,
+        findings=[f.to_dict() for f in scan.findings]
+                  + (audit.get("findings", []) if audit else []),
+    )
+    store.log(
+        "Security Auditor", config.MODEL_AUDITOR,
+        f"Gate: {'PASS' if result.security_audit['ok'] else 'FLAG'} "
+        f"({len(result.security_audit['findings'])} finding(s))",
+    )
+
     result.status = "needs_approval"
     store.log("System", "core", "PRD ready — awaiting human approval.")
     _save_session(run_id, result, session_service, sid, user_id)
@@ -409,6 +438,34 @@ def _parse_verdict(text: str) -> dict:
     raise ValueError(
         f"Could not determine verdict from Judge output. Raw output: {text[:200]!r}"
     )
+
+
+def _parse_audit(text: str) -> dict:
+    """Parse the Security Auditor's structured output (PASS|FLAG + findings).
+
+    Unlike the Judge, the Auditor's verdict is not a gating path decision —
+    so a failure to parse is fail-soft (log + treat as unverified), and the
+    proof-read gate surfaces it for human decision.
+    """
+    if not text:
+        store.log("System", "core", "Warning: Security Auditor produced no output.")
+        return {}
+    try:
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if m:
+            parsed = json.loads(m.group(0))
+            if isinstance(parsed, dict):
+                return parsed
+    except json.JSONDecodeError as e:
+        store.log("System", "core", f"Auditor JSON was not valid ({e}).")
+    # Keyword fallback for a bare PASS/FLAG verdict.
+    upper = text.upper()
+    if "PASS" in upper and "FLAG" not in upper:
+        return {"verdict": "PASS", "findings": []}
+    if "FLAG" in upper:
+        return {"verdict": "FLAG", "findings": []}
+    store.log("System", "core", "Warning: Could not determine Auditor verdict.")
+    return {}
 
 
 def _overall_average(verdict: dict) -> float | None:

@@ -81,6 +81,8 @@
   <!-- PRD approval (hidden until PRD) -->
   <div id="prd-card" class="hidden mb-8 bg-slate-950 p-6 rounded-2xl border border-emerald-500/40">
     <h2 class="text-xl font-bold text-emerald-400 mb-3">PRD — approve?</h2>
+    <div id="audit-badge" class="mb-3"></div>
+    <div id="audit-findings" class="mb-3"></div>
     <pre id="prd-text" class="text-slate-200 text-sm whitespace-pre-wrap bg-slate-900 p-4 rounded-lg max-h-96 overflow-y-auto"></pre>
     <div class="flex gap-3 mt-4">
       <button onclick="prdAction('approve')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg">APPROVE</button>
@@ -293,9 +295,7 @@ function connectSSE() {
   es.addEventListener('run_finished', (e) => {
     const d = JSON.parse(e.data);
     if (d.verdict) showVerdict(d.verdict);
-    if (d.has_prd) fetch('/api/state').then(r=>r.json()).then(s => {
-      if (s.prd) showPRD(s.prd);
-    });
+    if (d.has_prd && d.prd) showPRD(d.prd, d.security_audit);
     if (d.error) addMessage('System', 'ERROR: ' + d.error);
     fetchState();
   });
@@ -319,9 +319,24 @@ function showVerdict(v) {
   document.getElementById('verdict-rationale').textContent = v.verdict_rationale || '';
 }
 
-function showPRD(prd) {
+function showPRD(prd, audit) {
   document.getElementById('prd-card').classList.remove('hidden');
   document.getElementById('prd-text').textContent = prd;  // safe
+  const badge = document.getElementById('audit-badge');
+  const findingsEl = document.getElementById('audit-findings');
+  badge.innerHTML = ''; findingsEl.innerHTML = '';
+  if (audit) {
+    const ok = audit.ok;
+    const b = el('span',
+      ok ? 'px-3 py-1 text-xs font-bold rounded-full border bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+         : 'px-3 py-1 text-xs font-bold rounded-full border bg-red-500/10 text-red-400 border-red-400/20',
+      ok ? '✓ Security audit PASS' : '⚠ Security audit FLAG');
+    badge.appendChild(b);
+    (audit.findings || []).forEach(f => {
+      findingsEl.appendChild(el('div', 'text-xs text-red-300 mt-1',
+        `[${f.severity || '?'}/${f.category || f.section || '?'}] ${f.detail || f.issue || JSON.stringify(f)}`));
+    });
+  }
 }
 
 // ── Self-improvement console (M3) ─────────────────────────────────────

@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import uuid
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -23,13 +24,17 @@ from .memory.dream_review import run_dream_review
 from .memory.sqlite_store import get_store
 from .steering import SteeringInbox
 
-app = FastAPI(title="VentureBot Command Center")
 
 # Start the nightly dream-review scheduler (no-op unless VENTUREBOT_ENABLE_SCHEDULER=1).
-@app.on_event("startup")
-async def _startup():
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
     from . import scheduler
     scheduler.start_scheduler()
+    yield
+    scheduler.stop_scheduler()
+
+
+app = FastAPI(title="VentureBot Command Center", lifespan=_lifespan)
 
 # In-memory SSE fan-out (per-client queues). Max 50 concurrent clients.
 _MAX_SSE_CLIENTS = 50
@@ -156,6 +161,7 @@ async def _run_phase1_loop(idea: str):
         "verdict": result.verdict,
         "has_prd": bool(result.prd),
         "prd": result.prd,
+        "security_audit": result.security_audit,
         "error": result.error,
     })
 
@@ -202,6 +208,7 @@ async def api_resume(request: Request):
                 "verdict": result.verdict,
                 "has_prd": bool(result.prd),
                 "prd": result.prd,
+                "security_audit": result.security_audit,
                 "error": result.error,
             })
         except KeyError as e:

@@ -75,10 +75,22 @@ prd_writer_agent = LlmAgent(
     description="Writes a detailed, implementable PRD from research + debate + verdict.",
 )
 
+# ── Security Auditor (S10 — proof-reads the PRD before approval) ──────
+auditor_agent = LlmAgent(
+    name="auditor",
+    model=Gemini(model=config.MODEL_AUDITOR),
+    instruction=prompts.AUDITOR_PROMPT,
+    tools=[],
+    output_schema=schemas.SecurityAudit,
+    output_key="security_audit",
+    description="Proof-reads the PRD for hallucinated claims, injection residue, and missing NFRs.",
+)
+
 ALL_AGENTS = {
     "researcher": researcher_agent,
     "advocate": advocate_agent,
     "critic": critic_agent,
     "judge": judge_agent,
     "prd_writer": prd_writer_agent,
+    "auditor": auditor_agent,
 }
