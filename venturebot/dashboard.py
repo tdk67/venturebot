@@ -25,6 +25,12 @@ from .steering import SteeringInbox
 
 app = FastAPI(title="VentureBot Command Center")
 
+# Start the nightly dream-review scheduler (no-op unless VENTUREBOT_ENABLE_SCHEDULER=1).
+@app.on_event("startup")
+async def _startup():
+    from . import scheduler
+    scheduler.start_scheduler()
+
 # In-memory SSE fan-out (per-client queues). Max 50 concurrent clients.
 _MAX_SSE_CLIENTS = 50
 _SSE_CLIENTS: set[asyncio.Queue] = set()

@@ -38,7 +38,7 @@ Working MVP
 | **M0.5** Safety Baseline (S0-S10) | 80% | ✅ Kill switch, sandbox, budget, auth, input guard, XSS-safe. ⚠️ MCP config (S8) + Security Auditor (S10) missing |
 | **M1** Phase 1 Core Debate | 85% | ✅ 5 ADK agents, custom pipeline, HITL gates, steering injection, URL ingestion |
 | **M2** Observable UI | 90% | ✅ FastAPI + SSE + auth + JS rendering + HITL buttons (inline in `templates/index.html`) |
-| **M3** Self-Improvement | 70% | ✅ SQLite store, idea tree + pruning, auto_capture, review_fork, dream_review + `/api/memories` + `/scheduler/dream-review`. ⚠️ Technique-library UI panel not wired |
+| **M3** Self-Improvement | 90% | ✅ SQLite store, idea tree + pruning, auto_capture, review_fork (wired fire-and-forget), dream_review, scheduler, `/api/memories` + technique-library UI panel |
 | **M4** Shadow Mode + GCP Deploy | 0% | ❌ Not started |
 
 ### Component Status
@@ -96,6 +96,7 @@ Working MVP
 │   ├── steering.py                 ← user guidance inbox (drained at checkpoints)
 │   ├── url_fetch.py                ← fetches user-provided URLs for research material
 │   ├── gemini_usage.py             ← Gemini token/cost tracker
+│   ├── scheduler.py                ← nightly dream-review cron (APScheduler)
 │   ├── llm_client.py               ← legacy OpenRouter client (kept for reference)
 │   │
 │   └── agents/                     ← Phase 1 ADK agents
@@ -126,7 +127,8 @@ Working MVP
 │   ├── test_steering.py            ← steering inbox + concurrency
 │   ├── test_auth.py                ← SSO verification + session tokens
 │   ├── test_url_fetch.py           ← URL validation + fetching
-│   └── test_memory.py              ← memory store CRUD, pruning rules, throttle
+│   ├── test_memory.py              ← memory store CRUD, pruning rules, throttle
+│   └── test_review_fork.py         ← review_fork analysis, scheduler
 │
 ├── data/
 │   ├── budget.json                 ← daily spend limit config
@@ -265,16 +267,12 @@ See `.env.example` for the full template.
 - [x] **Remove dead Phase 2 code** — `guard.py` is clean
 - [x] **Add critical tests** — budget, auth, kill switch, input guard, sandbox isolation
 - [x] **Fix verdict parser** — now fails loud (raises `ValueError`) instead of silently PARKing
-- [ ] **Wire technique-library UI panel** — surface `/api/memories` in the dashboard right panel (last M3 UI piece)
-- [ ] **Add scheduled dream-review** — wire APScheduler/cron to hit `/scheduler/dream-review` nightly
-
-### 🟡 P1 — After Demo
-
-- [ ] **Persist paused sessions** — `_SESSIONS` metadata is saved to `data/paused_sessions.json`; full session objects (ADK session_service) are runtime-only
+- [x] **Wire technique-library UI panel** — surface `/api/memories` in the dashboard right panel (last M3 UI piece)
+- [x] **Add scheduled dream-review** — wire APScheduler/cron to hit `/scheduler/dream-review` nightly
 - [ ] **Add Security Auditor agent** (S10) — proof-read PRDs for hallucinations + missing NFRs
 - [ ] **Wire MCP tool config** (S8) — make `google_search` and messaging channels config-driven
 - [ ] **Add rate limiting** — Prevent API abuse (slowapi or similar)
-- [ ] **Add review_fork firing to pipeline** — `analyze_turn` is built + tested; wire it as a fire-and-forget task after each agent turn
+- [x] **Add review_fork firing to pipeline** — `analyze_turn` is wired as a fire-and-forget task after each agent turn
 
 ### 🟢 P2 — Post-Hackathon
 
@@ -292,13 +290,11 @@ See `.env.example` for the full template.
 
 1. **Phase 2 is missing** — The old Phase 2 code (OpenRouter blind TDD loop) was correctly wiped per SAFETY_REVIEW.md. Deliberately out of scope for the hackathon (PRD §8.1); the dashboard has no Kanban panel for it.
 
-2. **review_fork not yet fired** — `analyze_turn` is implemented + unit-tested, but the pipeline only runs auto_capture (Fork 1). Fork 2 (LLM analysis) needs a fire-and-forget wiring at the checkpoint level.
+2. **Dream review is manual-only by default** — The endpoint works (`POST /scheduler/dream-review`) and the APScheduler cron is wired, but the scheduler is off unless `VENTUREBOT_ENABLE_SCHEDULER=1` is set.
 
-3. **Dream review is manual-only** — The endpoint works (`POST /scheduler/dream-review`) but there's no cron/APScheduler trigger yet.
+3. **Paused sessions are in-memory** — `_SESSIONS` holds ADK session objects (runtime-only); metadata is persisted to `data/paused_sessions.json` for observability, but a full resume across restart is not supported.
 
-4. **Paused sessions are in-memory** — `_SESSIONS` holds ADK session objects (runtime-only); metadata is persisted to `data/paused_sessions.json` for observability, but a full resume across restart is not supported.
-
-5. **Test coverage improved but still partial** — 64 tests. Safety-critical paths (budget, auth, kill switch, sandbox) now have coverage; the ADK agent logic itself is still lightly tested (mocked at the Runner boundary).
+4. **Test coverage is solid but ADK agents lightly tested** — 73 tests. Safety-critical paths (budget, auth, kill switch, sandbox) and the memory layer have coverage; the ADK agent logic itself is mocked at the Runner boundary.
 
 ---
 

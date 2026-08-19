@@ -93,6 +93,28 @@
     <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
     <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
   </div>
+
+  <!-- Self-improvement console (M3) -->
+  <div class="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="text-xl font-bold text-slate-300">🧠 Self-Improvement Console</h2>
+      <button onclick="doDreamReview()" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">Run Dream Review</button>
+    </div>
+    <div class="grid grid-cols-2 gap-4">
+      <div>
+        <h3 class="text-xs uppercase text-slate-500 font-bold mb-2">Techniques</h3>
+        <ul id="techniques-list" class="text-xs text-slate-300 space-y-1"></ul>
+      </div>
+      <div>
+        <h3 class="text-xs uppercase text-slate-500 font-bold mb-2">Lessons</h3>
+        <ul id="lessons-list" class="text-xs text-slate-300 space-y-1"></ul>
+      </div>
+    </div>
+    <div class="mt-4">
+      <h3 class="text-xs uppercase text-slate-500 font-bold mb-2">Idea Tree</h3>
+      <ul id="idea-tree-list" class="text-xs text-slate-300 space-y-1"></ul>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -302,8 +324,38 @@ function showPRD(prd) {
   document.getElementById('prd-text').textContent = prd;  // safe
 }
 
+// ── Self-improvement console (M3) ─────────────────────────────────────
+async function fetchMemories() {
+  const res = await fetch('/api/memories');
+  if (res.status === 401) return;
+  const d = await res.json();
+  const tList = document.getElementById('techniques-list');
+  const lList = document.getElementById('lessons-list');
+  const iList = document.getElementById('idea-tree-list');
+  tList.innerHTML = ''; lList.innerHTML = ''; iList.innerHTML = '';
+  (d.techniques || []).forEach(t => {
+    const li = el('li', '', `${t.name} (✓${t.success_count} ✗${t.failure_count})`);
+    tList.appendChild(li);
+  });
+  (d.lessons || []).slice(0, 10).forEach(l => {
+    lList.appendChild(el('li', '', `- ${l.name}: ${l.rule}`));
+  });
+  (d.idea_tree || []).slice(0, 20).forEach(i => {
+    const dot = {ACTIVE:'🟢', PARK:'🟡', PRUNED:'🔴'}[i.status] || '⚪';
+    iList.appendChild(el('li', '', `${dot} ${i.title} (${i.status})`));
+  });
+}
+
+async function doDreamReview() {
+  const res = await fetch('/scheduler/dream-review', {method: 'POST'});
+  const d = await res.json();
+  addMessage('System', '🧠 Dream review: ' + JSON.stringify(d));
+  fetchMemories();
+}
+
 window.onload = initAuth;
 setInterval(fetchState, 3000);
+setInterval(fetchMemories, 10000);
 </script>
 </body>
 </html>

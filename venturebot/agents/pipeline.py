@@ -29,6 +29,7 @@ from google.genai import types
 
 from .. import config, run_manager, store
 from ..memory.auto_capture import capture_turn
+from ..memory.review_fork import analyze_turn
 from ..memory.sqlite_store import get_store
 from ..steering import SteeringInbox
 from ..url_fetch import fetch_urls
@@ -127,7 +128,24 @@ async def _run_agent(agent, session_service, session_id, user_id, message: str,
             # Fork 1: auto_capture — persist the completed turn (best-effort).
             capture_turn(session_id, agent_label, "agent_message", t,
                          _THROTTLE.setdefault(session_id, {}))
-    return _final_text_of(events)
+    # Fork 2: review_fork — fire-and-forget LLM analysis of the turn.
+    # Never blocks or crashes the pipeline; throttled to 120s per session.
+    final = _final_text_of(events)
+    if final:
+        asyncio.create_task(_spawn_review_fork(session_id, final))
+    return final
+
+
+async def _spawn_review_fork(session_id: str, transcript: str) -> None:
+    """Run the review fork off the critical path, swallowing its own errors."""
+    try:
+        await asyncio.to_thread(
+            analyze_turn, get_store(), transcript,
+            _THROTTLE.setdefault(session_id, {}),
+        )
+    except Exception:
+        # The fork is best-effort; a failure here must never surface.
+        pass
 
 
 def _steering_block(inbox: SteeringInbox, label: str) -> str:
