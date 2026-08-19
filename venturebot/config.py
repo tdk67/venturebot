@@ -1,0 +1,91 @@
+"""VentureBot configuration.
+
+All tunables read from environment (via .env loaded by dotenv). No hardcoded
+secrets. The `budget` module exposes live state; static values live here.
+
+Provider credential resolution:
+  - GOOGLE_API_KEY  -> Google AI Studio (Phase 1 ADK Gemini)
+  - OPENROUTER_API_KEY -> OpenRouter (Phase 2); falls back to ~/.pi/agent/auth.json
+"""
+from __future__ import annotations
+
+import json
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
+
+# ── Paths ──────────────────────────────────────────────────────────────
+WORKSPACE_DIR = Path(os.environ.get("VENTUREBOT_WORKSPACE", BASE_DIR / "workspace"))
+STATE_FILE = Path(os.environ.get("VENTUREBOT_STATE", BASE_DIR / "state.json"))
+DATA_DIR = Path(os.environ.get("VENTUREBOT_DATA", BASE_DIR / "data"))
+DB_PATH = Path(os.environ.get("VENTUREBOT_DB", DATA_DIR / "venturebot.db"))
+SANDBOX_DIR = Path(os.environ.get("VENTUREBOT_SANDBOX", BASE_DIR / "sandbox"))
+
+# ── Loop budget ────────────────────────────────────────────────────────
+MAX_ITERATIONS = int(os.environ.get("VENTUREBOT_MAX_ITERATIONS", "5"))
+LLM_TIMEOUT = int(os.environ.get("VENTUREBOT_LLM_TIMEOUT", "120"))
+MAX_TOKENS = int(os.environ.get("VENTUREBOT_MAX_TOKENS", "4096"))
+RUN_DEADLINE_SECONDS = int(os.environ.get("VENTUREBOT_RUN_DEADLINE", "900"))  # 15 min
+
+# ── Budget (enforced in budget.py; configurable + human-raisable) ──────
+DAILY_BUDGET_LIMIT_USD = float(
+    os.environ.get("VENTUREBOT_DAILY_BUDGET_LIMIT", "20.00")
+)
+
+# ── Models: Phase 1 (Gemini / ADK) ─────────────────────────────────────
+MODEL_RESEARCHER = os.environ.get("VENTUREBOT_MODEL_RESEARCHER", "gemini-3.7-flash")
+MODEL_ADVOCATE = os.environ.get("VENTUREBOT_MODEL_ADVOCATE", "gemini-3.7-flash")
+MODEL_CRITIC = os.environ.get("VENTUREBOT_MODEL_CRITIC", "gemini-3.1-pro-preview")
+MODEL_JUDGE = os.environ.get("VENTUREBOT_MODEL_JUDGE", "gemini-3.1-pro-preview")
+MODEL_PRD_WRITER = os.environ.get("VENTUREBOT_MODEL_PRD_WRITER", "gemini-3.1-pro-preview")
+
+# ── Models: Phase 2 (OpenRouter) ───────────────────────────────────────
+MODEL_PO = os.environ.get("VENTUREBOT_MODEL_PO", "deepseek/deepseek-v4-pro")
+MODEL_TESTWRITER = os.environ.get(
+    "VENTUREBOT_MODEL_TESTWRITER", "deepseek/deepseek-chat-v3-0324"
+)
+MODEL_CODER = os.environ.get("VENTUREBOT_MODEL_CODER", "deepseek/deepseek-chat-v3-0324")
+MODEL_QA = os.environ.get("VENTUREBOT_MODEL_QA", "deepseek/deepseek-v4-pro")
+
+OPENROUTER_BASE = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+
+# ── Auth ───────────────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+ALLOWED_EMAILS = [
+    e.strip().lower()
+    for e in os.environ.get("VENTUREBOT_ALLOWED_EMAILS", "").split(",")
+    if e.strip()
+]
+
+# ── Credential resolution ──────────────────────────────────────────────
+def google_api_key() -> str:
+    key = os.environ.get("GOOGLE_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError(
+            "No GOOGLE_API_KEY found. Set it in .env (ADK Gemini models read "
+            "GOOGLE_API_KEY, not GEMINI_API_KEY)."
+        )
+    return key
+
+
+def openrouter_api_key() -> str:
+    env_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if env_key:
+        return env_key
+    auth_path = Path.home() / ".pi" / "agent" / "auth.json"
+    if auth_path.exists():
+        try:
+            data = json.loads(auth_path.read_text())
+            key = data.get("openrouter", {}).get("key", "").strip()
+            if key:
+                return key
+        except (json.JSONDecodeError, OSError):
+            pass
+    raise RuntimeError(
+        "No OpenRouter API key found. Set OPENROUTER_API_KEY or ensure "
+        "~/.pi/agent/auth.json contains an 'openrouter' entry with a 'key'."
+    )
