@@ -111,7 +111,7 @@ When something fails, the system MUST:
 **What this means in practice:**
 
 ❌ **WRONG:** "If google_search fails, fall back to DuckDuckGo API"
-✅ **RIGHT:** "If google_search fails, halt the Critic agent, show the human: 'google_search failed with [error]. Critic cannot fact-check without web search. Fix: check API key, enable Custom Search in GCP project.'"
+✅ **RIGHT:** "If google_search fails, halt the Critic agent, show the human: 'google_search failed with [error]. Critic cannot fact-check without web search. Fix: verify GOOGLE_API_KEY is valid + has quota (run scripts/check_search.sh). No GCP/Custom Search API needed — google_search is Gemini built-in grounding.'"
 
 ❌ **WRONG:** "If ADK deployment fails, fall back to localhost"
 ✅ **RIGHT:** "If ADK deployment fails, show the human the full error (IAM quota? missing API? network issue?) so they can fix the actual problem."
@@ -1265,7 +1265,7 @@ Step 23.1: Prepare demo idea
 
 Step 23.2: Error surface polish
   - LLM timeout → halt pipeline, red banner in UI: 'LLM call timed out after {N}s. Agent: {name}. Model: {model}. Check: network connectivity, API key quota, model availability.'
-  - google_search failure → halt Critic agent, red banner: 'google_search failed: {error}. Critic cannot fact-check. Fix: enable Custom Search API in GCP project.'
+  - google_search failure → halt Critic agent, red banner: 'google_search failed: {error}. Critic cannot fact-check. Fix: verify GOOGLE_API_KEY + quota (scripts/check_search.sh). No GCP enablement needed.'
   - Budget exceeded → halt pipeline, red banner: 'Budget limit breached: ${spent}/${limit}. LLM calls stopped.' + [RAISE LIMIT & CONTINUE] [STOP] buttons. Limit is configurable (VENTUREBOT_DAILY_BUDGET_LIMIT, default $20) and adjustable at runtime via the UI.
 
 Step 23.3: Demo flow script
@@ -1345,7 +1345,7 @@ Task 0 (env setup)
 | # | Risk | Impact | Likelihood | Mitigation |
 |---|------|--------|------------|------------|
 | R1 | google-adk API changes between sample version and pip version | High | Medium | Pin version from adk-samples; check CHANGELOG before upgrading; if ADK breaks, halt with clear error: 'ADK version X.Y.Z incompatible, expected A.B.C. Fix: pip install google-adk==A.B.C' |
-| R2 | `google_search` tool requires Google Cloud project with Custom Search enabled | High | Medium | Test early in Task 0; if google_search fails, halt Critic with error: 'google_search unavailable. Fix: enable Custom Search API in GCP project, verify API key has search permissions' |
+| R2 | `google_search` tool requires a valid GOOGLE_API_KEY with search quota (Gemini grounding; no GCP/Custom Search API) | High | Medium | Test early in Task 0 via scripts/check_search.sh; if google_search fails, halt Critic with error: 'google_search unavailable. Fix: verify API key is valid + has quota' |
 | R3 | SequentialAgent doesn't pass structured output correctly between agents | High | Low | Use string-based pass-through; parse JSON manually in each agent's instruction |
 | R4 | Gemini API rate limits during demo | Medium | Medium | Use Flash for fast agents (Research, Advocate); reserve Pro for deep reasoning (Critic, Judge) |
 | R5 | SSE streaming drops on network hiccup | Medium | Medium | Auto-reconnect with exponential backoff; replay last 10 events on reconnect |

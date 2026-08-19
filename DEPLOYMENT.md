@@ -11,7 +11,7 @@ How to run VentureBot locally, on your VPS, and on GCP (hackathon target).
 | Dashboard (SSO + SSE + HITL + memory) | ✅ Working | `uvicorn` / Docker |
 | Phase 1 debate (Researcher→…→PRD→Auditor) | ✅ Working | via dashboard or TestClient |
 | Self-improvement (M3) | ✅ Working | `/api/memories`, `/scheduler/dream-review` |
-| Phase 2 (blind TDD) | ❌ Not built | out of scope for hackathon (PRD §8.1) |
+| Phase 2 (blind TDD) | ❌ Not built | out of scope for hackathon (PRD §11 — post-hackathon) |
 
 The whole thing is **one FastAPI app** (`venturebot.dashboard:app`). Phase 1 agents
 run **in-process** via `google-adk` — no separate Agent Engine needed for the demo.
@@ -202,7 +202,8 @@ async def m():
 asyncio.run(m())
 "   # expect: LLM: 'OK'
 
-# 3) google_search reachability (Critic needs it) — check quota in GCP console
+# 3) google_search reachability (Critic needs it) — Gemini grounding, no GCP setup needed
+./scripts/check_search.sh   # live ground-check: Researcher + Critic models
 
 # 4) Pick a pre-tested demo idea that PROCEEDs; rehearse the full flow
 ```
@@ -213,11 +214,11 @@ asyncio.run(m())
 
 | Gap | Impact | Fix |
 |-----|--------|-----|
-| `google_search` needs Custom Search API enabled | Critic can't fact-check without it | Enable in GCP console + check quota |
-| Phase 2 not built | Demo is Phase-1-only | PRD §8.1 says out of scope |
+| ~~`google_search` needs Custom Search API enabled~~ | n/a — ADK's `google_search` is Gemini built-in search grounding, not the Custom Search JSON API | Nothing to enable; verify with `scripts/check_search.sh` |
+| Phase 2 not built | Demo is Phase-1-only | PRD §11 (Build Plan) — post-hackathon |
 | Scheduler auth for GCP cron | Nightly job can't use SSO cookie | Use manual button or add SA-auth endpoint |
 | Data dir is a single volume | Not HA | Fine for single-instance demo |
 
 **Bottom line:** you are at the "try it out" stage. Run locally via
 `uvicorn` (section 1) or Docker (section 3), and the GCP path (section 4)
-is ready to execute once you enable the Custom Search API and push the image.
+is ready to execute once you push the image (no Custom Search API needed — search runs on Gemini grounding via `GOOGLE_API_KEY`).

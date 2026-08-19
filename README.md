@@ -29,7 +29,7 @@ Working MVP
 
 ## Current Status (2026-08-19)
 
-> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI is fully wired** (SSE + rendering + HITL buttons). **Self-improvement layer (M3) is built** (SQLite memory store, auto_capture, review_fork, dream_review, idea-tree pruning). **Phase 2 (blind TDD) is not built** (deliberately out of scope for the hackathon — see PRD §8.1).
+> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI is fully wired** (SSE + rendering + HITL buttons). **Self-improvement layer (M3) is built** (SQLite memory store, auto_capture, review_fork, dream_review, idea-tree pruning). **Phase 2 (blind TDD) is not built** (deliberately out of scope for the hackathon — see PRD §11 Build Plan, post-hackathon).
 
 ### Milestone Progress
 
@@ -292,7 +292,7 @@ See `.env.example` for the full template.
 
 ## Known Issues
 
-1. **Phase 2 is missing** — The old Phase 2 code (OpenRouter blind TDD loop) was correctly wiped per SAFETY_REVIEW.md. Deliberately out of scope for the hackathon (PRD §8.1); the dashboard has no Kanban panel for it.
+1. **Phase 2 is missing** — The old Phase 2 code (OpenRouter blind TDD loop) was correctly wiped per SAFETY_REVIEW.md. Deliberately out of scope for the hackathon (PRD §11 Build Plan, post-hackathon); the dashboard has no Kanban panel for it.
 
 2. **Dream review is manual-only by default** — The endpoint works (`POST /scheduler/dream-review`) and the APScheduler cron is wired, but the scheduler is off unless `VENTUREBOT_ENABLE_SCHEDULER=1` is set.
 
