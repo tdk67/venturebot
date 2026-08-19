@@ -36,6 +36,26 @@ cd /root/venturebot
 Set this to whatever you just bought. Then `check_gemini_credits.sh` will show
 `remaining = topup - tracked_spend`.
 
+## Fact-check (2026-08-19): is there really no API?
+
+A suggested "use Cloud Billing `billingAccounts.get`" answer was verified
+against the official reference — it is **partially hallucinated**:
+
+- `billingAccounts.get` **exists** (GET, OAuth2, `roles/billing.viewer` is the
+  correct read-only IAM role).
+- BUT its `BillingAccount` response has only 6 fields — `name`, `open`,
+  `displayName`, `masterBillingAccount`, `parent`, `currencyCode` — **none of
+  which are spend/credit/balance**. So it CANNOT read your credit balance.
+- AI Studio **prepaid credits** (the `429 prepayment credits depleted` thing)
+  are a DIFFERENT system from Google Cloud Billing (which is postpaid /
+  "Paid" tier). AI Studio prepaid balance has **no documented public API**.
+- Real Cloud Billing *spend* data lives in **Billing data exports → BigQuery**
+  (or the Billing Budget API), not in `getBillingAccount` — and still won't
+  show the AI Studio prepaid number.
+
+Conclusion: local usage ledger + live 429-detection + the
+`aistudio.google.com/billing` page is the correct approach.
+
 ## Why this is annoying (so you stop blaming yourself)
 
 - Google **renames/redesigns** the AI Studio + GCP panels constantly.
