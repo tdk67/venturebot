@@ -17,12 +17,16 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, budget, config, run_manager, store
-from .agents.pipeline import DebateResult, run_debate
+from .agents.pipeline import DebateResult, paused_run_ids, resume_debate, run_debate
+from .steering import SteeringInbox
 
 app = FastAPI(title="VentureBot Command Center")
 
 # In-memory SSE fan-out (per-client queues)
 _SSE_CLIENTS: set[asyncio.Queue] = set()
+
+# Shared steering inbox — drained at checkpoints, never mid-turn
+_inbox = SteeringInbox()
 
 
 def _sse_format(event: str, data: dict) -> str:
@@ -123,19 +127,82 @@ async def api_run_phase1(request: Request):
     if not idea:
         raise HTTPException(400, "idea is required")
 
+    # Optional user-provided research URLs
+    urls = data.get("urls", [])
+    if urls:
+        _inbox.add_urls(urls)
+
     asyncio.create_task(_run_phase1_loop(idea))
     return {"status": "started"}
 
 
 async def _run_phase1_loop(idea: str):
     await _broadcast("run_started", {"idea": idea})
-    result = await run_debate(idea)
+    result = await run_debate(idea, inbox=_inbox)
     await _broadcast("run_finished", {
         "status": result.status,
         "verdict": result.verdict,
         "has_prd": bool(result.prd),
+        "prd": result.prd,
         "error": result.error,
     })
+
+
+# ── Steering + HITL resume ───────────────────────────────────────────
+@app.post("/api/steering")
+async def api_steering(request: Request):
+    """Queue steering guidance (ingested at the next checkpoint)."""
+    auth.get_current_user(request)
+    data = await request.json()
+    text = data.get("text", "").strip()
+    urls = data.get("urls", [])
+    if text:
+        _inbox.add_steering(text)
+    if urls:
+        _inbox.add_urls(urls)
+    await _broadcast("steering_queued", _inbox.snapshot())
+    return {"status": "queued", **_inbox.snapshot()}
+
+
+@app.get("/api/steering")
+async def api_steering_status(request: Request):
+    auth.get_current_user(request)
+    return _inbox.snapshot()
+
+
+@app.post("/api/resume")
+async def api_resume(request: Request):
+    """Resume a paused debate with a human decision + optional steering."""
+    auth.get_current_user(request)
+    data = await request.json()
+    run_id = data.get("run_id", "").strip()
+    decision = data.get("decision", "").strip().lower()
+    if not run_id or not decision:
+        raise HTTPException(400, "run_id and decision are required")
+    steering = data.get("steering", "").strip() or None
+    urls = data.get("urls", [])
+
+    async def _resume_loop():
+        try:
+            result = await resume_debate(run_id, decision, steering=steering, urls=urls)
+            await _broadcast("run_finished", {
+                "status": result.status,
+                "verdict": result.verdict,
+                "has_prd": bool(result.prd),
+                "prd": result.prd,
+                "error": result.error,
+            })
+        except KeyError as e:
+            await _broadcast("error", {"message": str(e)})
+
+    asyncio.create_task(_resume_loop())
+    return {"status": "resuming", "run_id": run_id}
+
+
+@app.get("/api/paused")
+async def api_paused(request: Request):
+    auth.get_current_user(request)
+    return {"paused_runs": paused_run_ids()}
 
 
 # ── SSE stream ─────────────────────────────────────────────────────────

@@ -50,6 +50,21 @@
              class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
       <button onclick="doRun()" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg">▶ Debate</button>
     </div>
+    <div class="flex gap-3 mt-2">
+      <input id="url-input" type="text" placeholder="Optional: comma-separated research URLs you already found"
+             class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-xs focus:outline-none focus:border-blue-500">
+    </div>
+  </div>
+
+  <!-- Steering inbox (checkpoint-ingested, never interrupts the loop) -->
+  <div class="mb-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
+    <label class="block text-sm font-bold text-slate-300 mb-2">Steer the running loop (ingested at next checkpoint — won't disrupt it)</label>
+    <div class="flex gap-3">
+      <input id="steering-input" type="text" placeholder="e.g. Focus on the EU market; ignore competitor X"
+             class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
+      <button onclick="doSteering()" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg">Send</button>
+    </div>
+    <p id="steering-status" class="text-xs text-slate-500 mt-2"></p>
   </div>
 
   <!-- Verdict gate (hidden until verdict) -->
@@ -182,12 +197,27 @@ async function fetchState() {
 async function doRun() {
   const idea = document.getElementById('idea-input').value.trim();
   if (!idea) return;
+  const urlStr = document.getElementById('url-input').value.trim();
+  const urls = urlStr ? urlStr.split(',').map(s => s.trim()).filter(Boolean) : [];
   const res = await fetch('/api/run-phase1', {
     method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ idea }),
+    body: JSON.stringify({ idea, urls }),
   });
   const data = await res.json();
-  addMessage('System', 'Debate started: ' + idea);
+  addMessage('System', 'Debate started: ' + idea + (urls.length ? ` (${urls.length} URL(s) ingested)` : ''));
+}
+
+async function doSteering() {
+  const text = document.getElementById('steering-input').value.trim();
+  if (!text) return;
+  const res = await fetch('/api/steering', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ text }),
+  });
+  const data = await res.json();
+  document.getElementById('steering-input').value = '';
+  document.getElementById('steering-status').textContent = 'Queued — will be ingested at next checkpoint.';
+  addMessage('Human', '🛞 Steering: ' + text);
 }
 
 async function doStop() {
@@ -198,15 +228,37 @@ async function doStop() {
 async function verdictAction(action) {
   addMessage('Human', action === 'proceed' ? 'PROCEED ANYWAY' : 'ABORT');
   document.getElementById('verdict-card').classList.add('hidden');
-  // Proceed = force PRD writer; abort = stop. (Phase 2 bridge comes later.)
-  if (action === 'proceed') {
+  const runId = await getCurrentRunId();
+  if (action === 'proceed' && runId) {
+    await fetch('/api/resume', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ run_id: runId, decision: 'proceed' }),
+    });
     addMessage('System', 'Proceeding to PRD Writer...');
+  } else {
+    await fetch('/api/resume', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ run_id: runId, decision: 'abort' }),
+    }).catch(()=>{});
   }
 }
 
 async function prdAction(action) {
   addMessage('Human', action === 'approve' ? 'APPROVED PRD' : 'REJECTED PRD');
   document.getElementById('prd-card').classList.add('hidden');
+  const runId = await getCurrentRunId();
+  if (runId) {
+    await fetch('/api/resume', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ run_id: runId, decision: action }),
+    }).catch(()=>{});
+  }
+}
+
+async function getCurrentRunId() {
+  const res = await fetch('/api/state');
+  const data = await res.json();
+  return data.run_id;
 }
 
 // ── SSE ────────────────────────────────────────────────────────────────
