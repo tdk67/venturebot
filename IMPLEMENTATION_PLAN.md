@@ -2,7 +2,7 @@
 
 **Generated:** 2026-08-19
 **Based on:** PRD.md (VB-PRD-2026-08-18)
-**Status:** NOT ready to execute — Safety & Security Baseline (M0.5) gates all work
+**Status:** IN PROGRESS — M0.5 (Safety Baseline) ✅ DONE, M1 (Phase 1 debate) ✅ DONE
 **Supersedes:** all prior "✅ Working" claims about Phase 2 code.
 
 > **2026-08-19 decision (per SAFETY_REVIEW.md):** the current Phase 2 code
