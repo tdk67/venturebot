@@ -310,9 +310,22 @@ async def api_ideas(request: Request, page: int = 1, category: str | None = None
                    search: str | None = None, status: str | None = None):
     """Paginated, filterable list of ideas (A1)."""
     auth.get_current_user(request)
-    s = get_store()
-    ideas = s.get_idea_tree()
+    ideas = _filter_ideas(category=category, date_year=date_year,
+                          date_month=date_month, search=search, status=status)
 
+    total = len(ideas)
+    total_pages = max(1, -(-total // _ITEMS_PER_PAGE))  # ceil
+    page = max(1, min(page, total_pages))
+    start = (page - 1) * _ITEMS_PER_PAGE
+    items = [_idea_to_item(i) for i in ideas[start:start + _ITEMS_PER_PAGE]]
+    return {"items": items, "total": total, "page": page, "total_pages": total_pages}
+
+
+def _filter_ideas(*, category: str | None = None, date_year: int | None = None,
+                  date_month: int | None = None, search: str | None = None,
+                  status: str | None = None) -> list[dict]:
+    """Apply the A1 query filters to the full idea_tree and return matches."""
+    ideas = get_store().get_idea_tree()
     if status:
         ideas = [i for i in ideas if (i.get("status") or "").upper() == status.upper()]
     if date_year:
@@ -327,13 +340,84 @@ async def api_ideas(request: Request, page: int = 1, category: str | None = None
             i for i in ideas
             if q in (i.get("title") or "").lower() or q in _auto_description(i).lower()
         ]
+    return ideas
 
-    total = len(ideas)
-    total_pages = max(1, -(-total // _ITEMS_PER_PAGE))  # ceil
-    page = max(1, min(page, total_pages))
-    start = (page - 1) * _ITEMS_PER_PAGE
-    items = [_idea_to_item(i) for i in ideas[start:start + _ITEMS_PER_PAGE]]
-    return {"items": items, "total": total, "page": page, "total_pages": total_pages}
+
+@app.get("/api/ideas/facets")
+async def api_ideas_facets(request: Request):
+    """Sidebar facets: tag counts, date tree, status counts (F2, F3, F4)."""
+    auth.get_current_user(request)
+    ideas = get_store().get_idea_tree()
+
+    # Tag counts (across all ideas, unfiltered).
+    tag_counts: dict[str, int] = {}
+    for idea in ideas:
+        for tag in _idea_tags(idea):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+
+    # Date tree: year -> month -> count.
+    years: dict[int, dict[int, int]] = {}
+    for idea in ideas:
+        lt = time.localtime(idea["created_at"])
+        years.setdefault(lt.tm_year, {}).setdefault(lt.tm_mon, 0)
+        years[lt.tm_year][lt.tm_mon] += 1
+
+    # Status counts.
+    status_counts: dict[str, int] = {}
+    for idea in ideas:
+        st = idea.get("status") or "ACTIVE"
+        status_counts[st] = status_counts.get(st, 0) + 1
+
+    return {
+        "tags": [{"tag": t, "count": c} for t, c in sorted(tag_counts.items(), key=lambda kv: -kv[1])],
+        "years": [
+            {
+                "year": y,
+                "months": [
+                    {"month": m, "count": c}
+                    for m, c in sorted(months.items(), key=lambda kv: -kv[0])
+                ],
+            }
+            for y, months in sorted(years.items(), key=lambda kv: -kv[0])
+        ],
+        "statuses": [
+            {"status": s, "count": c}
+            for s, c in sorted(status_counts.items(), key=lambda kv: -kv[1])
+        ],
+    }
+
+
+@app.get("/api/ideas/csv")
+async def api_ideas_csv(request: Request, category: str | None = None,
+                       date_year: int | None = None, date_month: int | None = None,
+                       search: str | None = None, status: str | None = None):
+    """CSV export of the (filtered) idea list (F9)."""
+    auth.get_current_user(request)
+    import csv
+    import io
+
+    ideas = _filter_ideas(category=category, date_year=date_year,
+                          date_month=date_month, search=search, status=status)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["id", "title", "date", "status", "verdict",
+                     "novelty", "feasibility", "market_fit", "tags", "description"])
+    for idea in ideas:
+        item = _idea_to_item(idea)
+        scores = item.get("scores") or {}
+        writer.writerow([
+            item["id"], item["title"], item["date"], item["status"],
+            item["verdict"] or "",
+            scores.get("novelty", ""), scores.get("feasibility", ""),
+            scores.get("market_fit", ""),
+            ";".join(item["tags"]), item["description"],
+        ])
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="venturebot-ideas.csv"'},
+    )
 
 
 @app.get("/api/ideas/{idea_id}")

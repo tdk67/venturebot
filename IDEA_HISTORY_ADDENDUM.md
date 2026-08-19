@@ -313,9 +313,10 @@ data/
 
 ## Implementation Tasks
 
-> **Status (2026-08-19):** Backend (C1–C8) and API (A1–A6) DONE. Tests
-> (T1–T3) DONE — 26 tests. Frontend core panel (Past Ideas + in-progress
-> checkpoints) DONE; full sidebar/date-tree/CSV polish (F1–F9) still open.
+> **Status (2026-08-19):** Backend (C1–C8), API (A1–A6), and tests (T1–T3)
+> DONE. Frontend Milestone III (F1–F9) DONE — sidebar facets (status/category/
+> date tree), search, IdeaCard + PRD viewer, pagination, CSV export, in-progress
+> checkpoint resume panel all implemented. 114 tests passing.
 
 ### Milestone I: Persistence Backend (~4h)
 
@@ -340,27 +341,29 @@ data/
 | A4 | `POST /api/ideas/{id}/archive` | 0.15h | ✅ DONE (→ PARK) |
 | A5 | `GET /api/checkpoints` | 0.15h | ✅ DONE |
 | A6 | `POST /api/checkpoints/{id}/resume` | 0.2h | ✅ DONE |
+| —  | `GET /api/ideas/facets` | 0.5h | ✅ ADDED — sidebar facet counts |
+| —  | `GET /api/ideas/csv` | 0.25h | ✅ ADDED — CSV export (F9) |
 
 ### Milestone III: Frontend (~5h)
 
 | # | Task | Est. | Notes |
 |---|------|------|-------|
-| F1 | Reorganize `templates/index.html` into 2-panel layout | 1h | ⏳ partial (inline panel, not sidebar) |
-| F2 | Sidebar: categories (tags) with counts | 0.75h | ⏳ tags shown per card, no counts |
-| F3 | Sidebar: date tree (year → month) | 0.75h | ⏳ open |
-| F4 | Sidebar: status filter radio buttons | 0.25h | ✅ DONE (dropdown) |
+| F1 | Reorganize `templates/index.html` into 2-panel layout | 1h | ✅ DONE (sidebar + main, responsive) |
+| F2 | Sidebar: categories (tags) with counts | 0.75h | ✅ DONE |
+| F3 | Sidebar: date tree (year → month) | 0.75h | ✅ DONE |
+| F4 | Sidebar: status filter | 0.25h | ✅ DONE (clickable, count badges) |
 | F5 | Search bar component | 0.25h | ✅ DONE |
 | F6 | IdeaCard component (collapsed) | 1h | ✅ DONE |
 | F7 | IdeaCard expanded state (PRD viewer) | 1h | ✅ DONE (View PRD) |
 | F8 | Pagination controls | 0.25h | ✅ DONE |
-| F9 | CSV export link | 0.25h | ⏳ open |
+| F9 | CSV export link | 0.25h | ✅ DONE |
 
 ### Milestone IV: Tests (~1.5h)
 
 | # | Test file | # tests | What it proves |
 |---|-----------|---------|---------------|
 | T1 | `tests/test_checkpoint.py` | 9 | ✅ DONE — atomic, loadable, phase rank, archive move |
-| T2 | `tests/test_ideas_api.py` | 10 | ✅ DONE — filters, detail, archive, auth gate |
+| T2 | `tests/test_ideas_api.py` | 14 | ✅ DONE — filters, detail, archive, facets, CSV, auth gate |
 | T3 | `tests/test_ideas_store.py` | 10 | ✅ DONE — update_idea_content, partial, idempotency, migration, tags |
 
 ## Summary

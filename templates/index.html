@@ -90,36 +90,59 @@
     </div>
   </div>
 
-  <!-- Past ideas + checkpoints (idea history) -->
-  <div class="mb-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-xl font-bold text-slate-300">🗂 Past Ideas</h2>
-      <div class="flex gap-2">
-        <input id="ideas-search" type="text" placeholder="Search ideas…"
-               class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-               oninput="fetchIdeas()">
-        <select id="ideas-status" onchange="fetchIdeas()"
-                class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs">
-          <option value="">All statuses</option>
-          <option value="ACTIVE">ACTIVE</option>
-          <option value="PARK">PARK</option>
-          <option value="PRUNED">PRUNED</option>
-        </select>
+  <!-- Two-panel: sidebar (facets) + main (debate feed / ideas) -->
+  <div class="flex flex-col lg:flex-row gap-6">
+    <!-- Sidebar: idea history facets -->
+    <aside class="lg:w-64 shrink-0">
+      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+        <h2 class="text-lg font-bold text-slate-300 mb-3">🗂 My Ideas</h2>
+        <div class="space-y-4 text-xs">
+          <div>
+            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">Status</h3>
+            <div id="facet-statuses" class="space-y-1"></div>
+          </div>
+          <div>
+            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">Categories</h3>
+            <div id="facet-tags" class="space-y-1"></div>
+          </div>
+          <div>
+            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">Dates</h3>
+            <div id="facet-dates" class="space-y-1"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main column -->
+    <div class="flex-1 min-w-0">
+      <!-- Past ideas + checkpoints (idea history) -->
+      <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-xl font-bold text-slate-300">Past Ideas</h2>
+          <div class="flex gap-2">
+            <input id="ideas-search" type="text" placeholder="Search ideas…"
+                   class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                   oninput="fetchIdeas()">
+            <button onclick="exportIdeas()" title="Export CSV"
+                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">⬇ CSV</button>
+          </div>
+        </div>
+        <div id="active-filters" class="hidden mb-3 text-xs text-slate-400"></div>
+        <div id="in-progress-box" class="hidden mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5">
+          <p class="text-xs text-amber-300 font-bold mb-2">⚠ In-progress debates (crash-safe, resumable):</p>
+          <div id="checkpoint-list" class="space-y-2"></div>
+        </div>
+        <div id="ideas-list" class="space-y-2"></div>
+        <p id="ideas-empty" class="text-xs text-slate-500 hidden">No past ideas yet — pitch one above and it will appear here.</p>
+        <div id="ideas-pager" class="flex items-center gap-3 mt-4 text-xs text-slate-400"></div>
+      </div>
+
+      <!-- Debate feed -->
+      <div class="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
+        <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
+        <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
       </div>
     </div>
-    <div id="in-progress-box" class="hidden mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5">
-      <p class="text-xs text-amber-300 font-bold mb-2">⚠ In-progress debates (crash-safe, resumable):</p>
-      <div id="checkpoint-list" class="space-y-2"></div>
-    </div>
-    <div id="ideas-list" class="space-y-2"></div>
-    <p id="ideas-empty" class="text-xs text-slate-500 hidden">No past ideas yet — pitch one above and it will appear here.</p>
-    <div id="ideas-pager" class="flex items-center gap-3 mt-4 text-xs text-slate-400"></div>
-  </div>
-
-  <!-- Debate feed -->
-  <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800">
-    <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
-    <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
   </div>
 
   <!-- Self-improvement console (M3) -->
@@ -199,6 +222,7 @@ function showApp(user) {
   connectSSE();
   fetchState();
   fetchIdeas();
+  fetchFacets();
   fetchCheckpoints();
 }
 
@@ -369,17 +393,48 @@ function showPRD(prd, audit) {
 
 // ── Past ideas + checkpoints (idea history) ───────────────────────────
 let ideasPage = 1;
+let activeFilters = { category: null, year: null, month: null, status: null, search: '' };
 
 async function fetchIdeas() {
   const q = document.getElementById('ideas-search').value.trim();
-  const status = document.getElementById('ideas-status').value;
+  activeFilters.search = q;
   const params = new URLSearchParams({ page: String(ideasPage) });
   if (q) params.set('search', q);
-  if (status) params.set('status', status);
+  if (activeFilters.status) params.set('status', activeFilters.status);
+  if (activeFilters.category) params.set('category', activeFilters.category);
+  if (activeFilters.year) params.set('date_year', String(activeFilters.year));
+  if (activeFilters.month) params.set('date_month', String(activeFilters.month));
   const res = await fetch('/api/ideas?' + params.toString());
   if (res.status === 401) return;
   const d = await res.json();
   renderIdeas(d);
+  renderActiveFilters();
+}
+
+function renderActiveFilters() {
+  const el = document.getElementById('active-filters');
+  const parts = [];
+  if (activeFilters.category) parts.push('category: ' + activeFilters.category);
+  if (activeFilters.year) parts.push('year: ' + activeFilters.year);
+  if (activeFilters.month) parts.push('month: ' + activeFilters.month);
+  if (activeFilters.status) parts.push('status: ' + activeFilters.status);
+  if (parts.length) {
+    el.textContent = 'Filtering by ' + parts.join(', ') + ' — ';
+    const clear = document.createElement('button');
+    clear.textContent = 'clear';
+    clear.className = 'underline text-blue-400';
+    clear.onclick = () => {
+      activeFilters = { category: null, year: null, month: null, status: null, search: '' };
+      document.getElementById('ideas-search').value = '';
+      ideasPage = 1;
+      fetchIdeas();
+      fetchFacets();
+    };
+    el.appendChild(clear);
+    el.classList.remove('hidden');
+  } else {
+    el.classList.add('hidden');
+  }
 }
 
 function renderIdeas(d) {
@@ -410,7 +465,7 @@ function renderIdeas(d) {
     }
     if (idea.status !== 'PARK') {
       const parkBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white', 'Park');
-      parkBtn.onclick = async () => { await fetch(`/api/ideas/${idea.id}/archive`, {method:'POST'}); fetchIdeas(); };
+      parkBtn.onclick = async () => { await fetch(`/api/ideas/${idea.id}/archive`, {method:'POST'}); fetchIdeas(); fetchFacets(); };
       actions.appendChild(parkBtn);
     }
     card.appendChild(actions);
@@ -427,6 +482,86 @@ function renderIdeas(d) {
     pager.appendChild(el('span', '', `Page ${d.page} of ${d.total_pages}`));
     pager.appendChild(next);
   }
+}
+
+async function fetchFacets() {
+  const res = await fetch('/api/ideas/facets');
+  if (res.status === 401) return;
+  const d = await res.json();
+
+  // Statuses
+  const statusEl = document.getElementById('facet-statuses');
+  statusEl.innerHTML = '';
+  (d.statuses || []).forEach(s => {
+    const row = el('button', 'flex justify-between w-full hover:text-white text-slate-400', '');
+    row.appendChild(el('span', '', (s.status === 'ACTIVE' ? '🟢 ' : s.status === 'PARK' ? '🟡 ' : '🔴 ') + s.status));
+    row.appendChild(el('span', 'text-slate-600', String(s.count)));
+    row.onclick = () => {
+      activeFilters.status = activeFilters.status === s.status ? null : s.status;
+      ideasPage = 1;
+      fetchIdeas();
+      fetchFacets();
+    };
+    statusEl.appendChild(row);
+  });
+
+  // Tags / categories
+  const tagEl = document.getElementById('facet-tags');
+  tagEl.innerHTML = '';
+  (d.tags || []).forEach(t => {
+    const row = el('button', 'flex justify-between w-full hover:text-white text-slate-400', '');
+    row.appendChild(el('span', '', t.tag));
+    row.appendChild(el('span', 'text-slate-600', String(t.count)));
+    row.onclick = () => {
+      activeFilters.category = activeFilters.category === t.tag ? null : t.tag;
+      ideasPage = 1;
+      fetchIdeas();
+      fetchFacets();
+    };
+    tagEl.appendChild(row);
+  });
+
+  // Date tree: year → month
+  const dateEl = document.getElementById('facet-dates');
+  dateEl.innerHTML = '';
+  (d.years || []).forEach(y => {
+    const yearBtn = el('button', 'flex justify-between w-full font-bold text-slate-300 hover:text-white', '');
+    yearBtn.appendChild(el('span', '', String(y.year)));
+    yearBtn.appendChild(el('span', 'text-slate-600', String(y.months.reduce((a, m) => a + m.count, 0))));
+    yearBtn.onclick = () => {
+      activeFilters.year = activeFilters.year === y.year ? null : y.year;
+      activeFilters.month = null;
+      ideasPage = 1;
+      fetchIdeas();
+      fetchFacets();
+    };
+    dateEl.appendChild(yearBtn);
+    y.months.forEach(m => {
+      const mname = new Date(y.year, m.month - 1, 1).toLocaleString('en', {month: 'short'});
+      const mbtn = el('button', 'flex justify-between w-full pl-3 text-slate-400 hover:text-white', '');
+      mbtn.appendChild(el('span', '', mname));
+      mbtn.appendChild(el('span', 'text-slate-600', String(m.count)));
+      mbtn.onclick = () => {
+        activeFilters.year = y.year;
+        activeFilters.month = activeFilters.month === m.month ? null : m.month;
+        ideasPage = 1;
+        fetchIdeas();
+        fetchFacets();
+      };
+      dateEl.appendChild(mbtn);
+    });
+  });
+}
+
+async function exportIdeas() {
+  const params = new URLSearchParams();
+  if (activeFilters.search) params.set('search', activeFilters.search);
+  if (activeFilters.status) params.set('status', activeFilters.status);
+  if (activeFilters.category) params.set('category', activeFilters.category);
+  if (activeFilters.year) params.set('date_year', String(activeFilters.year));
+  if (activeFilters.month) params.set('date_month', String(activeFilters.month));
+  const url = '/api/ideas/csv' + (params.toString() ? '?' + params.toString() : '');
+  window.location.href = url;
 }
 
 async function fetchCheckpoints() {
@@ -484,6 +619,7 @@ window.onload = initAuth;
 setInterval(fetchState, 3000);
 setInterval(fetchMemories, 10000);
 setInterval(fetchIdeas, 15000);
+setInterval(fetchFacets, 15000);
 setInterval(fetchCheckpoints, 8000);
 </script>
 </body>

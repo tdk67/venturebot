@@ -114,3 +114,45 @@ def test_checkpoints_list_empty(monkeypatch, tmp_path):
     r = client.get("/api/checkpoints", cookies=_authed())
     assert r.status_code == 200
     assert r.json() == {"checkpoints": []}
+
+
+def test_ideas_facets(monkeypatch, tmp_path):
+    store = MemoryStore(db_path=tmp_path / "t.db")
+    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    iid = store.create_idea("an ai cli tool")
+    store.update_idea_content(iid, research_brief="gemini dashboard")
+    store.update_idea_status(iid, "PARK", "x")
+    r = client.get("/api/ideas/facets", cookies=_authed())
+    assert r.status_code == 200
+    d = r.json()
+    tags = {t["tag"]: t["count"] for t in d["tags"]}
+    assert tags["ai"] == 1
+    assert tags["cli"] == 1
+    assert {s["status"]: s["count"] for s in d["statuses"]}["PARK"] == 1
+    assert len(d["years"]) == 1
+    store.close()
+
+
+def test_ideas_csv_export(monkeypatch, tmp_path):
+    store = MemoryStore(db_path=tmp_path / "t.db")
+    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    iid = store.create_idea("csv idea")
+    store.update_idea_scores(iid, {"novelty": 8, "feasibility": 7, "market_fit": 6})
+    store.update_idea_content(iid, verdict="PROCEED")
+    r = client.get("/api/ideas/csv", cookies=_authed())
+    assert r.status_code == 200
+    assert "text/csv" in r.headers["content-type"]
+    lines = r.text.strip().splitlines()
+    assert lines[0].startswith("id,title,date,status,verdict")
+    assert any("csv idea" in ln for ln in lines[1:])
+    store.close()
+
+
+def test_ideas_csv_requires_auth():
+    r = client.get("/api/ideas/csv")
+    assert r.status_code == 401
+
+
+def test_ideas_facets_requires_auth():
+    r = client.get("/api/ideas/facets")
+    assert r.status_code == 401
