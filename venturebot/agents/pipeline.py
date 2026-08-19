@@ -34,6 +34,7 @@ from ..artifact_scanner import proof_read_gate, scan_artifact
 from ..memory.auto_capture import capture_turn
 from ..memory.review_fork import analyze_turn
 from ..memory.sqlite_store import get_store
+from ..memory.tagging import extract_tags
 from ..steering import SteeringInbox
 from ..url_fetch import fetch_urls
 from .agents import ALL_AGENTS
@@ -53,6 +54,7 @@ class DebateResult:
     verdict: dict | None = None
     prd: str | None = None
     security_audit: dict | None = None
+    idea_id: str | None = None
     status: str = "running"  # running | needs_clarification | needs_verdict | needs_approval | done | stopped | failed
     error: str | None = None
     events: list[dict] = field(default_factory=list)
@@ -124,6 +126,7 @@ def save_checkpoint(result: DebateResult, phase: str) -> None:
         return
     snapshot = {
         "idea": result.idea,
+        "idea_id": result.idea_id,
         "run_id": run_id,
         "current_phase": phase,
         "status": result.status,
@@ -135,6 +138,7 @@ def save_checkpoint(result: DebateResult, phase: str) -> None:
         "prd": result.prd,
         "security_audit": result.security_audit,
         "error": result.error,
+        "events": result.events,
         "saved_at": time.time(),
     }
     config.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
@@ -195,6 +199,85 @@ def finalize_checkpoint(run_id: str) -> None:
         os.replace(str(src), str(_archive_path(run_id)))
     except OSError:
         pass
+
+
+def _result_from_snapshot(snap: dict) -> DebateResult:
+    """Reconstruct a DebateResult from a checkpoint snapshot."""
+    result = DebateResult(idea=snap.get("idea", ""))
+    result.research_brief = snap.get("research_brief")
+    result.advocate_argument = snap.get("advocate_argument")
+    result.critic_rebuttal = snap.get("critic_rebuttal")
+    result.verdict_text = snap.get("verdict_text")
+    result.verdict = snap.get("verdict")
+    result.prd = snap.get("prd")
+    result.security_audit = snap.get("security_audit")
+    result.idea_id = snap.get("idea_id")
+    result.status = snap.get("status", "running")
+    result.error = snap.get("error")
+    result.events = snap.get("events", []) or []
+    return result
+
+
+def _snapshot_phase_rank(phase: str) -> int:
+    """Map a checkpoint `current_phase` value to its position in the pipeline.
+
+    Phases after the judge are post-verdict: 'verdict' means the verdict was
+    parsed and the gate is next; 'auditor' means the PRD was written;
+    'needs_approval' means everything finished and we only await the human.
+    """
+    order = {
+        "research": 0,
+        "advocate": 1,
+        "critic": 2,
+        "judge": 3,
+        "verdict": 4,
+        "prd_writer": 5,
+        "auditor": 6,
+        "needs_approval": 7,
+    }
+    return order.get(phase, -1)
+
+
+async def resume_from_checkpoint(run_id: str, *, inbox: SteeringInbox | None = None,
+                                session_id: str | None = None) -> DebateResult:
+    """Resume a debate from its last saved checkpoint (C5).
+
+    Reconstructs the DebateResult from disk and re-runs only the agents that
+    have not yet completed, using the stored research_brief/argument/rebuttal
+    as accumulated context. A fresh InMemorySessionService is created — the
+    orchestrator feeds prior text into each agent's prompt, so the ADK session
+    history is not required to resume.
+    """
+    snapshot = load_checkpoint(run_id)
+    if not snapshot:
+        raise KeyError(f"No checkpoint found for run_id {run_id}")
+
+    inbox = inbox or SteeringInbox()
+    result = _result_from_snapshot(snapshot)
+    phase = snapshot.get("current_phase", "research")
+    run_manager.manager.start(run_id)
+
+    session_service = InMemorySessionService()
+    sid = session_id or (
+        await session_service.create_session(app_name="venturebot", user_id="user")
+    ).id
+    user_id = "user"
+
+    try:
+        return await _run_pipeline(result, phase, session_service, sid,
+                                   user_id, inbox, run_id)
+    except run_manager.RunCancelled:
+        result.status = "stopped"
+        store.set_status("stopped")
+        _archive_result(result, run_id)
+        return result
+    except Exception as e:
+        result.status = "failed"
+        result.error = f"{type(e).__name__}: {e}"
+        store.set_status("failed")
+        store.log("System", "core", f"Pipeline failed: {result.error}")
+        _archive_result(result, run_id)
+        return result
 
 
 def _checkpoint_and_log(result: DebateResult, phase: str) -> None:
@@ -275,41 +358,23 @@ def _inject_steering(message: str, block: str) -> str:
     return message + block if block else message
 
 
-async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
-                     session_id: str | None = None) -> DebateResult:
-    """Run the debate to its next gate. Cancellable + resumable.
+async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
+                        user_id, inbox: SteeringInbox, run_id: str) -> DebateResult:
+    """Run the debate from `phase` forward, mutating `result` in place.
 
-    If verdict is PROCEED, runs through PRD Writer and pauses at needs_approval.
-    If PARK/PRUNE, pauses at needs_verdict with full state stored in _SESSIONS.
+    Shared by `run_debate` (starts at "research") and `resume_from_checkpoint`
+    (starts at the stored `current_phase`). No error handling here — callers
+    own the RunCancelled/Exception wrapping.
     """
-    from ..input_guard import guard_input
+    rank = _snapshot_phase_rank(phase)
+    brief = result.research_brief
+    argument = result.advocate_argument
+    rebuttal = result.critic_rebuttal
 
-    inbox = inbox or SteeringInbox()
-    result = DebateResult(idea=idea)
-    run_id = store.start_run()["run_id"]
-    run_manager.manager.start(run_id)
-
-    # Record the idea in the idea tree (M3) for later dream-review pruning.
-    try:
-        get_store().create_idea(idea[:200])
-    except Exception:
-        pass  # memory is best-effort; never block the debate
-
-    guarded = guard_input(idea)
-    if guarded["blocked"]:
-        result.status = "failed"
-        result.error = f"Input blocked by injection guard: {guarded['matches'][:3]}"
-        store.set_status("failed")
-        return result
-
-    session_service = InMemorySessionService()
-    sid = session_id or (await session_service.create_session(app_name="venturebot", user_id="user")).id
-    user_id = "user"
-
-    try:
+    if rank <= 0:
         # 1. Researcher — with user URLs + steering checkpoint
         store.update_task("t1", "in_progress")
-        store.log("System", "core", f"Researching idea: {idea[:120]}")
+        store.log("System", "core", f"Researching idea: {result.idea[:120]}")
 
         # Fetch user-provided URLs (ingested at this checkpoint)
         urls = inbox.drain_urls()
@@ -320,7 +385,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
             if url_digest:
                 store.log("System", "core", "URL research material ingested.")
 
-        research_msg = f"Research this idea: {guarded['text']}"
+        research_msg = f"Research this idea: {result.idea}"
         if url_digest:
             research_msg += (
                 "\n\nThe user has ALREADY done research and provided these URLs. "
@@ -338,6 +403,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         _checkpoint_and_log(result, "advocate")
         run_manager.manager.check()
 
+    if rank <= 1:
         # 2. Advocate (blind: brief only) — steering checkpoint
         store.update_task("t2", "in_progress")
         store.log("System", "core", "Advocate building the case...")
@@ -354,6 +420,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         _checkpoint_and_log(result, "critic")
         run_manager.manager.check()
 
+    if rank <= 2:
         # 3. Critic (has web search) — steering checkpoint
         store.update_task("t3", "in_progress")
         store.log("System", "core", "Critic challenging the Advocate...")
@@ -370,6 +437,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         _checkpoint_and_log(result, "judge")
         run_manager.manager.check()
 
+    if rank <= 3:
         # 4. Judge (structured verdict) — steering checkpoint
         store.update_task("t4", "in_progress")
         store.log("System", "core", "Judge deliberating...")
@@ -387,6 +455,7 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
         _checkpoint_and_log(result, "verdict")
         run_manager.manager.check()
 
+    if rank <= 4:
         # 5. Verdict gate
         v = result.verdict or {}
         avg = _overall_average(v)
@@ -401,19 +470,96 @@ async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
             _save_session(run_id, result, session_service, sid, user_id)
             return result
 
-        # 6. PRD Writer (only on PROCEED)
+    if rank <= 5:
+        # 6. PRD Writer + Security Auditor (only on PROCEED)
         return await _write_prd(result, session_service, sid, user_id, inbox, run_id)
+
+    # Everything up to and including the auditor already completed.
+    return result
+
+
+async def run_debate(idea: str, *, inbox: SteeringInbox | None = None,
+                     session_id: str | None = None) -> DebateResult:
+    """Run the debate to its next gate. Cancellable + resumable.
+
+    If verdict is PROCEED, runs through PRD Writer and pauses at needs_approval.
+    If PARK/PRUNE, pauses at needs_verdict with full state stored in _SESSIONS.
+    """
+    from ..input_guard import guard_input
+
+    inbox = inbox or SteeringInbox()
+    result = DebateResult(idea=idea)
+    run_id = store.start_run()["run_id"]
+    run_manager.manager.start(run_id)
+
+    # Record the idea in the idea tree (M3) for later dream-review pruning.
+    try:
+        result.idea_id = get_store().create_idea(idea[:200])
+        get_store().update_idea_content(result.idea_id, workspace_path=f"runs/{run_id}/")
+    except Exception:
+        pass  # memory is best-effort; never block the debate
+
+    guarded = guard_input(idea)
+    if guarded["blocked"]:
+        result.status = "failed"
+        result.error = f"Input blocked by injection guard: {guarded['matches'][:3]}"
+        store.set_status("failed")
+        return result
+
+    session_service = InMemorySessionService()
+    sid = session_id or (await session_service.create_session(app_name="venturebot", user_id="user")).id
+    user_id = "user"
+
+    try:
+        return await _run_pipeline(result, "research", session_service, sid,
+                                   user_id, inbox, run_id)
 
     except run_manager.RunCancelled:
         result.status = "stopped"
         store.set_status("stopped")
+        _archive_result(result, run_id)
         return result
     except Exception as e:
         result.status = "failed"
         result.error = f"{type(e).__name__}: {e}"
         store.set_status("failed")
         store.log("System", "core", f"Pipeline failed: {result.error}")
+        _archive_result(result, run_id)
         return result
+
+
+def _archive_result(result: DebateResult, run_id: str) -> None:
+    """Finalize a finished/stopped/failed run (C6 + C8).
+
+    Populates the idea_tree row with the debate outputs (research brief,
+    transcript, PRD, verdict, scores) and moves the checkpoint from the
+    in-progress dir to the immutable archive. Best-effort: never raise.
+    """
+    try:
+        s = get_store()
+        idea_id = result.idea_id
+        if not idea_id:
+            rows = s.get_idea_tree()
+            # Fallback: match the most recently created idea by title.
+            idea_id = rows[0]["id"] if rows else None
+        if idea_id:
+            s.update_idea_content(
+                idea_id,
+                research_brief=result.research_brief,
+                debate_transcript=json.dumps(result.events),
+                prd_text=result.prd,
+                verdict=(result.verdict or {}).get("verdict"),
+            )
+            scores = (result.verdict or {}).get("scores")
+            if scores:
+                s.update_idea_scores(idea_id, scores)
+            if result.status == "done":
+                s.update_idea_status(idea_id, "ACTIVE")
+            elif result.status in ("stopped", "failed"):
+                s.update_idea_status(idea_id, "PARK", f"status={result.status}")
+    except Exception:
+        pass  # archive write is best-effort; the checkpoint file still moves
+    finalize_checkpoint(run_id)
 
 
 async def _write_prd(result: DebateResult, session_service, sid, user_id,
@@ -463,6 +609,9 @@ async def _write_prd(result: DebateResult, session_service, sid, user_id,
     store.log("System", "core", "PRD ready — awaiting human approval.")
     _checkpoint_and_log(result, "needs_approval")
     _save_session(run_id, result, session_service, sid, user_id)
+    # Persist the PRD + audit to the idea tree before the human gates it,
+    # so the archive is complete even if the server restarts at this gate.
+    _archive_result(result, run_id)
     return result
 
 
@@ -492,6 +641,7 @@ async def resume_debate(run_id: str, decision: str, steering: str | None = None,
         result.status = "stopped"
         store.set_status("stopped")
         store.log("Human", "user", f"Decision: {decision.upper()} — stopping.")
+        _archive_result(result, run_id)
         return result
 
     if decision == "proceed":
@@ -503,6 +653,7 @@ async def resume_debate(run_id: str, decision: str, steering: str | None = None,
         result.status = "done"
         store.set_status("approved")
         store.log("Human", "user", "PRD APPROVED.")
+        _archive_result(result, run_id)
         return result
 
     raise ValueError(f"Unknown decision: {decision}")

@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS idea_tree (
     research_brief TEXT,
     debate_transcript TEXT,
     prd_text TEXT,
+    verdict TEXT,
     workspace_path TEXT,
     human_intervention_count INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL,
@@ -102,6 +103,12 @@ class MemoryStore:
             conn = sqlite3.connect(self.db_path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             conn.executescript(_SCHEMA)
+            # Lightweight migration for columns added after the initial schema
+            # (e.g. idea_tree.verdict). Idempotent: ignore if it already exists.
+            try:
+                conn.execute("ALTER TABLE idea_tree ADD COLUMN verdict TEXT")
+            except sqlite3.OperationalError:
+                pass
             conn.commit()
             self._conn = conn
         return self._conn
@@ -283,6 +290,45 @@ class MemoryStore:
             c.execute(
                 "UPDATE idea_tree SET scores = ?, updated_at = ? WHERE id = ?",
                 (json.dumps(scores), time.time(), idea_id),
+            )
+            c.commit()
+
+    def update_idea_content(
+        self,
+        idea_id: str,
+        *,
+        research_brief: str | None = None,
+        debate_transcript: str | None = None,
+        prd_text: str | None = None,
+        verdict: str | None = None,
+        workspace_path: str | None = None,
+    ) -> None:
+        """Idempotent partial update of an idea's content columns (C7).
+
+        Only non-None values are written, so repeated calls are safe and each
+        caller updates just the slice it owns. Returns without touching the DB
+        if nothing is provided.
+        """
+        updates: dict[str, object] = {}
+        if research_brief is not None:
+            updates["research_brief"] = research_brief
+        if debate_transcript is not None:
+            updates["debate_transcript"] = debate_transcript
+        if prd_text is not None:
+            updates["prd_text"] = prd_text
+        if verdict is not None:
+            updates["verdict"] = verdict
+        if workspace_path is not None:
+            updates["workspace_path"] = workspace_path
+        if not updates:
+            return
+        updates["updated_at"] = time.time()
+        assignments = ", ".join(f"{col} = ?" for col in updates)
+        with self._lock:
+            c = self._ensure_conn()
+            c.execute(
+                f"UPDATE idea_tree SET {assignments} WHERE id = ?",
+                (*updates.values(), idea_id),
             )
             c.commit()
 

@@ -90,6 +90,32 @@
     </div>
   </div>
 
+  <!-- Past ideas + checkpoints (idea history) -->
+  <div class="mb-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-xl font-bold text-slate-300">🗂 Past Ideas</h2>
+      <div class="flex gap-2">
+        <input id="ideas-search" type="text" placeholder="Search ideas…"
+               class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+               oninput="fetchIdeas()">
+        <select id="ideas-status" onchange="fetchIdeas()"
+                class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1.5 text-xs">
+          <option value="">All statuses</option>
+          <option value="ACTIVE">ACTIVE</option>
+          <option value="PARK">PARK</option>
+          <option value="PRUNED">PRUNED</option>
+        </select>
+      </div>
+    </div>
+    <div id="in-progress-box" class="hidden mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5">
+      <p class="text-xs text-amber-300 font-bold mb-2">⚠ In-progress debates (crash-safe, resumable):</p>
+      <div id="checkpoint-list" class="space-y-2"></div>
+    </div>
+    <div id="ideas-list" class="space-y-2"></div>
+    <p id="ideas-empty" class="text-xs text-slate-500 hidden">No past ideas yet — pitch one above and it will appear here.</p>
+    <div id="ideas-pager" class="flex items-center gap-3 mt-4 text-xs text-slate-400"></div>
+  </div>
+
   <!-- Debate feed -->
   <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800">
     <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
@@ -172,6 +198,8 @@ function showApp(user) {
   document.getElementById('user-badge').textContent = user.email || '';
   connectSSE();
   fetchState();
+  fetchIdeas();
+  fetchCheckpoints();
 }
 
 async function doLogout() {
@@ -339,6 +367,90 @@ function showPRD(prd, audit) {
   }
 }
 
+// ── Past ideas + checkpoints (idea history) ───────────────────────────
+let ideasPage = 1;
+
+async function fetchIdeas() {
+  const q = document.getElementById('ideas-search').value.trim();
+  const status = document.getElementById('ideas-status').value;
+  const params = new URLSearchParams({ page: String(ideasPage) });
+  if (q) params.set('search', q);
+  if (status) params.set('status', status);
+  const res = await fetch('/api/ideas?' + params.toString());
+  if (res.status === 401) return;
+  const d = await res.json();
+  renderIdeas(d);
+}
+
+function renderIdeas(d) {
+  const list = document.getElementById('ideas-list');
+  const empty = document.getElementById('ideas-empty');
+  const pager = document.getElementById('ideas-pager');
+  list.innerHTML = '';
+  empty.classList.toggle('hidden', d.total !== 0);
+  (d.items || []).forEach(idea => {
+    const card = el('div', 'p-3 rounded-lg bg-slate-800/60 border border-slate-700');
+    const dot = {ACTIVE:'🟢', PARK:'🟡', PRUNED:'🔴'}[idea.status] || '⚪';
+    const row = el('div', 'flex items-center justify-between');
+    row.appendChild(el('div', 'text-sm font-bold text-slate-100', `${dot} ${idea.title}`));
+    row.appendChild(el('span', 'text-xs text-slate-400', idea.date));
+    card.appendChild(row);
+    card.appendChild(el('div', 'text-xs text-slate-400 mt-1', idea.description));
+    const tags = el('div', 'flex flex-wrap gap-1 mt-2');
+    (idea.tags || []).forEach(t => tags.appendChild(el('span', 'px-2 py-0.5 text-[10px] rounded bg-slate-700 text-slate-300', t)));
+    card.appendChild(tags);
+    const actions = el('div', 'flex gap-2 mt-2');
+    if (idea.has_prd) {
+      const viewBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white', 'View PRD');
+      viewBtn.onclick = () => fetch(`/api/ideas/${idea.id}`).then(r => r.json()).then(full => {
+        const pre = el('pre', 'text-xs text-slate-200 whitespace-pre-wrap bg-slate-900 p-3 rounded mt-2', full.prd_text || '(no PRD text)');
+        card.appendChild(pre);
+      });
+      actions.appendChild(viewBtn);
+    }
+    if (idea.status !== 'PARK') {
+      const parkBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white', 'Park');
+      parkBtn.onclick = async () => { await fetch(`/api/ideas/${idea.id}/archive`, {method:'POST'}); fetchIdeas(); };
+      actions.appendChild(parkBtn);
+    }
+    card.appendChild(actions);
+    list.appendChild(card);
+  });
+  // pagination
+  pager.innerHTML = '';
+  if (d.total_pages > 1) {
+    const prev = el('button', 'px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white', '‹ Prev');
+    prev.onclick = () => { ideasPage = Math.max(1, d.page - 1); fetchIdeas(); };
+    const next = el('button', 'px-2 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white', 'Next ›');
+    next.onclick = () => { ideasPage = Math.min(d.total_pages, d.page + 1); fetchIdeas(); };
+    pager.appendChild(prev);
+    pager.appendChild(el('span', '', `Page ${d.page} of ${d.total_pages}`));
+    pager.appendChild(next);
+  }
+}
+
+async function fetchCheckpoints() {
+  const res = await fetch('/api/checkpoints');
+  if (res.status === 401) return;
+  const d = await res.json();
+  const box = document.getElementById('in-progress-box');
+  const list = document.getElementById('checkpoint-list');
+  const cps = d.checkpoints || [];
+  box.classList.toggle('hidden', cps.length === 0);
+  list.innerHTML = '';
+  cps.forEach(cp => {
+    const row = el('div', 'flex items-center justify-between');
+    row.appendChild(el('span', 'text-xs text-slate-300', `${cp.idea} — phase: ${cp.phase}`));
+    const resumeBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-amber-600 hover:bg-amber-500 text-white', 'Resume');
+    resumeBtn.onclick = async () => {
+      await fetch(`/api/checkpoints/${cp.run_id}/resume`, {method:'POST'});
+      addMessage('System', 'Resuming checkpoint ' + cp.run_id + '...');
+    };
+    row.appendChild(resumeBtn);
+    list.appendChild(row);
+  });
+}
+
 // ── Self-improvement console (M3) ─────────────────────────────────────
 async function fetchMemories() {
   const res = await fetch('/api/memories');
@@ -371,6 +483,8 @@ async function doDreamReview() {
 window.onload = initAuth;
 setInterval(fetchState, 3000);
 setInterval(fetchMemories, 10000);
+setInterval(fetchIdeas, 15000);
+setInterval(fetchCheckpoints, 8000);
 </script>
 </body>
 </html>

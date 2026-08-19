@@ -313,51 +313,55 @@ data/
 
 ## Implementation Tasks
 
+> **Status (2026-08-19):** Backend (C1–C8) and API (A1–A6) DONE. Tests
+> (T1–T3) DONE — 26 tests. Frontend core panel (Past Ideas + in-progress
+> checkpoints) DONE; full sidebar/date-tree/CSV polish (F1–F9) still open.
+
 ### Milestone I: Persistence Backend (~4h)
 
 | # | Task | File(s) | Est. | Notes |
 |---|------|---------|------|-------|
-| C1 | Add `checkpoint_dir` to `config.py` | `config.py` | 0.1h | `data/checkpoints/` + `data/archives/` |
-| C2 | Add `save_checkpoint(result, phase)` function | `pipeline.py` | 0.5h | Atomic tempfile+rename; phase enum |
-| C3 | Wire checkpoint to every agent turn boundary | `pipeline.py` | 0.5h | After lines 230, 246, 261, 277, 323, 339 |
-| C4 | Add `load_checkpoint(run_id)` function | `pipeline.py` | 0.5h | Read JSON, reconstruct DebateResult |
-| C5 | Add `resume_from_checkpoint(run_id)` to pipeline | `pipeline.py` | 1h | Skip completed phases; start from `current_phase` |
-| C6 | Add `finalize_checkpoint(run_id)` — move to archives | `pipeline.py` | 0.25h | After `done`/`stopped` status |
-| C7 | Add `update_idea_content()` to MemoryStore | `sqlite_store.py` | 0.5h | IDEMPOTENT partial update |
-| C8 | Wire idea_tree population from checkpoint | `pipeline.py` | 0.5h | At completion, save to idea_tree |
+| C1 | Add `checkpoint_dir` to `config.py` | `config.py` | 0.1h | ✅ DONE |
+| C2 | Add `save_checkpoint(result, phase)` function | `pipeline.py` | 0.5h | ✅ DONE |
+| C3 | Wire checkpoint to every agent turn boundary | `pipeline.py` | 0.5h | ✅ DONE |
+| C4 | Add `load_checkpoint(run_id)` function | `pipeline.py` | 0.5h | ✅ DONE |
+| C5 | Add `resume_from_checkpoint(run_id)` to pipeline | `pipeline.py` | 1h | ✅ DONE (`_run_pipeline` shared) |
+| C6 | Add `finalize_checkpoint(run_id)` — move to archives | `pipeline.py` | 0.25h | ✅ DONE |
+| C7 | Add `update_idea_content()` to MemoryStore | `sqlite_store.py` | 0.5h | ✅ DONE |
+| C8 | Wire idea_tree population from checkpoint | `pipeline.py` | 0.5h | ✅ DONE (`_archive_result`) |
 
 ### Milestone II: API Endpoints (~2h)
 
 | # | Task | Est. | Notes |
 |---|------|------|-------|
-| A1 | `GET /api/ideas` — paginated list with filters | 1h | Query params: page, category, date, search, status |
-| A2 | `GET /api/ideas/{id}` — full detail | 0.25h | Join idea_tree row + checkpoints archive |
-| A3 | `POST /api/ideas/{id}/resume` | 0.25h | Set `current_idea_id`, populate steering inbox |
-| A4 | `POST /api/ideas/{id}/archive` | 0.15h | Set status → PARK |
-| A5 | `GET /api/checkpoints` | 0.15h | Read checkpoints/ dir, return paused runs |
-| A6 | `POST /api/checkpoints/{id}/resume` | 0.2h | Call `pipeline.resume_from_checkpoint(id)` |
+| A1 | `GET /api/ideas` — paginated list with filters | 1h | ✅ DONE |
+| A2 | `GET /api/ideas/{id}` — full detail | 0.25h | ✅ DONE |
+| A3 | `POST /api/ideas/{id}/resume` | 0.25h | ✅ DONE (queues title into steering inbox) |
+| A4 | `POST /api/ideas/{id}/archive` | 0.15h | ✅ DONE (→ PARK) |
+| A5 | `GET /api/checkpoints` | 0.15h | ✅ DONE |
+| A6 | `POST /api/checkpoints/{id}/resume` | 0.2h | ✅ DONE |
 
 ### Milestone III: Frontend (~5h)
 
 | # | Task | Est. | Notes |
 |---|------|------|-------|
-| F1 | Reorganize `templates/index.html` into 2-panel layout | 1h | Sidebar (260px) + main area; responsive |
-| F2 | Sidebar: categories (tags) with counts | 0.75h | Live extraction from `/api/ideas` response |
-| F3 | Sidebar: date tree (year → month) | 0.75h | Mirror portfolio `Sidebar.tsx` date logic |
-| F4 | Sidebar: status filter radio buttons | 0.25h | ACTIVE / PARK / PRUNED |
-| F5 | Search bar component | 0.25h | Instant filter, clear button |
-| F6 | IdeaCard component (collapsed) | 1h | Title, date, scores, tags, short description, link buttons |
-| F7 | IdeaCard expanded state (PRD viewer) | 1h | Read more → full description + transcript |
-| F8 | Pagination controls | 0.25h | Prev/Next + "Page X of Y" |
-| F9 | CSV export link | 0.25h | `GET /api/ideas?format=csv` or simple client-side gen |
+| F1 | Reorganize `templates/index.html` into 2-panel layout | 1h | ⏳ partial (inline panel, not sidebar) |
+| F2 | Sidebar: categories (tags) with counts | 0.75h | ⏳ tags shown per card, no counts |
+| F3 | Sidebar: date tree (year → month) | 0.75h | ⏳ open |
+| F4 | Sidebar: status filter radio buttons | 0.25h | ✅ DONE (dropdown) |
+| F5 | Search bar component | 0.25h | ✅ DONE |
+| F6 | IdeaCard component (collapsed) | 1h | ✅ DONE |
+| F7 | IdeaCard expanded state (PRD viewer) | 1h | ✅ DONE (View PRD) |
+| F8 | Pagination controls | 0.25h | ✅ DONE |
+| F9 | CSV export link | 0.25h | ⏳ open |
 
 ### Milestone IV: Tests (~1.5h)
 
 | # | Test file | # tests | What it proves |
 |---|-----------|---------|---------------|
-| T1 | `tests/test_checkpoint.py` | 5 | Checkpoint is atomic, loadable, resumes from correct phase |
-| T2 | `tests/test_ideas_api.py` | 7 | List with filters, detail by id, status changes, auth gate |
-| T3 | `tests/test_ideas_store.py` | 3 | update_idea_content, partial update, idempotency |
+| T1 | `tests/test_checkpoint.py` | 9 | ✅ DONE — atomic, loadable, phase rank, archive move |
+| T2 | `tests/test_ideas_api.py` | 10 | ✅ DONE — filters, detail, archive, auth gate |
+| T3 | `tests/test_ideas_store.py` | 10 | ✅ DONE — update_idea_content, partial, idempotency, migration, tags |
 
 ## Summary
 
