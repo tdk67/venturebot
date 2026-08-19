@@ -2,7 +2,7 @@
 
 **Generated:** 2026-08-19
 **Based on:** PRD.md (VB-PRD-2026-08-18)
-**Status:** IN PROGRESS — M0.5 (Safety Baseline) ✅ DONE, M1 (Phase 1 debate) ✅ DONE, M2 (Observable UI) ✅ DONE, M3 (Self-Improvement) ✅ DONE (memory store, idea tree, auto_capture, review_fork, dream_review, scheduler, UI panel)
+**Status:** IN PROGRESS — M0.5 (Safety Baseline) ✅ 90% (S10 Security Auditor done; S8 MCP config remaining), M1 ✅ DONE, M2 ✅ DONE, M3 ✅ DONE
 **Supersedes:** all prior "✅ Working" claims about Phase 2 code.
 
 > **2026-08-19 decision (per SAFETY_REVIEW.md):** the current Phase 2 code
