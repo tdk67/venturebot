@@ -29,7 +29,7 @@ Working MVP
 
 ## Current Status (2026-08-19)
 
-> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI is fully wired** (SSE + rendering + HITL buttons). **Self-improvement layer (M3) is built** (SQLite memory store, auto_capture, review_fork, dream_review, idea-tree pruning). **Phase 2 (blind TDD) is not built** (deliberately out of scope for the hackathon — see PRD §11 Build Plan, post-hackathon).
+> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI is fully wired** (SSE + rendering + HITL buttons + idea-history timeline). **Self-improvement layer (M3) is built** (SQLite memory store, auto_capture, review_fork, dream_review, idea-tree pruning). **Idea history + crash-safe checkpoint persistence is built** — ideas archive with PRD/transcript/scores, and mid-run checkpoints survive restarts via `resume_from_checkpoint`. **Phase 2 (blind TDD) is not built** (deliberately out of scope for the hackathon — see PRD §11 Build Plan, post-hackathon).
 
 ### Milestone Progress
 
@@ -37,7 +37,7 @@ Working MVP
 |-----------|----------|--------|
 | **M0.5** Safety Baseline (S0-S10) | 90% | ✅ Kill switch, sandbox, budget, auth, input guard, XSS-safe, Security Auditor (S10) + proof-read gate. ⚠️ MCP config (S8) missing |
 | **M1** Phase 1 Core Debate | 85% | ✅ 5 ADK agents, custom pipeline, HITL gates, steering injection, URL ingestion |
-| **M2** Observable UI | 90% | ✅ FastAPI + SSE + auth + JS rendering + HITL buttons (inline in `templates/index.html`) |
+| **M2** Observable UI | 95% | ✅ FastAPI + SSE + auth + JS rendering + HITL buttons + idea-history timeline with sidebar facets (status/tag/date), search, PRD viewer, pagination, CSV export |
 | **M3** Self-Improvement | 90% | ✅ SQLite store, idea tree + pruning, auto_capture, review_fork (wired fire-and-forget), dream_review, scheduler, `/api/memories` + technique-library UI panel |
 | **M4** Shadow Mode + GCP Deploy | 0% | ❌ Not started |
 
@@ -62,6 +62,9 @@ Working MVP
 | State store (JSON file-backed) | `venturebot/store.py` | ✅ Working |
 | URL fetcher (research material ingestion) | `venturebot/url_fetch.py` | ✅ Working |
 | Gemini usage tracker | `venturebot/gemini_usage.py` | ✅ Working |
+| Checkpoint persistence (crash-safe resume) | `venturebot/agents/pipeline.py` | ✅ Working — atomic per-agent snapshots in `data/checkpoints/`, archived on completion |
+| Idea archive (PRD/transcript/scores in SQLite) | `venturebot/memory/sqlite_store.py` | ✅ Working — `idea_tree` populated by pipeline, queried by `/api/ideas*` |
+| Tag extraction (portfolio-style categories) | `venturebot/memory/tagging.py` | ✅ Working — keyword-based |
 | Phase 2 agents (PO, TestWriter, Coder, QA_PO) | — | ❌ Wiped (safety review), not rebuilt |
 | Self-improvement layer (auto_capture, review_fork, dream_review) | `venturebot/memory/` | ✅ Built (M3) |
 | Idea tree with pruning | `venturebot/memory/idea_tree.py` | ✅ Built + deterministic pruning rules |
@@ -123,7 +126,7 @@ Working MVP
 ├── templates/
 │   └── index.html                  ← dashboard SPA (SSO, SSE, HITL buttons, XSS-safe rendering)
 │
-├── tests/                          ← pytest test suite (64 tests)
+├── tests/                          ← pytest test suite (114 tests)
 │   ├── test_safety.py              ← guard, input_guard, sandbox, budget, kill switch
 │   ├── test_dashboard.py           ← API endpoint auth + status codes
 │   ├── test_pipeline.py            ← verdict parsing, debate flow (mocked)
@@ -132,7 +135,10 @@ Working MVP
 │   ├── test_url_fetch.py           ← URL validation + fetching
 │   ├── test_memory.py              ← memory store CRUD, pruning rules, throttle
 │   ├── test_review_fork.py         ← review_fork analysis, scheduler
-│   └── test_artifact_scanner.py    ← S10 scanner + proof-read gate + audit parsing
+│   ├── test_artifact_scanner.py    ← S10 scanner + proof-read gate + audit parsing
+│   ├── test_checkpoint.py          ← checkpoint atomicity, resume, archive move
+│   ├── test_ideas_store.py         ← update_idea_content, partial/idempotent, tags
+│   └── test_ideas_api.py           ← /api/ideas* + checkpoints + facets + CSV
 │
 ├── data/
 │   ├── budget.json                 ← daily spend limit config
@@ -222,6 +228,14 @@ Open http://localhost:8080 — the dashboard will show:
 | GET | `/api/paused` | List of paused run IDs | ✅ |
 | GET | `/api/events` | SSE stream of pipeline events | ✅ |
 | POST | `/api/budget/raise` | Raise daily budget limit | ✅ |
+| GET | `/api/ideas` | Paginated idea list (filters: search, status, category, date) | ✅ |
+| GET | `/api/ideas/facets` | Sidebar facets (tag/date/status counts) | ✅ |
+| GET | `/api/ideas/csv` | CSV export of filtered ideas | ✅ |
+| GET | `/api/ideas/{id}` | Full idea detail (PRD, transcript, scores) | ✅ |
+| POST | `/api/ideas/{id}/resume` | Load an idea as active debate context | ✅ |
+| POST | `/api/ideas/{id}/archive` | Park an idea | ✅ |
+| GET | `/api/checkpoints` | List in-progress (resumable) checkpointed runs | ✅ |
+| POST | `/api/checkpoints/{id}/resume` | Resume a checkpointed debate after restart | ✅ |
 
 ### Run Tests
 
@@ -296,9 +310,9 @@ See `.env.example` for the full template.
 
 2. **Dream review is manual-only by default** — The endpoint works (`POST /scheduler/dream-review`) and the APScheduler cron is wired, but the scheduler is off unless `VENTUREBOT_ENABLE_SCHEDULER=1` is set.
 
-3. **Paused sessions are in-memory** — `_SESSIONS` holds ADK session objects (runtime-only); metadata is persisted to `data/paused_sessions.json` for observability, but a full resume across restart is not supported.
+3. **Paused sessions are in-memory** — `_SESSIONS` holds ADK session objects (runtime-only) for the *verdict/PRD gate resume* path. The **checkpoint layer** (`data/checkpoints/<run_id>.json`) now covers crash/restart recovery: `resume_from_checkpoint` reconstructs `DebateResult` from disk and re-runs only the remaining phases, so mid-run data loss is solved even though the ADK session history itself is not persisted.
 
-4. **Test coverage is solid but ADK agents lightly tested** — 73 tests. Safety-critical paths (budget, auth, kill switch, sandbox) and the memory layer have coverage; the ADK agent logic itself is mocked at the Runner boundary.
+4. **Test coverage is solid but ADK agents lightly tested** — 114 tests. Safety-critical paths (budget, auth, kill switch, sandbox), the memory layer, and idea-history/checkpoint persistence have coverage; the ADK agent logic itself is mocked at the Runner boundary.
 
 ---
 
