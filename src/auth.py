@@ -82,7 +82,13 @@ def verify_google_credential(credential: str) -> dict:
 
 
 def get_current_user(request: Request) -> dict:
-    """FastAPI dependency: returns the logged-in user or raises 401."""
+    """FastAPI dependency: returns the logged-in user or raises 401.
+
+    When config.NO_AUTH is set (prototype phase), returns a synthetic local
+    user so protected routes pass through without any login.
+    """
+    if config.NO_AUTH:
+        return {"email": "local", "name": "Local", "picture": ""}
     token = request.cookies.get("vb_session")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")

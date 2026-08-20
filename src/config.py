@@ -72,6 +72,10 @@ ALLOWED_EMAILS = [
 ]
 COOKIE_SECURE = os.environ.get("VENTUREBOT_COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
 
+# Prototype phase: auth disabled (single-user, no login). Set to 0 to re-enable
+# Google SSO when the multi-user feature lands. Default ON for the prototype.
+NO_AUTH = os.environ.get("VENTUREBOT_NO_AUTH", "1").strip().lower() in ("1", "true", "yes", "")
+
 # ── Credential resolution ──────────────────────────────────────────────
 def google_api_key() -> str:
     key = os.environ.get("GOOGLE_API_KEY", "").strip()

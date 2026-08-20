@@ -35,28 +35,42 @@ def test_create_session_token_returns_string():
     assert len(token) > 10
 
 
-def test_get_current_user_rejects_missing_cookie():
-    """Request without session cookie should raise 401."""
+def test_get_current_user_rejects_missing_cookie(monkeypatch):
+    """Request without session cookie should raise 401 (auth enforced)."""
     from unittest.mock import Mock
-    
+
+    monkeypatch.setattr(config, "NO_AUTH", False)
     request = Mock()
     request.cookies = {}
-    
+
     with pytest.raises(HTTPException) as exc_info:
         auth.get_current_user(request)
     assert exc_info.value.status_code == 401
 
 
-def test_get_current_user_rejects_invalid_token():
-    """Request with invalid session token should raise 401."""
+def test_get_current_user_rejects_invalid_token(monkeypatch):
+    """Request with invalid session token should raise 401 (auth enforced)."""
     from unittest.mock import Mock
-    
+
+    monkeypatch.setattr(config, "NO_AUTH", False)
     request = Mock()
     request.cookies = {"vb_session": "invalid-token"}
-    
+
     with pytest.raises(HTTPException) as exc_info:
         auth.get_current_user(request)
     assert exc_info.value.status_code == 401
+
+
+def test_get_current_user_no_auth_bypass(monkeypatch):
+    """NO_AUTH=True returns a synthetic local user without a session (prototype)."""
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(config, "NO_AUTH", True)
+    request = Mock()
+    request.cookies = {}
+
+    user = auth.get_current_user(request)
+    assert user == {"email": "local", "name": "Local", "picture": ""}
 
 
 def test_session_token_roundtrip():

@@ -98,6 +98,13 @@ docker logs -f venturebot
 > **HTTPS note:** behind nginx/caddy, set `VENTUREBOT_SECURE_COOKIES=1`
 > (or the app auto-detects `https://` in the request). Without TLS, session
 > cookies are sent in cleartext — fine for localhost, not for the open internet.
+>
+> **Google SSO note (per-domain, mandatory):** the `GOOGLE_CLIENT_ID` must have
+> **this hostname listed under "Authorized JavaScript origins"** in the Google
+> Cloud Console (APIs & Services → Credentials → the Web client). Without it,
+> login fails with `The given origin is not allowed for the given client ID`.
+> Add every domain you serve (e.g. `https://venturebot.taskmind-ai.com`). No
+> redirect URI is needed — this app uses the JWT (ID-token) flow, not the code flow.
 
 ### Reverse proxy (nginx example)
 
