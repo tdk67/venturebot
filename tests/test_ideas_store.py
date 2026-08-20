@@ -7,8 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from venturebot.memory.sqlite_store import MemoryStore
-from venturebot.memory.tagging import extract_tags
+from src.memory.sqlite_store import MemoryStore
+from src.memory.tagging import extract_tags
 
 
 @pytest.fixture()

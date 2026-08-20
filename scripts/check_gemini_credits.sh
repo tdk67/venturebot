@@ -7,7 +7,7 @@ set -u
 cd "$(dirname "$0")/.."
 ./venv/bin/python - <<'PY'
 import sys; sys.path.insert(0, ".")
-from venturebot import gemini_usage, config
+from src import gemini_usage, config
 
 print("=" * 60)
 print("Gemini (AI Studio prepaid) credit check")

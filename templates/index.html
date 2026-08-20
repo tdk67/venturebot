@@ -21,6 +21,9 @@
       <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
       Sign in with Google
     </button>
+    <button id="devLoginBtn" class="hidden w-full flex items-center justify-center gap-3 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg mt-3 transition-colors">
+      ⚡ Dev Login (skip Google)
+    </button>
     <p id="authError" class="text-red-400 text-sm mt-4 hidden"></p>
   </div>
 </div>
@@ -33,7 +36,18 @@
       <div class="flex items-center gap-3 mt-2">
         <span id="status-badge" class="px-3 py-1 text-xs font-bold rounded-full border bg-slate-600">IDLE</span>
         <span id="budget-badge" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400">budget: —</span>
+        <button id="usage-toggle" onclick="toggleUsage()" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400 hover:text-white">usage: —</button>
         <span id="user-badge" class="text-xs text-slate-500"></span>
+      </div>
+      <!-- Usage panel (UI_UX_NOTES #6) -->
+      <div id="usage-panel" class="hidden mt-3 bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs">
+        <div class="flex gap-2 mb-2">
+          <button onclick="fetchUsage('today')" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">Today</button>
+          <button onclick="fetchUsage('week')" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">7 days</button>
+          <button onclick="fetchUsage('month')" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">30 days</button>
+        </div>
+        <div id="usage-body" class="text-slate-300"></div>
+      </div>
       </div>
     </div>
     <div class="flex items-center gap-3">
@@ -72,9 +86,16 @@
     <h2 class="text-xl font-bold text-amber-400 mb-3">Verdict — human decision required</h2>
     <div id="verdict-scores" class="mb-4 grid grid-cols-3 gap-4"></div>
     <p id="verdict-rationale" class="text-slate-300 text-sm mb-4"></p>
+    <div id="verdict-key-risks" class="text-xs text-slate-400 mb-4"></div>
     <div class="flex gap-3">
       <button onclick="verdictAction('proceed')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg">PROCEED ANYWAY</button>
+      <button onclick="verdictAction('rebut')" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg">↻ REBUT</button>
       <button onclick="verdictAction('abort')" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg">ABORT</button>
+    </div>
+    <div id="rebut-box" class="hidden mt-4">
+      <label class="block text-xs font-bold text-slate-300 mb-2">What did the debate miss? (steering re-injected at Advocate)</label>
+      <textarea id="rebut-text" rows="3" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" placeholder="e.g. You missed competitor X at url.com; the real niche is Y…"></textarea>
+      <button onclick="submitRebut()" class="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg">Send rebuttal</button>
     </div>
   </div>
 
@@ -140,6 +161,22 @@
       <!-- Debate feed -->
       <div class="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
         <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
+        <!-- Live progress indicator (UI_UX_NOTES #2) -->
+        <div id="progress-bar" class="mb-4 hidden">
+          <div class="flex items-center justify-between mb-1">
+            <span id="current-agent" class="text-xs font-bold text-blue-400"></span>
+            <span id="elapsed" class="text-xs text-slate-500"></span>
+          </div>
+          <div class="flex gap-1">
+            <div id="phase-research" class="h-1.5 flex-1 rounded bg-slate-700"></div>
+            <div id="phase-advocate" class="h-1.5 flex-1 rounded bg-slate-700"></div>
+            <div id="phase-critic" class="h-1.5 flex-1 rounded bg-slate-700"></div>
+            <div id="phase-creative" class="h-1.5 flex-1 rounded bg-slate-700"></div>
+            <div id="phase-judge" class="h-1.5 flex-1 rounded bg-slate-700"></div>
+            <div id="phase-prd_writer" class="h-1.5 flex-1 rounded bg-slate-700"></div>
+            <div id="phase-auditor" class="h-1.5 flex-1 rounded bg-slate-700"></div>
+          </div>
+        </div>
         <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
       </div>
     </div>
@@ -178,19 +215,48 @@ async function initAuth() {
   if (data.authenticated) {
     showApp(data);
   } else {
-    const cid = await (await fetch('/api/auth/client-id')).json();
-    if (cid.client_id && window.google && window.google.accounts) {
-      window.google.accounts.id.initialize({
-        client_id: cid.client_id,
-        callback: handleCredential,
-      });
-      document.getElementById('googleBtn').addEventListener('click', () => {
-        window.google.accounts.id.prompt();
-      });
+    // Dev-mode: detect non-standard origins and offer direct login
+    const isDevOrigin = window.location.origin.includes('://187.124') ||
+                        window.location.origin.includes('://localhost') ||
+                        window.location.origin.includes('://127.0.');
+    if (isDevOrigin) {
+      document.getElementById('devLoginBtn').classList.remove('hidden');
+      document.getElementById('devLoginBtn').onclick = devLogin;
+    }
+    // Also try Google OAuth in parallel (will fail if origin not whitelisted)
+    tryGoogle();
+  }
+}
+
+async function tryGoogle() {
+  const cid = await (await fetch('/api/auth/client-id')).json();
+  if (cid.client_id && window.google && window.google.accounts) {
+    window.google.accounts.id.initialize({
+      client_id: cid.client_id,
+      callback: handleCredential,
+    });
+    document.getElementById('googleBtn').addEventListener('click', () => {
+      window.google.accounts.id.prompt();
+    });
+  } else {
+    document.getElementById('authError').textContent = 'Google Sign-In not configured (GOOGLE_CLIENT_ID missing).';
+    document.getElementById('authError').classList.remove('hidden');
+  }
+}
+
+async function devLogin() {
+  try {
+    const res = await fetch('/api/auth/dev-login', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.authenticated) {
+      showApp(data);
     } else {
-      document.getElementById('authError').textContent = 'Google Sign-In not configured (GOOGLE_CLIENT_ID missing).';
+      document.getElementById('authError').textContent = data.detail || 'Dev login failed';
       document.getElementById('authError').classList.remove('hidden');
     }
+  } catch (e) {
+    document.getElementById('authError').textContent = 'Network error.';
+    document.getElementById('authError').classList.remove('hidden');
   }
 }
 
@@ -267,19 +333,76 @@ async function fetchState() {
     document.getElementById('budget-badge').textContent =
       `budget: $${data.budget.spent}/${data.budget.limit}`;
   }
+  if (data.usage) {
+    document.getElementById('usage-toggle').textContent =
+      `usage: ${data.usage.calls} calls · $${data.usage.total_cost.toFixed(4)}`;
+  }
+}
+
+let _usagePeriod = 'today';
+async function fetchUsage(period) {
+  _usagePeriod = period || _usagePeriod;
+  const res = await fetch('/api/usage?period=' + _usagePeriod);
+  if (res.status === 401) return;
+  const d = await res.json();
+  const body = document.getElementById('usage-body');
+  body.innerHTML = '';
+  body.appendChild(el('div', 'text-slate-400', `Total: ${d.total_calls} calls · $${d.total_cost.toFixed(4)}`));
+  const tbl = document.createElement('table');
+  tbl.className = 'w-full mt-2';
+  (d.per_model || []).forEach(m => {
+    const tr = document.createElement('tr');
+    tr.appendChild(el('td', 'py-1 pr-4 text-slate-300', m.model));
+    tr.appendChild(el('td', 'py-1 pr-4 text-slate-400', `${m.calls} calls`));
+    tr.appendChild(el('td', 'py-1 text-slate-400', `$${m.cost.toFixed(4)}`));
+    tbl.appendChild(tr);
+  });
+  body.appendChild(tbl);
+}
+function toggleUsage() {
+  const p = document.getElementById('usage-panel');
+  p.classList.toggle('hidden');
+  if (!p.classList.contains('hidden')) fetchUsage(_usagePeriod);
 }
 
 // ── Control ────────────────────────────────────────────────────────────
 async function doRun() {
   const idea = document.getElementById('idea-input').value.trim();
   if (!idea) return;
+  const btn = document.querySelector('button[onclick="doRun()"]');
   const urlStr = document.getElementById('url-input').value.trim();
   const urls = urlStr ? urlStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-  const res = await fetch('/api/run-phase1', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ idea, urls }),
-  });
-  const data = await res.json();
+
+  // Duplicate check before submitting (UI_UX_NOTES #4).
+  try {
+    const dupRes = await fetch('/api/ideas/duplicate-check', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ title: idea }),
+    });
+    if (dupRes.ok) {
+      const dup = await dupRes.json();
+      if (dup.duplicates && dup.duplicates.length) {
+        const names = dup.duplicates.map(d => `"${d.title}" (${d.status})`).join(', ');
+        if (!confirm(`You may have submitted a similar idea before: ${names}.\n\nSubmit anyway?`)) return;
+      }
+    }
+  } catch (e) { /* duplicate check is best-effort */ }
+
+  // Immediate feedback + debounce (fixes UI_UX_NOTES #1).
+  btn.disabled = true;
+  const original = btn.textContent;
+  btn.textContent = '⏳ Starting…';
+  let res;
+  try {
+    res = await fetch('/api/run-phase1', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ idea, urls }),
+    });
+  } finally {
+    // Re-enable after a short lockout; the SSE 'run_started' event drives the
+    // running indicator from here on.
+    setTimeout(() => { btn.disabled = false; btn.textContent = original; }, 600);
+  }
   addMessage('System', 'Debate started: ' + idea + (urls.length ? ` (${urls.length} URL(s) ingested)` : ''));
 }
 
@@ -302,6 +425,12 @@ async function doStop() {
 }
 
 async function verdictAction(action) {
+  if (action === 'rebut') {
+    // Show the rebut box instead of immediately deciding (UI_UX_NOTES #3).
+    addMessage('Human', '↻ Rebut — explain what the debate missed');
+    document.getElementById('rebut-box').classList.remove('hidden');
+    return;
+  }
   addMessage('Human', action === 'proceed' ? 'PROCEED ANYWAY' : 'ABORT');
   document.getElementById('verdict-card').classList.add('hidden');
   const runId = await getCurrentRunId();
@@ -316,6 +445,23 @@ async function verdictAction(action) {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ run_id: runId, decision: 'abort' }),
     }).catch(()=>{});
+  }
+}
+
+async function submitRebut() {
+  const text = document.getElementById('rebut-text').value.trim();
+  if (!text) return;
+  addMessage('Human', '🛞 Rebuttal: ' + text);
+  document.getElementById('verdict-card').classList.add('hidden');
+  document.getElementById('rebut-box').classList.add('hidden');
+  document.getElementById('rebut-text').value = '';
+  const runId = await getCurrentRunId();
+  if (runId) {
+    await fetch('/api/resume', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ run_id: runId, decision: 'rebut', steering: text }),
+    }).catch(()=>{});
+    addMessage('System', 'Re-evaluating with your rebuttal…');
   }
 }
 
@@ -338,20 +484,69 @@ async function getCurrentRunId() {
 }
 
 // ── SSE ────────────────────────────────────────────────────────────────
+const _PHASE_LABELS = {
+  research: '🔍 Research', advocate: '⚖️ Advocate', critic: '🛡️ Critic',
+  creative: '💡 Creative', judge: '🧑‍⚖️ Judge', prd_writer: '📝 PRD', auditor: '✅ Audit',
+};
+let _runTimer = null;
+
+function showProgress() {
+  document.getElementById('progress-bar').classList.remove('hidden');
+}
+function hideProgress() {
+  document.getElementById('progress-bar').classList.add('hidden');
+  if (_runTimer) { clearInterval(_runTimer); _runTimer = null; }
+}
+function setPhaseActive(phase, active) {
+  const el = document.getElementById('phase-' + phase);
+  if (el) el.className = 'h-1.5 flex-1 rounded ' + (active ? 'bg-blue-500' : 'bg-slate-700');
+}
+function resetPhases() {
+  Object.keys(_PHASE_LABELS).forEach(p => setPhaseActive(p, false));
+}
+
 function connectSSE() {
   const es = new EventSource('/api/events');
   es.addEventListener('agent_message', (e) => {
     const d = JSON.parse(e.data);
     addMessage(d.agent, d.text);
   });
+  es.addEventListener('run_started', (e) => {
+    const d = JSON.parse(e.data);
+    resetPhases();
+    showProgress();
+    document.getElementById('current-agent').textContent = 'Starting…';
+    const start = Date.now();
+    if (_runTimer) clearInterval(_runTimer);
+    _runTimer = setInterval(() => {
+      const s = Math.floor((Date.now() - start) / 1000);
+      document.getElementById('elapsed').textContent = 'Running ' + Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
+    }, 1000);
+  });
+  es.addEventListener('phase_started', (e) => {
+    const d = JSON.parse(e.data);
+    showProgress();
+    setPhaseActive(d.phase, true);
+    document.getElementById('current-agent').textContent = (d.agent || d.phase) + '…';
+  });
+  es.addEventListener('phase_done', (e) => {
+    const d = JSON.parse(e.data);
+    setPhaseActive(d.phase, true);
+  });
+  es.addEventListener('agent_turn', (e) => {
+    const d = JSON.parse(e.data);
+    addMessage(d.agent, d.text);
+  });
   es.addEventListener('run_finished', (e) => {
     const d = JSON.parse(e.data);
+    hideProgress();
+    if (d.creative_angles) addMessage('Creative', d.creative_angles);
     if (d.verdict) showVerdict(d.verdict);
     if (d.has_prd && d.prd) showPRD(d.prd, d.security_audit);
     if (d.error) addMessage('System', 'ERROR: ' + d.error);
     fetchState();
   });
-  es.addEventListener('stopped', () => fetchState());
+  es.addEventListener('stopped', () => { hideProgress(); fetchState(); });
   es.onerror = () => { /* EventSource auto-reconnects */ };
 }
 
@@ -369,6 +564,11 @@ function showVerdict(v) {
     scoresEl.appendChild(cell);
   });
   document.getElementById('verdict-rationale').textContent = v.verdict_rationale || '';
+  const risksEl = document.getElementById('verdict-key-risks');
+  risksEl.innerHTML = '';
+  (v.key_risks || []).forEach(r => {
+    risksEl.appendChild(el('div', 'text-xs text-slate-400 mt-1', '⚠ ' + r));
+  });
 }
 
 function showPRD(prd, audit) {
@@ -468,6 +668,14 @@ function renderIdeas(d) {
       parkBtn.onclick = async () => { await fetch(`/api/ideas/${idea.id}/archive`, {method:'POST'}); fetchIdeas(); fetchFacets(); };
       actions.appendChild(parkBtn);
     }
+    // Delete idea (UI_UX_NOTES #5)
+    const delBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-red-700/60 hover:bg-red-600 text-white', 'Delete');
+    delBtn.onclick = async () => {
+      if (!confirm(`Delete "${idea.title}" and all its research/debate/PRD data? This cannot be undone.`)) return;
+      await fetch(`/api/ideas/${idea.id}`, {method:'DELETE'});
+      fetchIdeas(); fetchFacets();
+    };
+    actions.appendChild(delBtn);
     card.appendChild(actions);
     list.appendChild(card);
   });

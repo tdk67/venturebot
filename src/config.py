@@ -45,6 +45,13 @@ MODEL_CRITIC = os.environ.get("VENTUREBOT_MODEL_CRITIC", "gemini-3.1-pro-preview
 MODEL_JUDGE = os.environ.get("VENTUREBOT_MODEL_JUDGE", "gemini-3.1-pro-preview")
 MODEL_PRD_WRITER = os.environ.get("VENTUREBOT_MODEL_PRD_WRITER", "gemini-3.1-pro-preview")
 MODEL_AUDITOR = os.environ.get("VENTUREBOT_MODEL_AUDITOR", "gemini-3.1-pro-preview")
+MODEL_CREATIVE = os.environ.get("VENTUREBOT_MODEL_CREATIVE", "gemini-3.7-flash")
+
+# ── Temperatures (higher = more exploratory) ───────────────────────────
+# The Creative head runs hot on purpose: it is the divergent thinker that the
+# precise Advocate/Critic/Judge cannot be. Its output is always re-checked by
+# the evidence-bound Critic before it can influence the verdict.
+CREATIVE_TEMPERATURE = float(os.environ.get("VENTUREBOT_CREATIVE_TEMPERATURE", "1.0"))
 
 # ── Models: Phase 2 (OpenRouter) ───────────────────────────────────────
 MODEL_PO = os.environ.get("VENTUREBOT_MODEL_PO", "deepseek/deepseek-v4-pro")

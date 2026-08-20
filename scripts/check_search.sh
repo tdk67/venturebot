@@ -14,7 +14,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from venturebot import config
+from src import config
 
 load_dotenv(Path(".env"))
 

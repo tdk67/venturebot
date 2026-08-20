@@ -13,7 +13,7 @@ How to run VentureBot locally, on your VPS, and on GCP (hackathon target).
 | Self-improvement (M3) | ✅ Working | `/api/memories`, `/scheduler/dream-review` |
 | Phase 2 (blind TDD) | ❌ Not built | out of scope for hackathon (PRD §11 — post-hackathon) |
 
-The whole thing is **one FastAPI app** (`venturebot.dashboard:app`). Phase 1 agents
+The whole thing is **one FastAPI app** (`src.dashboard:app`). Phase 1 agents
 run **in-process** via `google-adk` — no separate Agent Engine needed for the demo.
 
 ---
@@ -26,10 +26,10 @@ source venv/bin/activate
 
 # 1) Verify prerequisites
 python -c "from google.adk.agents import LlmAgent; print('ADK OK')"
-python -c "from venturebot import config; assert config.google_api_key(); print('API key OK')"
+python -c "from src import config; assert config.google_api_key(); print('API key OK')"
 
 # 2) Run the dashboard
-uvicorn venturebot.dashboard:app --host 0.0.0.0 --port 8080 --reload
+uvicorn src.dashboard:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 Open **http://localhost:8080**:
@@ -44,8 +44,8 @@ Open **http://localhost:8080**:
 ```bash
 ./venv/bin/python - <<'PY'
 import asyncio
-from venturebot.agents.pipeline import run_debate
-from venturebot.steering import SteeringInbox
+from src.agents.pipeline import run_debate
+from src.steering import SteeringInbox
 
 async def main():
     result = await run_debate("An app that tracks watering schedules for houseplants", inbox=SteeringInbox())
@@ -191,7 +191,7 @@ from google.adk.agents import LlmAgent
 from google.adk.models import Gemini
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
-from venturebot import config
+from src import config
 async def m():
     ss=InMemorySessionService(); sid=(await ss.create_session(app_name='v',user_id='u')).id
     r=Runner(agent=LlmAgent(name='x',model=Gemini(model=config.MODEL_RESEARCHER),instruction='Reply: OK',tools=[]),session_service=ss,app_name='v')

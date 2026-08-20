@@ -1,8 +1,8 @@
 """Tests for the S10 artifact scanner + proof-read gate."""
 import pytest
 
-from venturebot import artifact_scanner as scanner
-from venturebot.agents.pipeline import _parse_audit
+from src import artifact_scanner as scanner
+from src.agents.pipeline import _parse_audit
 
 
 # ── Deterministic artifact scanner ──────────────────────────────────────

@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from venturebot import guard, input_guard, budget, run_manager  # noqa: E402
+from src import guard, input_guard, budget, run_manager  # noqa: E402
 
 
 def test_guard_blocks_subprocess():
@@ -82,7 +82,7 @@ def test_sandbox_blocks_env_and_network():
     """Integration: generated code cannot read .env or reach the network."""
     import tempfile
     from pathlib import Path
-    from venturebot import sandbox
+    from src import sandbox
 
     tmp = Path(tempfile.mkdtemp())
     (tmp / "test_env.py").write_text(

@@ -6,9 +6,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 
-from venturebot import auth
-from venturebot.dashboard import app
-from venturebot.memory.sqlite_store import MemoryStore
+from src import auth
+from src.dashboard import app
+from src.memory.sqlite_store import MemoryStore
 
 
 client = TestClient(app)
@@ -36,7 +36,7 @@ def test_ideas_requires_auth(monkeypatch):
 
 def test_ideas_list_and_pagination(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     _seed(store, 12)
     r = client.get("/api/ideas", cookies=_authed())
     assert r.status_code == 200
@@ -51,7 +51,7 @@ def test_ideas_list_and_pagination(monkeypatch, tmp_path):
 
 def test_ideas_status_filter(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     ids = _seed(store, 2)
     store.update_idea_status(ids[0], "PARK", "archived")
     r = client.get("/api/ideas", params={"status": "PARK"}, cookies=_authed())
@@ -64,7 +64,7 @@ def test_ideas_status_filter(monkeypatch, tmp_path):
 
 def test_ideas_search_filter(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     store.create_idea("a unique widget idea")
     store.create_idea("another thing")
     r = client.get("/api/ideas", params={"search": "widget"}, cookies=_authed())
@@ -76,7 +76,7 @@ def test_ideas_search_filter(monkeypatch, tmp_path):
 
 def test_idea_detail_includes_prd(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     iid = store.create_idea("detail idea")
     store.update_idea_content(iid, prd_text="# PRD\n\ncontent")
     r = client.get(f"/api/ideas/{iid}", cookies=_authed())
@@ -87,7 +87,7 @@ def test_idea_detail_includes_prd(monkeypatch, tmp_path):
 
 def test_idea_detail_404(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     r = client.get("/api/ideas/does-not-exist", cookies=_authed())
     assert r.status_code == 404
     store.close()
@@ -95,7 +95,7 @@ def test_idea_detail_404(monkeypatch, tmp_path):
 
 def test_idea_archive(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     iid = store.create_idea("park me")
     r = client.post(f"/api/ideas/{iid}/archive", cookies=_authed())
     assert r.status_code == 200
@@ -109,7 +109,7 @@ def test_checkpoints_list_requires_auth():
 
 
 def test_checkpoints_list_empty(monkeypatch, tmp_path):
-    import venturebot.dashboard as dash
+    import src.dashboard as dash
     monkeypatch.setattr(dash, "list_checkpoints", lambda: [])
     r = client.get("/api/checkpoints", cookies=_authed())
     assert r.status_code == 200
@@ -118,7 +118,7 @@ def test_checkpoints_list_empty(monkeypatch, tmp_path):
 
 def test_ideas_facets(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     iid = store.create_idea("an ai cli tool")
     store.update_idea_content(iid, research_brief="gemini dashboard")
     store.update_idea_status(iid, "PARK", "x")
@@ -135,7 +135,7 @@ def test_ideas_facets(monkeypatch, tmp_path):
 
 def test_ideas_csv_export(monkeypatch, tmp_path):
     store = MemoryStore(db_path=tmp_path / "t.db")
-    monkeypatch.setattr("venturebot.dashboard.get_store", lambda: store)
+    monkeypatch.setattr("src.dashboard.get_store", lambda: store)
     iid = store.create_idea("csv idea")
     store.update_idea_scores(iid, {"novelty": 8, "feasibility": 7, "market_fit": 6})
     store.update_idea_content(iid, verdict="PROCEED")

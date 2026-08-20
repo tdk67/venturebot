@@ -45,29 +45,29 @@ Working MVP
 
 | Component | File(s) | State |
 |-----------|---------|-------|
-| Phase 1 agents (Researcher, Advocate, Critic, Judge, PRD Writer) | `venturebot/agents/agents.py` | ✅ Working on ADK 2.7.1 |
-| Pipeline orchestrator (resumable, kill-switch aware) | `venturebot/agents/pipeline.py` | ✅ Working |
-| HITL gates (clarify, verdict, PRD approval) | `venturebot/agents/clarify.py`, pipeline.py | ✅ Working |
-| Steering inbox (mid-run guidance injection) | `venturebot/steering.py` | ✅ Working |
-| Kill switch (StopEvent + process group kill) | `venturebot/run_manager.py` | ✅ Working |
-| Output guard (AST check + hardcoded secret scan) | `venturebot/guard.py` | ✅ Working |
-| Artifact scanner + proof-read gate (S10) | `venturebot/artifact_scanner.py` | ✅ Working — secret + injection + AST scans, never auto-passes |
-| Security Auditor agent (S10) | `venturebot/agents/agents.py` (`auditor`) | ✅ Working — proofs PRD before approval |
-| Input guard (injection detection + quarantine) | `venturebot/input_guard.py` | ✅ Working |
-| Sandbox (unprivileged UID + network isolation + rlimits) | `venturebot/sandbox.py` | ✅ Working |
-| Budget enforcement (pre-call check + persistent tracking) | `venturebot/budget.py` | ✅ Working |
-| Google SSO auth (allowlist + signed cookies) | `venturebot/auth.py` | ✅ Working |
-| FastAPI dashboard (SSE + all API endpoints) | `venturebot/dashboard.py` | ✅ API working |
+| Phase 1 agents (Researcher, Advocate, Critic, Creative, Judge, PRD Writer) | `src/agents/agents.py` | ✅ Working on ADK 2.7.1 |
+| Pipeline orchestrator (resumable, kill-switch aware) | `src/agents/pipeline.py` | ✅ Working |
+| HITL gates (clarify, verdict, PRD approval) | `src/agents/clarify.py`, pipeline.py | ✅ Working |
+| Steering inbox (mid-run guidance injection) | `src/steering.py` | ✅ Working |
+| Kill switch (StopEvent + process group kill) | `src/run_manager.py` | ✅ Working |
+| Output guard (AST check + hardcoded secret scan) | `src/guard.py` | ✅ Working |
+| Artifact scanner + proof-read gate (S10) | `src/artifact_scanner.py` | ✅ Working — secret + injection + AST scans, never auto-passes |
+| Security Auditor agent (S10) | `src/agents/agents.py` (`auditor`) | ✅ Working — proofs PRD before approval |
+| Input guard (injection detection + quarantine) | `src/input_guard.py` | ✅ Working |
+| Sandbox (unprivileged UID + network isolation + rlimits) | `src/sandbox.py` | ✅ Working |
+| Budget enforcement (pre-call check + persistent tracking) | `src/budget.py` | ✅ Working |
+| Google SSO auth (allowlist + signed cookies) | `src/auth.py` | ✅ Working |
+| FastAPI dashboard (SSE + all API endpoints) | `src/dashboard.py` | ✅ API working |
 | Dashboard HTML/CSS | `templates/index.html` | ✅ Full SPA: SSO, SSE feed, steering, verdict/PRD HITL buttons |
-| State store (JSON file-backed) | `venturebot/store.py` | ✅ Working |
-| URL fetcher (research material ingestion) | `venturebot/url_fetch.py` | ✅ Working |
-| Gemini usage tracker | `venturebot/gemini_usage.py` | ✅ Working |
-| Checkpoint persistence (crash-safe resume) | `venturebot/agents/pipeline.py` | ✅ Working — atomic per-agent snapshots in `data/checkpoints/`, archived on completion |
-| Idea archive (PRD/transcript/scores in SQLite) | `venturebot/memory/sqlite_store.py` | ✅ Working — `idea_tree` populated by pipeline, queried by `/api/ideas*` |
-| Tag extraction (portfolio-style categories) | `venturebot/memory/tagging.py` | ✅ Working — keyword-based |
+| State store (JSON file-backed) | `src/store.py` | ✅ Working |
+| URL fetcher (research material ingestion) | `src/url_fetch.py` | ✅ Working |
+| Gemini usage tracker | `src/gemini_usage.py` | ✅ Working |
+| Checkpoint persistence (crash-safe resume) | `src/agents/pipeline.py` | ✅ Working — atomic per-agent snapshots in `data/checkpoints/`, archived on completion |
+| Idea archive (PRD/transcript/scores in SQLite) | `src/memory/sqlite_store.py` | ✅ Working — `idea_tree` populated by pipeline, queried by `/api/ideas*` |
+| Tag extraction (portfolio-style categories) | `src/memory/tagging.py` | ✅ Working — keyword-based |
 | Phase 2 agents (PO, TestWriter, Coder, QA_PO) | — | ❌ Wiped (safety review), not rebuilt |
-| Self-improvement layer (auto_capture, review_fork, dream_review) | `venturebot/memory/` | ✅ Built (M3) |
-| Idea tree with pruning | `venturebot/memory/idea_tree.py` | ✅ Built + deterministic pruning rules |
+| Self-improvement layer (auto_capture, review_fork, dream_review) | `src/memory/` | ✅ Built (M3) |
+| Idea tree with pruning | `src/memory/idea_tree.py` | ✅ Built + deterministic pruning rules |
 | Bridge (Phase 1 → Phase 2 handoff) | — | ❌ Not started |
 | GCP deployment (Agent Engine + Cloud Run) | — | ❌ Not started |
 
@@ -87,7 +87,7 @@ Working MVP
 ├── .gitignore                      ← excludes .env, state.json, data/, venv/
 ├── state.json                      ← current pipeline state (resumable)
 │
-├── venturebot/                     ← Python package
+├── src/                            ← Python package (renamed from venturebot/venturebot)
 │   ├── __init__.py
 │   ├── config.py                   ← env-driven config (models, budgets, paths)
 │   ├── dashboard.py                ← FastAPI app: SSE, auth, HITL, all /api/* endpoints
@@ -202,12 +202,23 @@ python -c "from google.adk.models import Gemini; m = Gemini(model='gemini-2.0-fl
 
 ```bash
 cd /root/venturebot
-uvicorn venturebot.dashboard:app --host 0.0.0.0 --port 8080
+uvicorn src.dashboard:app --host 0.0.0.0 --port 8080
 ```
 
 Open http://localhost:8080 — the dashboard will show:
 - ✅ API endpoints are live (check `/api/state`, `/api/auth/me`)
-- ⚠️ UI rendering is incomplete (SSE events stream but aren't rendered yet)
+- ✅ Full debate pipeline: Researcher → Advocate → Critic → Creative → Judge → PRD
+
+### Stub Server (UI tuning, zero LLM cost)
+
+```bash
+cd /root/venturebot
+./venv/bin/uvicorn src.stub_server:app --host 0.0.0.0 --port 8091
+```
+
+Scripted in-memory debate that auto-advances through all phases on a timer.
+Identical UI (same dashboard routes, auth, ideas, SSE) but every LLM call is
+replaced with canned data. Use this to iterate on UI changes without spending tokens.
 
 ### API Endpoints
 

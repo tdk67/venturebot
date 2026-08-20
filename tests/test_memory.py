@@ -4,9 +4,9 @@ import time
 
 import pytest
 
-from venturebot.memory.idea_tree import decide_idea, prune_ideas
-from venturebot.memory.sqlite_store import MemoryStore
-from venturebot.memory import _throttle
+from src.memory.idea_tree import decide_idea, prune_ideas
+from src.memory.sqlite_store import MemoryStore
+from src.memory import _throttle
 
 
 @pytest.fixture()

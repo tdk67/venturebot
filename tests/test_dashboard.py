@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
-from venturebot import auth  # noqa: E402
-from venturebot.dashboard import app  # noqa: E402
+from src import auth  # noqa: E402
+from src.dashboard import app  # noqa: E402
 
 
 client = TestClient(app)

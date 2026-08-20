@@ -31,6 +31,7 @@ from google.genai import types
 
 from .. import config, run_manager, store
 from ..artifact_scanner import proof_read_gate, scan_artifact
+from ..events import agent_turn, phase_done, phase_started
 from ..memory.auto_capture import capture_turn
 from ..memory.review_fork import analyze_turn
 from ..memory.sqlite_store import get_store
@@ -50,6 +51,7 @@ class DebateResult:
     research_brief: str | None = None
     advocate_argument: str | None = None
     critic_rebuttal: str | None = None
+    creative_angles: str | None = None
     verdict_text: str | None = None
     verdict: dict | None = None
     prd: str | None = None
@@ -101,8 +103,9 @@ _load_sessions()
 
 # ── Checkpoint persistence (crash-safe resume) ─────────────────────────
 
-# Ordered phases for resume logic.
-_PHASES = ["research", "advocate", "critic", "judge", "prd_writer", "auditor"]
+# Ordered phases for resume logic. `creative` runs after `critic` and feeds
+# the Judge, so it sits between them.
+_PHASES = ["research", "advocate", "critic", "creative", "judge", "prd_writer", "auditor"]
 
 
 def _checkpoint_path(run_id: str) -> Path:
@@ -133,6 +136,7 @@ def save_checkpoint(result: DebateResult, phase: str) -> None:
         "research_brief": result.research_brief,
         "advocate_argument": result.advocate_argument,
         "critic_rebuttal": result.critic_rebuttal,
+        "creative_angles": result.creative_angles,
         "verdict_text": result.verdict_text,
         "verdict": result.verdict,
         "prd": result.prd,
@@ -207,6 +211,7 @@ def _result_from_snapshot(snap: dict) -> DebateResult:
     result.research_brief = snap.get("research_brief")
     result.advocate_argument = snap.get("advocate_argument")
     result.critic_rebuttal = snap.get("critic_rebuttal")
+    result.creative_angles = snap.get("creative_angles")
     result.verdict_text = snap.get("verdict_text")
     result.verdict = snap.get("verdict")
     result.prd = snap.get("prd")
@@ -229,11 +234,12 @@ def _snapshot_phase_rank(phase: str) -> int:
         "research": 0,
         "advocate": 1,
         "critic": 2,
-        "judge": 3,
-        "verdict": 4,
-        "prd_writer": 5,
-        "auditor": 6,
-        "needs_approval": 7,
+        "creative": 3,
+        "judge": 4,
+        "verdict": 5,
+        "prd_writer": 6,
+        "auditor": 7,
+        "needs_approval": 8,
     }
     return order.get(phase, -1)
 
@@ -316,6 +322,7 @@ async def _run_agent(agent, session_service, session_id, user_id, message: str,
         if t and not ev.partial:
             result.events.append({"agent": agent_label, "text": t})
             store.log(agent_label, getattr(agent.model, "model", "?"), t[:200])
+            agent_turn(agent_label, t, run_manager.manager.run_id)
             # Fork 1: auto_capture — persist the completed turn (best-effort).
             capture_turn(session_id, agent_label, "agent_message", t,
                          _THROTTLE.setdefault(session_id, {}))
@@ -370,11 +377,13 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
     brief = result.research_brief
     argument = result.advocate_argument
     rebuttal = result.critic_rebuttal
+    angles = result.creative_angles
 
     if rank <= 0:
         # 1. Researcher — with user URLs + steering checkpoint
         store.update_task("t1", "in_progress")
         store.log("System", "core", f"Researching idea: {result.idea[:120]}")
+        phase_started("research", "Researcher", run_id)
 
         # Fetch user-provided URLs (ingested at this checkpoint)
         urls = inbox.drain_urls()
@@ -400,6 +409,7 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
         )
         result.research_brief = brief
         store.update_task("t1", "done")
+        phase_done("research", run_id)
         _checkpoint_and_log(result, "advocate")
         run_manager.manager.check()
 
@@ -407,6 +417,7 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
         # 2. Advocate (blind: brief only) — steering checkpoint
         store.update_task("t2", "in_progress")
         store.log("System", "core", "Advocate building the case...")
+        phase_started("advocate", "Advocate", run_id)
         advocate_msg = _inject_steering(
             f"Research Brief:\n\n{brief}\n\nArgue FOR this idea.",
             _steering_block(inbox, "CHECKPOINT: advocate"),
@@ -417,6 +428,7 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
         )
         result.advocate_argument = argument
         store.update_task("t2", "done")
+        phase_done("advocate", run_id)
         _checkpoint_and_log(result, "critic")
         run_manager.manager.check()
 
@@ -424,6 +436,7 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
         # 3. Critic (has web search) — steering checkpoint
         store.update_task("t3", "in_progress")
         store.log("System", "core", "Critic challenging the Advocate...")
+        phase_started("critic", "Critic", run_id)
         critic_msg = _inject_steering(
             f"Research Brief:\n\n{brief}\n\nAdvocate's Argument:\n\n{argument}\n\nChallenge every claim.",
             _steering_block(inbox, "CHECKPOINT: critic"),
@@ -434,15 +447,38 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
         )
         result.critic_rebuttal = rebuttal
         store.update_task("t3", "done")
-        _checkpoint_and_log(result, "judge")
+        phase_done("critic", run_id)
+        _checkpoint_and_log(result, "creative")
         run_manager.manager.check()
 
     if rank <= 3:
-        # 4. Judge (structured verdict) — steering checkpoint
+        # 3b. Creative Ideator — divergent head that hunts the niche the
+        # precise Advocate/Critic/Judge cannot. Runs hot (higher temperature),
+        # blind to search; its angles are evidence-checked by the Judge.
+        store.log("System", "core", "Creative Ideator hunting the niche...")
+        phase_started("creative", "Creative", run_id)
+        creative_msg = _inject_steering(
+            f"Research Brief:\n\n{brief}\n\nAdvocate:\n\n{argument}\n\nCritic's challenges:\n\n{rebuttal}\n\nFind the niche, pivots, unfair advantages and wild ideas.",
+            _steering_block(inbox, "CHECKPOINT: creative"),
+        )
+        angles = await _run_agent(
+            ALL_AGENTS["creative"], session_service, sid, user_id,
+            creative_msg, "Creative", result,
+        )
+        result.creative_angles = angles
+        phase_done("creative", run_id)
+        _checkpoint_and_log(result, "judge")
+        run_manager.manager.check()
+
+    if rank <= 4:
+        # 4. Judge (structured verdict) — steering checkpoint. The Judge sees
+        # the Creative angles so it can recommend a *niche* rather than a bare
+        # reject when the original framing is crowded.
         store.update_task("t4", "in_progress")
         store.log("System", "core", "Judge deliberating...")
+        phase_started("judge", "Judge", run_id)
         judge_msg = _inject_steering(
-            f"Research Brief:\n\n{brief}\n\nAdvocate:\n\n{argument}\n\nCritic:\n\n{rebuttal}\n\nProduce your structured verdict.",
+            f"Research Brief:\n\n{brief}\n\nAdvocate:\n\n{argument}\n\nCritic:\n\n{rebuttal}\n\nCreative angles:\n\n{angles}\n\nProduce your structured verdict.",
             _steering_block(inbox, "CHECKPOINT: judge"),
         )
         verdict_text = await _run_agent(
@@ -452,10 +488,11 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
         result.verdict_text = verdict_text
         result.verdict = _parse_verdict(verdict_text)
         store.update_task("t4", "done")
+        phase_done("judge", run_id)
         _checkpoint_and_log(result, "verdict")
         run_manager.manager.check()
 
-    if rank <= 4:
+    if rank <= 5:
         # 5. Verdict gate
         v = result.verdict or {}
         avg = _overall_average(v)
@@ -470,7 +507,7 @@ async def _run_pipeline(result: DebateResult, phase: str, session_service, sid,
             _save_session(run_id, result, session_service, sid, user_id)
             return result
 
-    if rank <= 5:
+    if rank <= 6:
         # 6. PRD Writer + Security Auditor (only on PROCEED)
         return await _write_prd(result, session_service, sid, user_id, inbox, run_id)
 
@@ -567,8 +604,9 @@ async def _write_prd(result: DebateResult, session_service, sid, user_id,
     """Run the PRD Writer + Security Auditor after a PROCEED verdict."""
     store.update_task("t5", "in_progress")
     store.log("System", "core", "PRD Writer drafting the PRD...")
+    phase_started("prd_writer", "PRD Writer", run_id)
     prd_msg = _inject_steering(
-        f"Research Brief:\n\n{result.research_brief}\n\nAdvocate:\n\n{result.advocate_argument}\n\nCritic:\n\n{result.critic_rebuttal}\n\nVerdict:\n\n{result.verdict_text}\n\nWrite the PRD.",
+        f"Research Brief:\n\n{result.research_brief}\n\nAdvocate:\n\n{result.advocate_argument}\n\nCritic:\n\n{result.critic_rebuttal}\n\nCreative angles:\n\n{result.creative_angles}\n\nVerdict:\n\n{result.verdict_text}\n\nWrite the PRD.",
         _steering_block(inbox, "CHECKPOINT: prd_writer"),
     )
     prd = await _run_agent(
@@ -577,10 +615,12 @@ async def _write_prd(result: DebateResult, session_service, sid, user_id,
     )
     result.prd = prd
     store.update_task("t5", "done")
+    phase_done("prd_writer", run_id)
     _checkpoint_and_log(result, "auditor")
 
     # S10 — proof-read gate: deterministic scanner + LLM Security Auditor.
     store.log("System", "core", "Security Auditor proof-reading the PRD...")
+    phase_started("auditor", "Security Auditor", run_id)
     scan = scan_artifact(prd or "", kind="text")
     audit_text = await _run_agent(
         ALL_AGENTS["auditor"], session_service, sid, user_id,
@@ -604,6 +644,7 @@ async def _write_prd(result: DebateResult, session_service, sid, user_id,
         f"Gate: {'PASS' if result.security_audit['ok'] else 'FLAG'} "
         f"({len(result.security_audit['findings'])} finding(s))",
     )
+    phase_done("auditor", run_id)
 
     result.status = "needs_approval"
     store.log("System", "core", "PRD ready — awaiting human approval.")
@@ -643,6 +684,19 @@ async def resume_debate(run_id: str, decision: str, steering: str | None = None,
         store.log("Human", "user", f"Decision: {decision.upper()} — stopping.")
         _archive_result(result, run_id)
         return result
+
+    if decision == "rebut":
+        # Re-enter the debate loop at Advocate with the human's fresh steering
+        # (UI_UX_NOTES #3). The verdict is discarded and Advocate→Critic→
+        # Creative→Judge re-run with the new evidence.
+        store.log("Human", "user", "REBUT — re-running debate with new steering.")
+        result.status = "running"
+        result.verdict = None
+        result.verdict_text = None
+        run_manager.manager.start(run_id)
+        return await _run_pipeline(
+            result, "advocate", session_service, sid, user_id, inbox, run_id
+        )
 
     if decision == "proceed":
         store.log("Human", "user", "PROCEED ANYWAY — forcing PRD Writer.")

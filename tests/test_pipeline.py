@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from venturebot.agents.pipeline import _parse_verdict, _overall_average  # noqa: E402
+from src.agents.pipeline import _parse_verdict, _overall_average  # noqa: E402
 
 
 def test_parse_verdict_json():
@@ -44,7 +44,7 @@ def test_overall_average_none():
 
 
 def test_agents_have_correct_tool_separation():
-    from venturebot.agents.agents import ALL_AGENTS
+    from src.agents.agents import ALL_AGENTS
     assert len(ALL_AGENTS["advocate"].tools) == 0  # blind
     assert len(ALL_AGENTS["critic"].tools) == 1  # has search
     assert len(ALL_AGENTS["researcher"].tools) == 2  # search + clarify

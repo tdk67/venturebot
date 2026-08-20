@@ -23,7 +23,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY venturebot/ ./venturebot/
+COPY src/ ./src/
 COPY templates/ ./templates/
 COPY static/ ./static/
 
@@ -46,4 +46,4 @@ USER appuser
 
 EXPOSE 8080
 
-CMD ["uvicorn", "venturebot.dashboard:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["uvicorn", "src.dashboard:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]

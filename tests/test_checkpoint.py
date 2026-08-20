@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from venturebot.agents.pipeline import (
+from src.agents.pipeline import (
     DebateResult,
     _archive_path,
     _checkpoint_path,
@@ -18,7 +18,7 @@ from venturebot.agents.pipeline import (
     load_checkpoint,
     save_checkpoint,
 )
-from venturebot import config, run_manager
+from src import config, run_manager
 
 
 @pytest.fixture(autouse=True)

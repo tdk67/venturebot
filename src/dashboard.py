@@ -19,6 +19,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from . import auth, budget, config, run_manager, store
+from . import gemini_usage
 from .agents.pipeline import (
     DebateResult,
     list_checkpoints,
@@ -52,6 +53,20 @@ _SSE_CLIENTS: set[asyncio.Queue] = set()
 _inbox = SteeringInbox()
 
 
+# Bridge the in-process event bus → SSE. Subscribed once at import; the
+# pipeline never imports the web layer, so this is the only coupling point.
+def _sse_event_sink():
+    from . import events
+
+    async def _on_event(event: str, payload: dict) -> None:
+        await _broadcast(event, payload)
+
+    events.subscribe(_on_event)
+
+
+_sse_event_sink()
+
+
 def _sse_format(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
@@ -69,6 +84,31 @@ async def _broadcast(event: str, data: dict) -> None:
 @app.get("/api/auth/client-id")
 async def auth_client_id():
     return {"client_id": config.GOOGLE_CLIENT_ID}
+
+
+@app.post("/api/auth/dev-login")
+async def auth_dev_login(request: Request):
+    """Dev-mode endpoint: issues a session token for the first allowlisted email.
+
+    This bypasses Google OAuth and is meant for IP-based deployments where
+    the Google redirect URI hasn't been added to the OAuth client yet.
+    Set VENTUREBOT_DEV_LOGIN=1 in the environment to enable.
+    """
+    if os.environ.get("VENTUREBOT_DEV_LOGIN", "").strip() != "1":
+        raise HTTPException(404, "Not found")
+    allowed = config.ALLOWED_EMAILS
+    if not allowed:
+        raise HTTPException(400, "No allowed emails configured")
+    email = allowed[0]
+    token = auth.create_session_token(email, email.split("@")[0], "")
+    resp = JSONResponse({"authenticated": True, "email": email, "name": email.split("@")[0]})
+    is_secure = request.url.scheme == "https" or os.environ.get("VENTUREBOT_SECURE_COOKIES", "").lower() in ("1", "true", "yes")
+    resp.set_cookie(
+        "vb_session", token,
+        httponly=True, samesite="lax", secure=is_secure,
+        max_age=30 * 24 * 3600,
+    )
+    return resp
 
 
 @app.get("/api/auth/me")
@@ -113,7 +153,63 @@ async def api_state(request: Request):
     auth.get_current_user(request)
     state = store.load_state()
     state["budget"] = budget.status()
+    state["usage"] = gemini_usage.summary()
     return state
+
+
+@app.get("/api/usage")
+async def api_usage(request: Request, period: str = "today"):
+    """Bucketed LLM call + cost aggregation (UI_UX_NOTES #6).
+
+    period: today (by hour) | week (by day, last 7) | month (by day, last 30).
+    Reuses the local spend ledger in gemini_usage.json — no extra LLM cost.
+    """
+    auth.get_current_user(request)
+    import time as _time
+
+    data = gemini_usage._load()
+    calls = data.get("calls", [])
+    now = _time.time()
+
+    if period == "week":
+        window = 7 * 86400
+        bucket_s = 86400
+        label = lambda ts: _time.strftime("%a", _time.localtime(ts))
+    elif period == "month":
+        window = 30 * 86400
+        bucket_s = 86400
+        label = lambda ts: _time.strftime("%d", _time.localtime(ts))
+    else:  # today
+        window = 86400
+        bucket_s = 3600
+        label = lambda ts: _time.strftime("%H:00", _time.localtime(ts))
+
+    cutoff = now - window
+    buckets: dict[str, dict] = {}
+    per_model: dict[str, dict] = {}
+    for c in calls:
+        ts = c.get("ts", 0)
+        if ts < cutoff:
+            continue
+        key = label(ts)
+        b = buckets.setdefault(key, {"bucket": key, "calls": 0, "cost": 0.0})
+        b["calls"] += 1
+        b["cost"] = round(b["cost"] + c.get("cost", 0.0), 6)
+
+        model = c.get("model", "?")
+        m = per_model.setdefault(model, {"model": model, "calls": 0, "cost": 0.0})
+        m["calls"] += 1
+        m["cost"] = round(m["cost"] + c.get("cost", 0.0), 6)
+
+    total_cost = round(sum(c.get("cost", 0.0) for c in calls if c.get("ts", 0) >= cutoff), 6)
+    total_calls = sum(c["ts"] >= cutoff for c in calls)
+    return {
+        "period": period,
+        "total_calls": total_calls,
+        "total_cost": total_cost,
+        "buckets": sorted(buckets.values(), key=lambda b: b["bucket"]),
+        "per_model": sorted(per_model.values(), key=lambda m: -m["cost"]),
+    }
 
 
 @app.post("/api/reset")
@@ -167,6 +263,7 @@ async def _run_phase1_loop(idea: str):
     await _broadcast("run_finished", {
         "status": result.status,
         "verdict": result.verdict,
+        "creative_angles": result.creative_angles,
         "has_prd": bool(result.prd),
         "prd": result.prd,
         "security_audit": result.security_audit,
@@ -214,6 +311,7 @@ async def api_resume(request: Request):
             await _broadcast("run_finished", {
                 "status": result.status,
                 "verdict": result.verdict,
+                "creative_angles": result.creative_angles,
                 "has_prd": bool(result.prd),
                 "prd": result.prd,
                 "security_audit": result.security_audit,
@@ -447,6 +545,38 @@ async def api_idea_archive(idea_id: str, request: Request):
     return {"status": "ok", "idea_id": idea_id}
 
 
+@app.delete("/api/ideas/{idea_id}")
+async def api_idea_delete(idea_id: str, request: Request):
+    """Hard-delete an idea (UI_UX_NOTES #5). Refused while it is running."""
+    auth.get_current_user(request)
+    idea = get_store().get_idea(idea_id)
+    if not idea:
+        raise HTTPException(404, "idea not found")
+    state = store.load_state()
+    if state.get("status") == "running":
+        raise HTTPException(409, "cannot delete an idea while a debate is running")
+    get_store().delete_idea(idea_id)
+    await _broadcast("idea_deleted", {"idea_id": idea_id})
+    return {"status": "deleted", "idea_id": idea_id}
+
+
+@app.post("/api/ideas/duplicate-check")
+async def api_idea_duplicate_check(request: Request):
+    """Cheap token-overlap duplicate check before submitting (UI_UX_NOTES #4)."""
+    auth.get_current_user(request)
+    data = await request.json()
+    title = data.get("title", "").strip()
+    if not title:
+        return {"duplicates": []}
+    matches = get_store().find_similar_ideas(title, limit=3)
+    return {
+        "duplicates": [
+            {"id": m["id"], "title": m["title"], "status": m["status"]}
+            for m in matches
+        ],
+    }
+
+
 @app.post("/api/ideas/{idea_id}/resume")
 async def api_idea_resume(idea_id: str, request: Request):
     """Load an idea as the active debate context (A3)."""
@@ -477,6 +607,7 @@ async def api_checkpoint_resume(run_id: str, request: Request):
             await _broadcast("run_finished", {
                 "status": result.status,
                 "verdict": result.verdict,
+                "creative_angles": result.creative_angles,
                 "has_prd": bool(result.prd),
                 "prd": result.prd,
                 "security_audit": result.security_audit,

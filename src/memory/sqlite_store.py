@@ -371,6 +371,35 @@ class MemoryStore:
             ).fetchone()
         return dict(row) if row else None
 
+    def delete_idea(self, idea_id: str) -> bool:
+        """Hard-delete an idea from the tree (UI_UX_NOTES #5). Returns True if
+        a row was removed. Only safe when the idea is not actively running —
+        the caller is responsible for that guard."""
+        with self._lock:
+            cur = self._ensure_conn().execute(
+                "DELETE FROM idea_tree WHERE id = ?", (idea_id,)
+            )
+            self._ensure_conn().commit()
+            return cur.rowcount > 0
+
+    def find_similar_ideas(self, title: str, limit: int = 3) -> list[dict]:
+        """Cheap duplicate check (UI_UX_NOTES #4): token-overlap on the title
+        against existing ideas, ranked by shared-word count. Deterministic,
+        zero LLM cost. Returns the top matches (empty if none overlap)."""
+        words = {w for w in title.lower().split() if len(w) > 2}
+        if not words:
+            return []
+        scored = []
+        for idea in self.get_idea_tree():
+            if (idea.get("status") or "").upper() == "DELETED":
+                continue
+            other = {w for w in (idea.get("title") or "").lower().split() if len(w) > 2}
+            overlap = words & other
+            if overlap:
+                scored.append((len(overlap), idea))
+        scored.sort(key=lambda kv: -kv[0])
+        return [idea for _, idea in scored[:limit]]
+
 
 # ── process-wide singleton ──────────────────────────────────────────────
 _singleton: MemoryStore | None = None

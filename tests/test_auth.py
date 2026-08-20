@@ -2,7 +2,7 @@
 import pytest
 from fastapi import HTTPException
 
-from venturebot import auth, config
+from src import auth, config
 
 
 def test_verify_google_credential_rejects_empty():

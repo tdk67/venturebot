@@ -1,8 +1,8 @@
 """Tests for review_fork analysis + scheduler (M3, non-live)."""
 import pytest
 
-from venturebot.memory import review_fork
-from venturebot.memory.sqlite_store import MemoryStore
+from src.memory import review_fork
+from src.memory.sqlite_store import MemoryStore
 
 
 @pytest.fixture()
@@ -69,6 +69,6 @@ def test_analyze_turn_empty_transcript_returns_none(store):
 
 
 def test_scheduler_disabled_by_default(monkeypatch):
-    import venturebot.scheduler as sched
+    import src.scheduler as sched
     monkeypatch.setenv("VENTUREBOT_ENABLE_SCHEDULER", "0")
     assert sched.start_scheduler() is False

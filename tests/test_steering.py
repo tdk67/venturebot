@@ -4,9 +4,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from venturebot.steering import SteeringInbox  # noqa: E402
-from venturebot.url_fetch import validate_url, fetch_urls  # noqa: E402
-from venturebot.agents.pipeline import _parse_verdict, _overall_average  # noqa: E402
+from src.steering import SteeringInbox  # noqa: E402
+from src.url_fetch import validate_url, fetch_urls  # noqa: E402
+from src.agents.pipeline import _parse_verdict, _overall_average  # noqa: E402
 
 
 def test_steering_drain():

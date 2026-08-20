@@ -1,6 +1,6 @@
 """Tests for url_fetch module."""
 import pytest
-from venturebot.url_fetch import fetch_urls, validate_url
+from src.url_fetch import fetch_urls, validate_url
 
 
 def test_validate_url_validates_http_scheme():

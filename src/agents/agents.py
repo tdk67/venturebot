@@ -21,6 +21,9 @@ _SEARCH_GCC = types.GenerateContentConfig(
     tool_config=types.ToolConfig(include_server_side_tool_invocations=True)
 )
 
+# The Creative head runs hot — a dedicated higher-temperature GenerateContentConfig.
+_CREATIVE_GCC = types.GenerateContentConfig(temperature=config.CREATIVE_TEMPERATURE)
+
 # ── Researcher (has google_search + clarify HITL) ─────────────────────
 researcher_agent = LlmAgent(
     name="researcher",
@@ -86,6 +89,18 @@ auditor_agent = LlmAgent(
     description="Proof-reads the PRD for hallucinated claims, injection residue, and missing NFRs.",
 )
 
+# ── Creative Ideator (divergent head — higher temperature) ─────────────
+# Blind like the Advocate (no search): it imagines, the Critic verifies.
+creative_agent = LlmAgent(
+    name="creative",
+    model=Gemini(model=config.MODEL_CREATIVE),
+    instruction=prompts.CREATIVE_PROMPT,
+    tools=[],
+    generate_content_config=_CREATIVE_GCC,
+    output_key="creative_angles",
+    description="Divergent thinker: hunts niches, pivots, unfair advantages and wild ideas.",
+)
+
 ALL_AGENTS = {
     "researcher": researcher_agent,
     "advocate": advocate_agent,
@@ -93,4 +108,5 @@ ALL_AGENTS = {
     "judge": judge_agent,
     "prd_writer": prd_writer_agent,
     "auditor": auditor_agent,
+    "creative": creative_agent,
 }
