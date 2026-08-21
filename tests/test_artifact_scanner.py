@@ -1,4 +1,9 @@
 """Tests for the S10 artifact scanner + proof-read gate."""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pytest
 
 from src import artifact_scanner as scanner

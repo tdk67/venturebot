@@ -1,0 +1,303 @@
+# VentureBot — Loop Architecture Analysis
+
+**Date:** 2026-08-20
+**Topic:** Why the current sequential pipeline must evolve into an autonomous agentic loop
+
+---
+
+## 1. What We Have Today
+
+`src/agents/pipeline.py` → `_run_pipeline()` runs a fixed sequence:
+
+```
+Researcher → Advocate → Critic → Creative → Judge → (verdict gate) → PRD Writer → Auditor
+```
+
+This is a **deterministic assembly line of ~7 LLM calls**. It runs once, produces a result, and stops. It is NOT an autonomous agentic loop — it's a static DAG with no feedback edges.
+
+### What works well:
+- The debate structure (Advocate vs. Critic asymmetry) is clever
+- The Creative head (high-temperature divergent thinker) is a good addition
+- Checkpoint persistence for crash-recovery is solid
+- The verdict gate (PROCEED/PARK/PRUNE) makes the right decision
+
+### What doesn't work:
+1. **No iteration.** The PRD is written once. There's no "read it back, find gaps, re-research, refine" cycle.
+2. **Clarify doesn't loop.** The `clarify_question` tool exists on the Researcher, but the pipeline runs each agent once. After the human answers, the pipeline continues to Advocate — the Researcher never gets to incorporate the answer.
+3. **No convergence criteria.** The Judge scores once. There's no "if borderline, run another debate round with sharper focus" loop.
+4. **No PRD refinement.** The Auditor proof-reads but can only flag — it can't send the PRD back for revision.
+5. **Memory is write-only.** auto_capture/review_fork/dream_review store lessons, but the pipeline never READS them to improve.
+6. **No engineering process.** Real engineering is: research → hypothesize → critique → find gaps → research more → refine → critique again → converge. The current pipeline does each step exactly once.
+
+---
+
+## 2. The Vision vs. Reality
+
+### From idea-02.md (the vision):
+```
+On Changes: feedback → loop to Research
+```
+The PRD envisioned a multi-pass process where human "Changes" feedback loops back to the Research Agent. This loop edge doesn't exist in the implementation.
+
+### From the PRD:
+> "VentureBot is a self-improving, multi-agent research and development system... it takes a vague idea, researches it, subjects it to a multi-agent debate, produces a detailed PRD, asks the human for approval"
+
+The key word is **self-improving**. A single-pass pipeline doesn't improve — it runs once and stops. The self-improvement layer (memory forks) operates across runs, but within a single run there's no refinement.
+
+---
+
+## 3. What the Google ADK Long-Horizon-Harness Actually Does
+
+The harness (`core/python/long-horizon-harness/horizon/`) is NOT a pipeline orchestrator. It's a **general-purpose autonomous agent runtime**. The architecture is:
+
+```
+User Message
+    ↓
+┌─────────────────────────────────────────┐
+│  root_agent (single LlmAgent)           │
+│                                         │
+│  System prompt: "You are an AI          │
+│  assistant. Use your tools to           │
+│  accomplish the user's task."           │
+│                                         │
+│  Tools: read_file, write_file,          │
+│  terminal, web_research, delegate,      │
+│  clarify, memory, etc.                  │
+│                                         │
+│  Loops: agent thinks → calls tools →    │
+│  gets results → thinks more →           │
+│  calls more tools → ...                 │
+│                                         │
+│  Budget: IterationBudgetPlugin caps     │
+│  iterations + tool calls per iteration  │
+│                                         │
+│  Guardrails: exfil_guard,               │
+│  permission_guard, repeated_failure     │
+│                                         │
+│  Memory: auto_capture after each turn,  │
+│  review_fork for analysis,              │
+│  dream_review nightly consolidation     │
+└─────────────────────────────────────────┘
+    ↓
+Final Response (or halt on budget/error)
+```
+
+Key properties:
+- The agent **decides what to do next** — it's not forced through a predetermined sequence
+- It can call tools in any order, as many times as needed
+- It stops when it decides it's done, or when the iteration budget runs out
+- HITL via `clarify` tool pauses the invocation, waits for human response, then resumes
+- `delegate` spawns sub-agents for isolated tasks
+
+The harness doesn't prescribe "do a debate" — it gives the agent the TOOLS to do research, write files, delegate to sub-agents, and the agent decides HOW to solve the problem.
+
+---
+
+## 4. The Architecture Gap
+
+| Dimension | Current VentureBot | Long-Horizon-Harness | What We Need |
+|-----------|-------------------|---------------------|--------------|
+| Control flow | Hardcoded sequential DAG | Agent-driven loop | Agent-driven loop with quality gates |
+| Iteration | 1 pass, 7 LLM calls | Until budget or done | Until convergence criteria met |
+| HITL | `clarify_question` exists but doesn't loop | `clarify` pauses, resumes, agent can call it again | Clarify → incorporate → maybe clarify again |
+| Refinement | None (PRD written once) | Agent can read its own files and revise | "Draft → review → find gaps → redraft" loop |
+| End criteria | "we reached the last agent" | Agent decides it's done | Quality gates: all scores ≥ threshold, all clarifications resolved, PRD template complete |
+| Memory reading | Not implemented | PreloadMemoryTool injects past facts | Agent reads past lessons before starting |
+| Sub-agents | Separate LlmAgents called in sequence | `delegate` tool spawns isolated children | Delegate critique/analysis tasks |
+
+---
+
+## 5. What "Autonomous Agentic Loop" Means for VentureBot
+
+Instead of a fixed pipeline, VentureBot should be a **single root agent** with:
+
+### System Prompt (the "engineering process"):
+```
+You are VentureBot, an autonomous idea research and validation system.
+
+For each idea the user submits, follow this engineering process:
+
+1. DEEP RESEARCH — Use google_search/web_research to find:
+   - Prior art (existing products, GitHub repos)
+   - Market signals (trends, demand, audience)
+   - Technical landscape (APIs, libraries, feasibility)
+
+2. CLARIFY — If the idea is vague, or you find conflicting information,
+   or you need domain expertise the user might have, call clarify(question).
+   Wait for the answer. Then re-research with the new information.
+
+3. SELF-CRITIQUE — Play devil's advocate against your own findings:
+   - Challenge every uniqueness claim with evidence
+   - Identify failure modes, hidden costs, competitive threats
+   - Use delegate(tools=['web'], ...) to run parallel critique
+
+4. CREATIVE EXPLORATION — Hunt for niches, pivots, and unfair advantages
+   the competitors don't serve. Use higher-temperature reasoning here.
+
+5. DRAFT PRD — Write a structured PRD to the workspace (write_file).
+
+6. SELF-REVIEW — Read your PRD back (read_file). Check it against:
+   - All sections present? (Overview, FRs, NFRs, Architecture, Acceptance Criteria, Milestones)
+   - Every claim cited? No hallucinations?
+   - All functional requirements testable?
+   - Security/auth/data-handling covered?
+   - If gaps found → go back to research or redraft
+
+7. FINAL VERDICT — Score: Novelty (1-10), Feasibility (1-10), Market Fit (1-10).
+   - ≥7 average: PROCEED — present PRD for approval
+   - 4-6: PARK — present findings + ask human whether to continue
+   - <4: PRUNE — explain why and stop
+
+8. PRESENT TO HUMAN — Show the PRD and verdict. Call clarify for final approval.
+
+STOPPING RULES:
+- Stop when (a) all quality gates pass AND (b) human approves, OR
+- Stop when human says abort, OR
+- Stop when you've made no progress in 3 consecutive turns (halt yourself)
+
+WORKSPACE DISCIPLINE:
+- Write the research brief to RESEARCH_BRIEF.md
+- Write the PRD to PRD.md
+- Re-read these files before revising them — never edit from memory
+- Save final artifacts with artifact(action='save')
+```
+
+### Tools:
+| Tool | Purpose |
+|------|---------|
+| `google_search` / `web_research` | Research prior art, market, tech |
+| `clarify` | HITL — pause and ask the human |
+| `write_file` | Write research brief, PRD, notes |
+| `read_file` | Re-read own drafts before revising |
+| `delegate` | Spawn sub-agent for isolated critique/analysis |
+| `artifact` | Save final deliverables |
+| `add_memory` | Persist durable lessons |
+
+### How the Loop Works:
+
+```
+Turn 1: Agent reads "Build an AI email summarizer"
+        → Calls google_search("AI email summarizer products")
+        → Calls google_search("email summarization open source github")
+        → Writes RESEARCH_BRIEF.md with findings
+
+Turn 2: Agent reads RESEARCH_BRIEF.md
+        → Realizes: "50+ products exist, this space is crowded"
+        → Calls clarify("This space has 50+ existing products. Do you have a specific
+          target audience or unique angle that differentiates yours?")
+        [HUMAN RESPONDS: "Yes, it's for lawyers who bill by the hour"]
+
+Turn 3: Agent incorporates clarification
+        → Calls google_search("legal email summarization AI")
+        → Calls google_search("law firm email management software")
+        → Updates RESEARCH_BRIEF.md with legal niche findings
+
+Turn 4: Agent self-critiques
+        → Calls delegate to run a critic sub-agent on the updated brief
+        → Gets back: "Legal niche is underserved, but compliance (ABA rules) is critical"
+
+Turn 5: Agent assesses gaps
+        → Calls google_search("ABA rules AI legal document review")
+        → Updates RESEARCH_BRIEF.md with compliance requirements
+
+Turn 6: Agent writes PRD.md
+        → Drafts full PRD with legal compliance NFRs
+
+Turn 7: Agent self-reviews PRD.md
+        → Reads PRD.md back
+        → Checks: all sections present? claims cited? testable FRs?
+        → Finds: "Missing: data retention policy for attorney-client privilege"
+        → Updates PRD.md
+
+Turn 8: Agent scores and presents
+        → Novelty 8/10 (legal niche is underserved)
+        → Feasibility 7/10 (needs compliance expertise)
+        → Market Fit 8/10 (lawyers bill by the hour — any time saver has ROI)
+        → Calls clarify("PRD ready. Scores: N8 F7 M8. [Approve] [Changes] [Reject]?")
+        [HUMAN CLICKS APPROVE]
+
+Turn 9: Agent saves artifact and reports completion
+```
+
+This is 9 turns of autonomous work with 2 human touchpoints (clarify + approve). Compare to the current pipeline: 7 fixed LLM calls with 0 iteration.
+
+---
+
+## 6. How to Get There (Migration Path)
+
+### Step 1: Adopt the harness's Agent + App pattern
+Replace the custom `_run_pipeline` orchestrator with a single `root_agent` built using ADK's `Agent` class, with tools and plugins from the harness.
+
+### Step 2: Write the VentureBot system prompt
+Encode the engineering process (research → clarify → critique → draft → review → refine → score → present) as the agent's instruction, not as hardcoded control flow.
+
+### Step 3: Add iteration budget
+Use `IterationBudgetPlugin` (or a simplified version) to cap turns and tool calls. This replaces the manual `run_manager.manager.check()` calls.
+
+### Step 4: Add quality gates as self-check prompts
+Instead of a separate Judge agent that runs once, give the root agent self-evaluation instructions: "Before presenting the PRD, read it back and verify..."
+
+### Step 5: Wire clarify for real HITL
+The `LongRunningFunctionTool` pattern already exists in `clarify.py`. The harness's `horizon/tools/clarify.py` shows the full pattern with `request_user_confirmation`. Make the agent actually WAIT for the human answer and then continue its loop — not just fire-and-continue.
+
+### Step 6: Remove the hardcoded sequence
+Delete `_PHASES`, `_snapshot_phase_rank`, and the entire `if rank <= N` chain. The agent's system prompt drives the process, not a phase counter.
+
+### Step 7: Keep what already works
+- `memory/` (auto_capture, review_fork, dream_review, sqlite_store) — already ported from harness
+- `artifact_scanner.py` — proof-read gate
+- `guard.py`, `input_guard.py` — security
+- `budget.py` — cost tracking
+- `steering.py` — user steering inbox
+- `dashboard.py` — FastAPI UI with SSE
+
+---
+
+## 7. What the Long-Horizon-Harness Gives Us (Reuse Map)
+
+| Harness Component | File | Reuse For |
+|-------------------|------|-----------|
+| `Agent` + `App` | `horizon/agent.py` | Root agent pattern |
+| `IterationBudgetPlugin` | `horizon/conversation/iteration_budget_plugin.py` | Loop budget enforcement |
+| `GuardrailsPlugin` | `horizon/guardrails/guardrails_plugin.py` | Safety floor |
+| `clarify` tool | `horizon/tools/clarify.py` | HITL questions |
+| `delegate` | `horizon/subagents/delegate.py` | Parallel critique sub-agents |
+| `auto_capture_callback` | `horizon/memory/auto_capture.py` | Already ported |
+| `review_fork_callback` | `horizon/memory/review_fork.py` | Already ported |
+| `dream_review` | `horizon/memory/dream_review.py` | Already ported |
+| `ResumabilityConfig` | `horizon/agent.py` | Session persistence |
+| `EventsCompactionConfig` | `horizon/agent.py` | Long-session summarization |
+| System prompt assembly | `horizon/conversation/system_prompt.py` | Stable + context tiers |
+| Artifact tool | `horizon/tools/artifacts.py` | Save final deliverables |
+| `write_todos` | `horizon/tools/todos.py` | Task tracking within a run |
+
+---
+
+## 8. Concrete Next Steps
+
+### Immediate (refactor current codebase):
+1. **Study the harness agent pattern** — `horizon/agent.py` shows how to build a single Agent with tools + plugins
+2. **Rewrite the system prompt** — encode the VentureBot engineering process as `ROOT_AGENT_INSTRUCTION`
+3. **Merge agents into tools** — the current Advocate/Critic/Judge logic becomes the root agent's internal reasoning + delegate calls, not separate pipeline stages
+4. **Wire real clarify HITL** — adopt the harness's `request_user_confirmation` pattern
+
+### Short-term (validate):
+5. **Test the agentic loop** — does the agent actually iterate? Does it refine its PRD? Does it ask clarifying questions and incorporate answers?
+6. **Tune the iteration budget** — find the right balance between thoroughness and cost
+7. **Measure quality** — compare PRD quality (single-pass vs. multi-turn agentic loop)
+
+### Keep:
+- The dashboard UI (it already supports chat + SSE)
+- The memory layer (SQLite store, auto_capture, review_fork, dream_review)
+- The safety layer (input guard, artifact scanner, budget)
+- The deployment config (Dockerfile, nginx, etc.)
+
+---
+
+## 9. Summary
+
+**The problem:** VentureBot today is a sequential pipeline, not an autonomous agentic loop. It runs each agent exactly once, produces a PRD in a single pass, and cannot iterate, refine, or ask the human clarifying questions in a loop.
+
+**The solution:** Adopt the Google ADK long-horizon-harness pattern — a single autonomous root agent with tools, running in a loop until convergence criteria are met. The system prompt encodes the engineering process (research → clarify → critique → draft → review → refine → score → present). The agent decides what to do next, not a hardcoded phase counter.
+
+**The migration:** Replace `_run_pipeline`'s phase chain with a single agent + IterationBudgetPlugin. Merge the separate Advocate/Critic/Creative/Judge agents into the root agent's tools and internal reasoning. Wire real HITL via clarify. Keep the memory, safety, and dashboard layers that already work.

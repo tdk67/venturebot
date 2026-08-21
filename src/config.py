@@ -33,6 +33,15 @@ LLM_TIMEOUT = int(os.environ.get("VENTUREBOT_LLM_TIMEOUT", "120"))
 MAX_TOKENS = int(os.environ.get("VENTUREBOT_MAX_TOKENS", "4096"))
 RUN_DEADLINE_SECONDS = int(os.environ.get("VENTUREBOT_RUN_DEADLINE", "900"))  # 15 min
 
+# ── Orchestrator loop budget ────────────────────────────────────────────
+# Maximum turns the orchestrator may take before it must stop and present results.
+ORCHESTRATOR_MAX_TURNS = int(os.environ.get("VENTUREBOT_ORCHESTRATOR_MAX_TURNS", "10"))
+# Maximum sub-agent calls per orchestrator turn.
+ORCHESTRATOR_MAX_TOOL_CALLS = int(os.environ.get("VENTUREBOT_ORCHESTRATOR_MAX_TOOL_CALLS", "50"))
+# Quality gate: if the orchestrator has a PRD + verdict and hasn't made progress
+# for this many consecutive turns, it stops.
+ORCHESTRATOR_STALL_TURNS = int(os.environ.get("VENTUREBOT_ORCHESTRATOR_STALL_TURNS", "3"))
+
 # ── Budget (enforced in budget.py; configurable + human-raisable) ──────
 DAILY_BUDGET_LIMIT_USD = float(
     os.environ.get("VENTUREBOT_DAILY_BUDGET_LIMIT", "20.00")
@@ -46,6 +55,9 @@ MODEL_JUDGE = os.environ.get("VENTUREBOT_MODEL_JUDGE", "gemini-3.1-pro-preview")
 MODEL_PRD_WRITER = os.environ.get("VENTUREBOT_MODEL_PRD_WRITER", "gemini-3.1-pro-preview")
 MODEL_AUDITOR = os.environ.get("VENTUREBOT_MODEL_AUDITOR", "gemini-3.1-pro-preview")
 MODEL_CREATIVE = os.environ.get("VENTUREBOT_MODEL_CREATIVE", "gemini-3.7-flash")
+
+# ── Model: Orchestrator ─────────────────────────────────────────────────
+MODEL_ORCHESTRATOR = os.environ.get("VENTUREBOT_MODEL_ORCHESTRATOR", "gemini-3.1-pro-preview")
 
 # ── Temperatures (higher = more exploratory) ───────────────────────────
 # The Creative head runs hot on purpose: it is the divergent thinker that the
