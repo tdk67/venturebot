@@ -10,8 +10,17 @@ class PriorArt(BaseModel):
     gap: str = Field(description="Gap this leaves unfilled")
 
 
+class Competitor(BaseModel):
+    name: str = Field(description="Competitor name")
+    url: str = Field(description="Website or product URL")
+    pricing: str = Field(default="", description="Pricing model (free, freemium, $X/mo, etc.)")
+    strengths: str = Field(default="", description="What they do well")
+    weaknesses: str = Field(default="", description="Weaknesses or complaints")
+    gap: str = Field(description="Gap this leaves unfilled — opportunity for us")
+
+
 class MarketSignal(BaseModel):
-    source: str = Field(description="Where the signal came from")
+    source: str = Field(description="Where the signal came from (e.g. Reddit, HN, ProductHunt)")
     url: str = Field(description="URL of the source")
     insight: str = Field(description="What the signal implies")
 
@@ -24,10 +33,17 @@ class TechnicalLandscape(BaseModel):
 
 class ResearchBrief(BaseModel):
     idea_summary: str = Field(description="2-3 sentence summary")
-    prior_art: list[PriorArt] = Field(default_factory=list)
-    market_signals: list[MarketSignal] = Field(default_factory=list)
-    technical_landscape: TechnicalLandscape
-    resource_links: list[str] = Field(default_factory=list)
+    prior_art: list[PriorArt] = Field(default_factory=list, description="Existing products/projects with URLs, gaps identified")
+    competitors: list[Competitor] = Field(default_factory=list, description="Competitor landscape with pricing and gaps")
+    market_signals: list[MarketSignal] = Field(default_factory=list, description="Community signals from Reddit, HN, ProductHunt, etc.")
+    tam_estimate: str = Field(default="", description="Total Addressable Market estimate with source URL")
+    sam_estimate: str = Field(default="", description="Serviceable Addressable Market estimate")
+    som_estimate: str = Field(default="", description="Serviceable Obtainable Market estimate")
+    demand_direction: str = Field(default="", description="rising | falling | stable — with evidence")
+    funding_activity: list[str] = Field(default_factory=list, description="Recent funding rounds in this space (with URLs if available)")
+    review_insights: list[str] = Field(default_factory=list, description="G2/Capterra/user review insights — common praise and complaints")
+    technical_landscape: TechnicalLandscape = Field(default_factory=TechnicalLandscape, description="Required APIs, libraries, platforms")
+    resource_links: list[str] = Field(default_factory=list, description="All key URLs found during research")
     open_questions: list[str] = Field(default_factory=list)
     needs_clarification: bool = False
     clarification_question: str | None = None

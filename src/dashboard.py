@@ -20,13 +20,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from . import auth, budget, config, run_manager, store
 from . import gemini_usage
-from .agents.pipeline import (
-    DebateResult,
-    list_checkpoints,
-    paused_run_ids,
-    resume_debate,
-    resume_from_checkpoint,
-    run_debate,
+from .agents.orchestrator import (
+    OrchestratorResult,
+    answer_clarify,
+    get_run,
+    run_orchestrator,
 )
 from .memory.dream_review import run_dream_review
 from .memory.sqlite_store import get_store
@@ -257,9 +255,9 @@ async def api_run_phase1(request: Request):
     return {"status": "started"}
 
 
-async def _run_phase1_loop(idea: str):
+async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None):
     await _broadcast("run_started", {"idea": idea})
-    result = await run_debate(idea, inbox=_inbox)
+    result = await run_orchestrator(idea, inbox=_inbox, resume_idea_id=resume_idea_id)
     await _broadcast("run_finished", {
         "status": result.status,
         "verdict": result.verdict,
@@ -267,6 +265,7 @@ async def _run_phase1_loop(idea: str):
         "has_prd": bool(result.prd),
         "prd": result.prd,
         "security_audit": result.security_audit,
+        "turns_used": result.turns_used,
         "error": result.error,
     })
 
@@ -305,29 +304,59 @@ async def api_resume(request: Request):
     steering = data.get("steering", "").strip() or None
     urls = data.get("urls", [])
 
-    async def _resume_loop():
-        try:
-            result = await resume_debate(run_id, decision, steering=steering, urls=urls)
-            await _broadcast("run_finished", {
-                "status": result.status,
-                "verdict": result.verdict,
-                "creative_angles": result.creative_angles,
-                "has_prd": bool(result.prd),
-                "prd": result.prd,
-                "security_audit": result.security_audit,
-                "error": result.error,
-            })
-        except KeyError as e:
-            await _broadcast("error", {"message": str(e)})
+    result = get_run(run_id)
+    if not result:
+        raise HTTPException(404, f"No active run with id {run_id}")
 
-    asyncio.create_task(_resume_loop())
-    return {"status": "resuming", "run_id": run_id}
+    if decision in ("abort", "reject"):
+        result.status = "stopped"
+        store.set_status("stopped")
+        store.log("Human", "user", f"Decision: {decision.upper()} — stopping.")
+        await _broadcast("run_finished", {
+            "status": result.status,
+            "verdict": result.verdict,
+            "creative_angles": result.creative_angles,
+            "has_prd": bool(result.prd),
+            "prd": result.prd,
+            "security_audit": result.security_audit,
+            "turns_used": result.turns_used,
+            "error": result.error,
+        })
+        return {"status": "stopped", "run_id": run_id}
+
+    if decision == "approve":
+        result.status = "done"
+        store.set_status("approved")
+        store.log("Human", "user", "PRD APPROVED.")
+        await _broadcast("run_finished", {
+            "status": result.status,
+            "verdict": result.verdict,
+            "creative_angles": result.creative_angles,
+            "has_prd": bool(result.prd),
+            "prd": result.prd,
+            "security_audit": result.security_audit,
+            "turns_used": result.turns_used,
+            "error": result.error,
+        })
+        return {"status": "approved", "run_id": run_id}
+
+    if decision == "proceed":
+        # Human says proceed anyway — queue steering and let the orchestrator continue
+        if steering:
+            _inbox.add_steering(steering)
+        if urls:
+            _inbox.add_urls(urls)
+        store.log("Human", "user", "PROCEED — continuing orchestration.")
+        return {"status": "continuing", "run_id": run_id}
+
+    raise HTTPException(400, f"Unknown decision: {decision}")
 
 
 @app.get("/api/paused")
 async def api_paused(request: Request):
     auth.get_current_user(request)
-    return {"paused_runs": paused_run_ids()}
+    from .agents.orchestrator import _RUNS
+    return {"paused_runs": list(_RUNS.keys())}
 
 
 # ── Idea history + checkpoint persistence (IDEA_HISTORY_ADDENDUM) ────
@@ -579,48 +608,86 @@ async def api_idea_duplicate_check(request: Request):
 
 @app.post("/api/ideas/{idea_id}/resume")
 async def api_idea_resume(idea_id: str, request: Request):
-    """Load an idea as the active debate context (A3)."""
+    """Resume an idea with full previous context (P0.5).
+    
+    Loads all previous context (research brief, debate transcript, verdict, PRD)
+    and starts a new orchestrator run that continues from where it left off.
+    """
     auth.get_current_user(request)
     idea = get_store().get_idea(idea_id)
     if not idea:
         raise HTTPException(404, "idea not found")
-    _inbox.add_idea(idea["title"])
-    await _broadcast("idea_loaded", {"idea_id": idea_id, "title": idea["title"]})
-    return {"status": "loaded", "idea_id": idea_id, "title": idea["title"]}
+    
+    # Check if a run is already in progress
+    state = store.load_state()
+    if state.get("status") == "running":
+        raise HTTPException(409, "a debate is already running")
+    
+    # Start a new run with the previous context
+    asyncio.create_task(_run_phase1_loop(idea["title"], resume_idea_id=idea_id))
+    await _broadcast("idea_resumed", {"idea_id": idea_id, "title": idea["title"]})
+    return {"status": "resumed", "idea_id": idea_id, "title": idea["title"]}
 
 
 @app.get("/api/checkpoints")
 async def api_checkpoints(request: Request):
-    """List in-progress checkpointed runs (A5)."""
+    """List in-progress runs from the orchestrator (A5)."""
     auth.get_current_user(request)
-    return {"checkpoints": list_checkpoints()}
+    from .agents.orchestrator import _RUNS
+    checkpoints = []
+    for rid, r in _RUNS.items():
+        checkpoints.append({
+            "run_id": rid,
+            "idea": r.idea[:200],
+            "phase": "orchestrator",
+            "status": r.status,
+            "saved_at": time.time(),
+        })
+    return {"checkpoints": checkpoints}
 
 
-@app.post("/api/checkpoints/{run_id}/resume")
-async def api_checkpoint_resume(run_id: str, request: Request):
-    """Resume a checkpointed debate (A6)."""
+@app.post("/api/clarify/answer")
+async def api_clarify_answer(request: Request):
+    """Answer a pending clarify() question from the orchestrator."""
     auth.get_current_user(request)
-
-    async def _resume_loop():
-        try:
-            result = await resume_from_checkpoint(run_id, inbox=_inbox)
-            await _broadcast("run_finished", {
-                "status": result.status,
-                "verdict": result.verdict,
-                "creative_angles": result.creative_angles,
-                "has_prd": bool(result.prd),
-                "prd": result.prd,
-                "security_audit": result.security_audit,
-                "error": result.error,
-            })
-        except KeyError as e:
-            await _broadcast("error", {"message": str(e)})
-
-    asyncio.create_task(_resume_loop())
-    return {"status": "resuming", "run_id": run_id}
+    data = await request.json()
+    run_id = data.get("run_id", "").strip()
+    answer = data.get("answer", "").strip()
+    if not run_id or not answer:
+        raise HTTPException(400, "run_id and answer are required")
+    ok = answer_clarify(run_id, answer)
+    if not ok:
+        raise HTTPException(404, f"No active run with id {run_id}, or no pending clarification")
+    store.log("Human", "user", f"Clarify answer: {answer[:200]}")
+    await _broadcast("clarify_answered", {"run_id": run_id})
+    return {"status": "answered", "run_id": run_id}
 
 
 # ── Self-improvement (M3) ────────────────────────────────────────────
+@app.post("/api/feedback")
+async def api_feedback(request: Request):
+    """Human feedback → lesson pipeline. When the user corrects the agent,
+    this captures the correction as a durable lesson that future runs will read."""
+    auth.get_current_user(request)
+    data = await request.json()
+    feedback = data.get("feedback", "").strip()
+    run_id = data.get("run_id", "").strip()
+    if not feedback:
+        raise HTTPException(400, "feedback is required")
+    # Save as a lesson that load_memories() will return on next run
+    s = get_store()
+    try:
+        s.save_lesson(
+            f"human_feedback_{run_id or 'manual'}",
+            f"Human correction: {feedback}",
+            "human_feedback"
+        )
+        store.log("System", "core", f"Human feedback saved as lesson: {feedback[:200]}")
+        await _broadcast("feedback_saved", {"feedback": feedback[:200]})
+        return {"status": "saved"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
 @app.get("/api/memories")
 async def api_memories(request: Request):
     """Snapshot of the self-improvement state (PRD §6.1 right panel)."""
