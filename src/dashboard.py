@@ -962,4 +962,5 @@ async def dashboard(request: Request):
     # Serve the SPA; auth is enforced client-side via /api/auth/me
     from pathlib import Path
     html = (Path(__file__).parent.parent / "templates" / "index.html").read_text()
-    return HTMLResponse(html)
+    # The SPA shell changes with every deploy — never let browsers cache it.
+    return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
