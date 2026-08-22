@@ -597,6 +597,44 @@ function looksLikeJson(text) {
   return t.startsWith('{') || t.startsWith('[');
 }
 
+// Convert structured JSON (e.g. ResearchBrief) to readable markdown for
+// exports. Top-level keys become sections; arrays of objects become bullet
+// lists with bold labels.
+function jsonToMarkdown(obj, level = 2) {
+  const human = k => String(k).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const heading = n => '#'.repeat(Math.min(Math.max(n, 2), 6));
+  const clean = v => v !== null && v !== undefined && v !== '';
+  if (!clean(obj)) return '';
+  if (typeof obj !== 'object') return String(obj);
+  if (Array.isArray(obj)) {
+    if (!obj.length) return '';
+    return obj.map(item => {
+      if (item && typeof item === 'object') {
+        const parts = Object.entries(item).filter(([, v]) => clean(v))
+          .map(([k, v]) => typeof v === 'object' ? null : `**${human(k)}:** ${v}`)
+          .filter(Boolean);
+        const nested = Object.entries(item).filter(([, v]) => v && typeof v === 'object' && clean(v))
+          .map(([, v]) => '\n  - ' + String(jsonToMarkdown(v, level + 1)).split('\n').join('\n    '))
+          .join('');
+        return `- ${parts.join(' — ')}${nested}`;
+      }
+      return `- ${item}`;
+    }).filter(l => l !== '- ').join('\n');
+  }
+  return Object.entries(obj).map(([k, v]) => {
+    if (!clean(v)) return '';
+    if (typeof v === 'object') return `${heading(level)} ${human(k)}\n\n${jsonToMarkdown(v, level + 1)}`;
+    return `- **${human(k)}:** ${v}`;
+  }).filter(Boolean).join('\n\n');
+}
+
+// If text is JSON, return it as readable markdown; otherwise return as-is.
+function formatDocText(text) {
+  const t = (text || '').trim();
+  if (!looksLikeJson(t)) return t || text || '';
+  try { return jsonToMarkdown(JSON.parse(t)) || t; } catch (_) { return t; }
+}
+
 function appendStructuredJson(container, obj, depth) {
   depth = depth || 0;
   if (Array.isArray(obj)) {
@@ -1257,7 +1295,7 @@ function buildRunMarkdown(run, ideaTitle) {
     lines.push('## PRD', '', run.prd_text, '');
   }
   if (run.research_brief) {
-    lines.push('## Research Brief', '', run.research_brief, '');
+    lines.push('## Research Brief', '', formatDocText(run.research_brief), '');
   }
   lines.push('## Transcript', '');
   (run.events || []).forEach(ev => {
@@ -1282,18 +1320,33 @@ function printRunReport(run) {
   const w = window.open('', '_blank');
   if (!w) { alert('Pop-up blocked — allow pop-ups to print.'); return; }
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  // Formatted block: markdown (or JSON→markdown) → sanitized HTML when the
+  // renderer is available; falls back to escaped <pre> offline.
+  const fmtBlock = text => {
+    if (!text) return '';
+    if (window.marked && window.DOMPurify) {
+      try {
+        return `<div class="fmt">${DOMPurify.sanitize(marked.parse(formatDocText(text)), { ALLOWED_ATTR: ['href', 'title', 'alt'] })}</div>`;
+      } catch (_) { /* fall through */ }
+    }
+    return `<pre>${esc(formatDocText(text))}</pre>`;
+  };
   const bodyHtml = `
     <h1>Debate #${run.run_number}${modalIdea ? ' — ' + esc(modalIdea.title) : ''}</h1>
     <p><b>Status:</b> ${esc(run.status)} &nbsp; <b>Verdict:</b> ${esc(run.verdict || '—')}</p>
-    ${run.prd_text ? `<h2>PRD</h2><pre>${esc(run.prd_text)}</pre>` : ''}
-    ${run.research_brief ? `<h2>Research Brief</h2><pre>${esc(run.research_brief)}</pre>` : ''}
+    ${run.prd_text ? `<h2>PRD</h2>${fmtBlock(run.prd_text)}` : ''}
+    ${run.research_brief ? `<h2>Research Brief</h2>${fmtBlock(run.research_brief)}` : ''}
     <h2>Transcript</h2>
-    ${(run.events || []).map(ev => `<h3>[${esc(ev.agent)}]</h3><pre>${esc(ev.text)}</pre>`).join('')}`;
+    ${(run.events || []).map(ev => `<h3>[${esc(ev.agent)}]</h3>${fmtBlock(ev.text)}`).join('')}`;
   w.document.write(`<!doctype html><html><head><title>Debate report</title>
     <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;color:#111}
     pre{white-space:pre-wrap;background:#f5f5f5;padding:.75rem;border-radius:6px;font-size:.8rem}
     h1{border-bottom:2px solid #333}h2{border-bottom:1px solid #ccc;margin-top:2rem}
-    h3{margin-bottom:.25rem;color:#555}</style></head><body>${bodyHtml}
+    h3{margin-bottom:.25rem;color:#555}
+    .fmt ul,.fmt ol{padding-left:1.4em}.fmt li{margin:.2em 0}
+    .fmt table{border-collapse:collapse;margin:.5em 0}.fmt th,.fmt td{border:1px solid #999;padding:.25em .5em}
+    .fmt a{color:#0366d6}.fmt code{background:#f0f0f0;padding:0 .25em;border-radius:3px}
+    .fmt pre{background:#f5f5f5}</style></head><body>${bodyHtml}
     <script>window.onload=()=>window.print()<\/script></body></html>`);
   w.document.close();
 }
