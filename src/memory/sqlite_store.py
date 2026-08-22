@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS idea_tree (
     id TEXT PRIMARY KEY,
     parent_id TEXT,
     title TEXT NOT NULL,
+    description TEXT,
     status TEXT NOT NULL DEFAULT 'ACTIVE',
     scores TEXT,
     research_brief TEXT,
@@ -120,12 +121,13 @@ class MemoryStore:
             conn = sqlite3.connect(self.db_path, check_same_thread=False)
             conn.row_factory = sqlite3.Row
             conn.executescript(_SCHEMA)
-            # Lightweight migration for columns added after the initial schema
-            # (e.g. idea_tree.verdict). Idempotent: ignore if it already exists.
-            try:
-                conn.execute("ALTER TABLE idea_tree ADD COLUMN verdict TEXT")
-            except sqlite3.OperationalError:
-                pass
+            # Lightweight migration for columns added after the initial schema.
+            # Idempotent: ignore if the column already exists.
+            for col in ("verdict", "description"):
+                try:
+                    conn.execute(f"ALTER TABLE idea_tree ADD COLUMN {col} TEXT")
+                except sqlite3.OperationalError:
+                    pass
             conn.commit()
             self._conn = conn
         return self._conn
@@ -288,18 +290,40 @@ class MemoryStore:
         return {r["key"]: r["value"] for r in rows}
 
     # ── idea tree ───────────────────────────────────────────────────────
-    def create_idea(self, title: str, parent_id: str | None = None) -> str:
+    def create_idea(self, title: str, parent_id: str | None = None,
+                    description: str | None = None) -> str:
         idea_id = uuid.uuid4().hex
         now = time.time()
         with self._lock:
             c = self._ensure_conn()
             c.execute(
-                "INSERT INTO idea_tree (id, parent_id, title, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, 'ACTIVE', ?, ?)",
-                (idea_id, parent_id, title, now, now),
+                "INSERT INTO idea_tree (id, parent_id, title, description, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'ACTIVE', ?, ?)",
+                (idea_id, parent_id, title, description, now, now),
             )
             c.commit()
         return idea_id
+
+    def update_idea_text(self, idea_id: str, *, title: str | None = None,
+                         description: str | None = None) -> bool:
+        """Human edit of the idea's title and/or full pitch text.
+        Returns False if the idea does not exist."""
+        if title is None and description is None:
+            return True  # nothing to change
+        with self._lock:
+            c = self._ensure_conn()
+            sets, vals = [], []
+            if title is not None:
+                sets.append("title = ?")
+                vals.append(title)
+            if description is not None:
+                sets.append("description = ?")
+                vals.append(description)
+            sets.append("updated_at = ?")
+            vals.extend([time.time(), idea_id])
+            cur = c.execute(f"UPDATE idea_tree SET {', '.join(sets)} WHERE id = ?", vals)
+            c.commit()
+            return cur.rowcount > 0
 
     def update_idea_scores(self, idea_id: str, scores: dict) -> None:
         with self._lock:

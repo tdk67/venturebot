@@ -190,3 +190,81 @@ def test_import_backup_bundle_and_validation(client):
     # bad format rejected
     assert client.post("/api/ideas/import", json={"nope": True}).status_code == 400
     assert client.post("/api/ideas/import", json={"format": "venturebot-idea"}).status_code == 400
+
+
+# ── Full pitch persistence + edit (second fix) ────────────────────────
+
+def test_create_idea_keeps_full_pitch(tmp_path):
+    s = MemoryStore(tmp_path / "m.db")
+    full = "A" * 500  # way beyond the 200-char title truncation
+    idea_id = s.create_idea(full[:200], description=full)
+    assert s.get_idea(idea_id)["description"] == full
+
+
+def test_update_idea_text(tmp_path):
+    s = MemoryStore(tmp_path / "m.db")
+    idea_id = s.create_idea("old title", description="old pitch")
+    assert s.update_idea_text(idea_id, title="new title") is True
+    idea = s.get_idea(idea_id)
+    assert idea["title"] == "new title"
+    assert idea["description"] == "old pitch"
+    assert s.update_idea_text(idea_id, description="new pitch") is True
+    assert s.get_idea(idea_id)["description"] == "new pitch"
+    assert s.update_idea_text("nope", title="x") is False
+
+
+def test_edit_api_and_pitch_in_detail(client):
+    from src.memory.sqlite_store import get_store
+    idea_id = get_store().create_idea("short title", description="the whole long pitch text")
+    r = client.post(f"/api/ideas/{idea_id}/edit",
+                    json={"title": "edited title", "pitch": "edited full pitch"})
+    assert r.status_code == 200
+    d = client.get(f"/api/ideas/{idea_id}").json()
+    assert d["title"] == "edited title"
+    assert d["pitch"] == "edited full pitch"
+    # validation
+    assert client.post(f"/api/ideas/{idea_id}/edit", json={}).status_code == 400
+    assert client.post("/api/ideas/nope/edit", json={"title": "x"}).status_code == 404
+
+
+def test_export_import_preserves_pitch(client):
+    from src.memory.sqlite_store import get_store
+    s = get_store()
+    idea_id = s.create_idea("t", description="full original pitch here")
+    exported = client.get(f"/api/ideas/{idea_id}/export").json()
+    assert exported["pitch"] == "full original pitch here"
+    new_id = client.post("/api/ideas/import", json=exported).json()["ideas"][0]["id"]
+    assert s.get_idea(new_id)["description"] == "full original pitch here"
+
+
+# ── Resume uses the full pitch, not the truncated title ───────────────
+
+def test_resume_passes_full_pitch_and_comment(client, monkeypatch):
+    import asyncio
+    import src.dashboard as dash
+    from src.memory.sqlite_store import get_store
+
+    captured = {}
+    async def fake_loop(idea, resume_idea_id=None, resume_comment=None):
+        captured["idea"] = idea
+        captured["resume_idea_id"] = resume_idea_id
+        captured["resume_comment"] = resume_comment
+    monkeypatch.setattr(dash, "_run_phase1_loop", fake_loop)
+
+    idea_id = get_store().create_idea("only first sentence here",
+                                      description="first sentence. And the REST of the pitch with crucial detail.")
+    r = client.post(f"/api/ideas/{idea_id}/resume", json={"comment": "look at competitor Z"})
+    assert r.status_code == 200
+    assert captured["idea"] == ("first sentence. And the REST of the pitch "
+                               "with crucial detail.")
+    assert captured["resume_idea_id"] == idea_id
+    assert captured["resume_comment"] == "look at competitor Z"
+
+
+# ── Orchestrator prompt: no raw context-variable placeholder (crash fix) ──
+
+def test_orchestrator_instruction_has_no_raw_placeholder():
+    from src.agents.orchestrator import _orchestrator_instruction
+    instr = _orchestrator_instruction()
+    assert "{must_read_before_starting}" not in instr
+    assert "PAST LESSONS" in instr  # section still present, rendered

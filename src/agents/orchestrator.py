@@ -150,6 +150,29 @@ load_memories(), then research().
 """
 
 
+def _render_must_read() -> str:
+    """Render the 'must read before starting' block: active lessons from the
+    memory store. Rendered server-side — the raw {placeholder} must never reach
+    ADK's instruction templating (it would raise 'Context variable not found').
+    """
+    try:
+        lessons = get_store().get_lessons(active_only=True, limit=10)
+    except Exception:
+        lessons = []
+    if not lessons:
+        return "(No lessons recorded yet — this may be one of the first runs.)"
+    lines = [f"- {l['name']}: {l['rule']}" for l in lessons]
+    return "\n".join(lines)
+
+
+def _orchestrator_instruction() -> str:
+    """The orchestrator system prompt with all placeholders rendered.
+    Uses replace(), not format(), so literal braces elsewhere stay intact."""
+    return _ORCHESTRATOR_PROMPT.replace(
+        "{must_read_before_starting}", _render_must_read()
+    )
+
+
 @dataclass
 class OrchestratorResult:
     """The final result of an orchestrator run, exposed to the dashboard."""
@@ -702,8 +725,8 @@ async def run_orchestrator(
                         pass
                 store_obj.update_idea_content(resume_idea_id, workspace_path=f"runs/{run_id}/")
         else:
-            # New idea
-            result.idea_id = store_obj.create_idea(idea[:200])
+            # New idea — keep the FULL pitch text, not just the truncated title.
+            result.idea_id = store_obj.create_idea(idea[:200], description=idea)
             store_obj.update_idea_content(result.idea_id, workspace_path=f"runs/{run_id}/")
         # Open the per-run snapshot row (P1.1): every debate gets its own
         # immutable history entry — past debates are never overwritten.
@@ -739,7 +762,7 @@ async def run_orchestrator(
     orchestrator_agent = LlmAgent(
         name="orchestrator",
         model=Gemini(model=config.MODEL_ORCHESTRATOR),
-        instruction=_ORCHESTRATOR_PROMPT,
+        instruction=_orchestrator_instruction(),
         tools=[
             FunctionTool(tools_obj.load_memories),
             FunctionTool(tools_obj.research),

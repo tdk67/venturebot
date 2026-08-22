@@ -197,9 +197,10 @@
     <div class="w-full max-w-3xl rounded-2xl border border-slate-700 bg-slate-950 p-6">
       <!-- Header -->
       <div class="flex items-start justify-between gap-4 mb-4">
-        <div class="min-w-0">
-          <h2 id="idea-modal-title" class="text-xl font-bold text-slate-100 break-words"></h2>
+        <div class="min-w-0 flex-1">
+          <div id="idea-modal-title-wrap"></div>
           <div id="idea-modal-meta" class="text-xs text-slate-400 mt-1"></div>
+          <div id="idea-modal-pitch" class="mt-3"></div>
         </div>
         <button onclick="closeIdeaModal()" title="Close"
                 class="shrink-0 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-lg">×</button>
@@ -769,27 +770,17 @@ async function importIdeas(input) {
 
 // ── Idea detail modal: past debates + replay + resume (second brain) ─
 let modalIdeaId = null;
+let modalIdea = null;   // full idea payload currently shown
 
 async function openIdeaModal(ideaId, opts) {
   const res = await fetch(`/api/ideas/${ideaId}`);
   if (!res.ok) { alert('Could not load idea.'); return; }
   const idea = await res.json();
   modalIdeaId = ideaId;
+  modalIdea = idea;
   document.getElementById('idea-resume-comment').value = '';
 
-  const dot = {ACTIVE:'🟢', PARK:'🟡', PRUNED:'🔴'}[idea.status] || '⚪';
-  document.getElementById('idea-modal-title').textContent = `${dot} ${idea.title}`;
-  const meta = document.getElementById('idea-modal-meta');
-  meta.textContent = '';
-  const sc = idea.scores || {};
-  const parts = [];
-  if (idea.verdict) parts.push('verdict: ' + idea.verdict);
-  ['novelty','feasibility','market_fit'].forEach(k => {
-    const v = sc[k] && (sc[k].score !== undefined ? sc[k].score : sc[k]);
-    if (v !== undefined) parts.push(k + ': ' + v);
-  });
-  if (parts.length) meta.appendChild(el('span', '', parts.join(' · ')));
-  meta.appendChild(el('span', 'text-slate-600', `  ·  created ${idea.date}`));
+  renderIdeaHeader(idea);
 
   renderRunList(idea.runs || []);
   document.getElementById('idea-modal-replay').classList.add('hidden');
@@ -803,6 +794,87 @@ async function openIdeaModal(ideaId, opts) {
     const runs = idea.runs || [];
     const withPrd = [...runs].reverse().find(r => r.id);  // fall back to latest run
     if (runs.length) showRun(ideaId, withPrd.id, { showPrd: true });
+  }
+}
+
+function renderIdeaHeader(idea, editMode) {
+  // Title row (+ inline edit toggle)
+  const wrap = document.getElementById('idea-modal-title-wrap');
+  wrap.textContent = '';
+  const titleRow = el('div', 'flex items-start justify-between gap-2');
+  const dot = {ACTIVE:'🟢', PARK:'🟡', PRUNED:'🔴'}[idea.status] || '⚪';
+  if (editMode) {
+    const inp = el('input', 'flex-1 bg-slate-900 border border-blue-500 rounded-lg px-3 py-1.5 text-lg font-bold text-slate-100 focus:outline-none');
+    inp.value = idea.title;
+    inp.id = 'idea-edit-title';
+    titleRow.appendChild(inp);
+  } else {
+    titleRow.appendChild(el('h2', 'text-xl font-bold text-slate-100 break-words', `${dot} ${idea.title}`));
+    const editBtn = el('button', 'shrink-0 px-2 py-1 text-[11px] rounded bg-slate-800 hover:bg-slate-700 text-slate-300', '✏️ Edit');
+    editBtn.title = 'Edit title & pitch';
+    editBtn.onclick = () => renderIdeaHeader(modalIdea, true);
+    titleRow.appendChild(editBtn);
+  }
+  wrap.appendChild(titleRow);
+
+  // Scores / verdict meta line
+  const meta = document.getElementById('idea-modal-meta');
+  meta.textContent = '';
+  if (!editMode) {
+    const sc = idea.scores || {};
+    const parts = [];
+    if (idea.verdict) parts.push('verdict: ' + idea.verdict);
+    ['novelty','feasibility','market_fit'].forEach(k => {
+      const v = sc[k] && (sc[k].score !== undefined ? sc[k].score : sc[k]);
+      if (v !== undefined) parts.push(k + ': ' + v);
+    });
+    if (parts.length) meta.appendChild(el('span', '', parts.join(' · ')));
+    meta.appendChild(el('span', 'text-slate-600', `  ·  created ${idea.date}`));
+  }
+
+  // Full pitch (view or edit)
+  const pitchBox = document.getElementById('idea-modal-pitch');
+  pitchBox.textContent = '';
+  const label = el('div', 'text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1', 'Full pitch');
+  pitchBox.appendChild(label);
+  if (editMode) {
+    const ta = el('textarea', 'w-full bg-slate-900 border border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none');
+    ta.rows = Math.min(10, Math.max(3, Math.ceil((idea.pitch || '').length / 90)));
+    ta.value = idea.pitch || '';
+    ta.placeholder = 'The complete idea text — this is what a resumed debate receives as input.';
+    ta.id = 'idea-edit-pitch';
+    pitchBox.appendChild(ta);
+    const btns = el('div', 'flex gap-2 mt-2');
+    const save = el('button', 'px-3 py-1 text-xs font-bold rounded bg-blue-600 hover:bg-blue-500 text-white', 'Save');
+    const cancel = el('button', 'px-3 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-white', 'Cancel');
+    save.onclick = async () => {
+      const title = document.getElementById('idea-edit-title').value.trim();
+      const pitch = document.getElementById('idea-edit-pitch').value.trim();
+      if (!title) { alert('Title cannot be empty.'); return; }
+      const r = await fetch(`/api/ideas/${modalIdeaId}/edit`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, pitch }),
+      });
+      if (!r.ok) { const e = await r.json().catch(() => ({})); alert('Save failed: ' + (e.detail || r.status)); return; }
+      modalIdea.title = title;
+      modalIdea.pitch = pitch || null;
+      renderIdeaHeader(modalIdea, false);
+      renderModalFooter(modalIdea);
+      addMessage('System', '✏️ Idea updated.');
+      fetchIdeas();
+    };
+    cancel.onclick = () => renderIdeaHeader(modalIdea, false);
+    btns.appendChild(save);
+    btns.appendChild(cancel);
+    pitchBox.appendChild(btns);
+  } else {
+    const text = idea.pitch;
+    if (text) {
+      const pre = el('pre', 'text-xs text-slate-300 whitespace-pre-wrap bg-slate-900/70 border border-slate-800 p-3 rounded-lg max-h-48 overflow-y-auto', text);
+      pitchBox.appendChild(pre);
+    } else {
+      pitchBox.appendChild(el('p', 'text-xs text-slate-500 italic', 'No full pitch stored (older idea) — click ✏️ Edit to add one; a resumed debate will use it as input.'));
+    }
   }
 }
 

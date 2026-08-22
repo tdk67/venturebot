@@ -379,6 +379,7 @@ def _export_idea(idea: dict) -> dict:
         "format": "venturebot-idea",
         "version": 1,
         "title": idea.get("title"),
+        "pitch": idea.get("description"),
         "status": idea.get("status") or "ACTIVE",
         "verdict": idea.get("verdict"),
         "scores": scores,
@@ -429,6 +430,8 @@ def _idea_to_item(idea: dict) -> dict:
         "status": idea["status"],
         "scores": _scores_compact(idea.get("scores")),
         "description": description,
+        # The human's full original pitch (edited text if it was edited).
+        "pitch": idea.get("description") or None,
         "verdict": verdict,
         "github_url": None,
         "deployed_url": None,
@@ -635,7 +638,7 @@ async def api_ideas_import(request: Request):
     for raw in ideas:
         if not isinstance(raw, dict) or not raw.get("title"):
             raise HTTPException(400, "each idea needs at least a 'title'")
-        new_id = s.create_idea(str(raw["title"])[:200])
+        new_id = s.create_idea(str(raw["title"])[:200], description=raw.get("pitch"))
         s.update_idea_content(
             new_id,
             research_brief=raw.get("research_brief"),
@@ -752,6 +755,25 @@ async def api_idea_run_detail(idea_id: str, run_id: str, request: Request):
     }
 
 
+@app.post("/api/ideas/{idea_id}/edit")
+async def api_idea_edit(idea_id: str, request: Request):
+    """Human edit of an idea's title and/or full pitch text.
+
+    The pitch is what a resumed debate receives as its input, so editing it is
+    how the human steers an idea between runs."""
+    auth.get_current_user(request)
+    data = await request.json()
+    title = (data.get("title") or "").strip() or None
+    pitch = (data.get("pitch") or "").strip() or None
+    if not title and not pitch:
+        raise HTTPException(400, "nothing to update")
+    ok = get_store().update_idea_text(idea_id, title=title, description=pitch)
+    if not ok:
+        raise HTTPException(404, "idea not found")
+    await _broadcast("idea_updated", {"idea_id": idea_id})
+    return {"status": "updated", "idea_id": idea_id}
+
+
 @app.post("/api/ideas/{idea_id}/archive")
 async def api_idea_archive(idea_id: str, request: Request):
     """Park an idea (A4)."""
@@ -820,8 +842,10 @@ async def api_idea_resume(idea_id: str, request: Request):
         body = {}
     comment = (body.get("comment") or "").strip() or None
     
-    # Start a new run with the previous context + the human's new comment
-    asyncio.create_task(_run_phase1_loop(idea["title"], resume_idea_id=idea_id,
+    # Start a new run with the previous context + the human's new comment.
+    # Resume from the FULL pitch text (edited version wins), not the truncated title.
+    full_text = (idea.get("description") or "").strip() or idea["title"]
+    asyncio.create_task(_run_phase1_loop(full_text, resume_idea_id=idea_id,
                                          resume_comment=comment))
     await _broadcast("idea_resumed", {"idea_id": idea_id, "title": idea["title"],
                                       "has_comment": bool(comment)})
