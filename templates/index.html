@@ -5,8 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>VentureBot — Command Center</title>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
 <style>
-  #debate-feed .msg { white-space: pre-wrap; word-break: break-word; }
+  #debate-feed .msg { word-break: break-word; }
+  .md-body { white-space: normal; }
+  .md-body h1, .md-body h2, .md-body h3 { font-weight: 700; margin: .6em 0 .3em; color: #fff; }
+  .md-body h1 { font-size: 1.05rem; } .md-body h2 { font-size: 1rem; } .md-body h3 { font-size: .925rem; }
+  .md-body p { margin: .35em 0; }
+  .md-body ul, .md-body ol { margin: .35em 0; padding-left: 1.4em; list-style: disc; }
+  .md-body ol { list-style: decimal; }
+  .md-body li { margin: .15em 0; }
+  .md-body code { background: rgba(255,255,255,.1); padding: 0 .3em; border-radius: .25em; }
+  .md-body pre { background: rgba(0,0,0,.4); padding: .6em; border-radius: .4em; overflow-x: auto; margin: .5em 0; }
+  .md-body pre code { background: none; padding: 0; }
+  .md-body a { color: #7dd3fc; text-decoration: underline; }
+  .md-body table { border-collapse: collapse; margin: .5em 0; }
+  .md-body th, .md-body td { border: 1px solid rgba(255,255,255,.2); padding: .25em .5em; }
+  .md-body blockquote { border-left: 3px solid rgba(255,255,255,.3); padding-left: .8em; color: #cbd5e1; margin: .4em 0; }
+  .md-body hr { border-color: rgba(255,255,255,.15); margin: .6em 0; }
 </style>
 </head>
 <body class="bg-slate-900 text-slate-100 min-h-screen">
@@ -611,14 +628,26 @@ function appendStructuredJson(container, obj, depth) {
 }
 
 function renderAgentOutput(container, text) {
-  // JSON → structured; otherwise plain pre-wrapped text. Never innerHTML.
+  // JSON → structured view; markdown → sanitized HTML (XSS-safe via DOMPurify);
+  // fallback → plain text. innerHTML is only ever set with sanitized output.
   if (looksLikeJson(text)) {
     try {
       const obj = JSON.parse(text.trim());
       appendStructuredJson(container, obj, 0);
       return;
+    } catch (_) { /* fall through */ }
+  }
+  if (window.marked && window.DOMPurify) {
+    try {
+      container.classList.add('md-body');
+      container.innerHTML = DOMPurify.sanitize(marked.parse(text), {
+        ALLOWED_ATTR: ['href', 'title', 'alt'],
+        FORBID_TAGS: ['style', 'form', 'input', 'iframe'],
+      });
+      return;
     } catch (_) { /* fall through to plain text */ }
   }
+  container.classList.add('whitespace-pre-wrap');
   container.appendChild(document.createTextNode(text));
   return;
 }
@@ -696,7 +725,7 @@ function showVerdict(v) {
     const item = s[k] || {};
     const cell = el('div', 'bg-slate-800 p-3 rounded-lg');
     cell.appendChild(el('div', 'text-xs uppercase text-slate-400', k));
-    cell.appendChild(el('div', 'text-2xl font-black', String(item.score ?? '—')));
+    cell.appendChild(el('div', 'text-2xl font-black', item.score !== undefined ? item.score + '/10' : '—'));
     cell.appendChild(el('div', 'text-xs text-slate-400', item.rationale || ''));
     scoresEl.appendChild(cell);
   });
@@ -1011,7 +1040,7 @@ function renderIdeaHeader(idea, editMode) {
     if (idea.verdict) parts.push('verdict: ' + idea.verdict);
     ['novelty','feasibility','market_fit'].forEach(k => {
       const v = sc[k] && (sc[k].score !== undefined ? sc[k].score : sc[k]);
-      if (v !== undefined) parts.push(k + ': ' + v);
+      if (v !== undefined) parts.push(k + ': ' + v + '/10');
     });
     if (parts.length) meta.appendChild(el('span', '', parts.join(' · ')));
     meta.appendChild(el('span', 'text-slate-600', `  ·  created ${idea.date}`));
@@ -1214,7 +1243,7 @@ function buildRunMarkdown(run, ideaTitle) {
   if (run.scores) {
     const sc = run.scores;
     const fmt = k => sc[k] && (sc[k].score !== undefined ? sc[k].score : sc[k]);
-    lines.push(`- **Scores:** novelty ${fmt('novelty') ?? '—'} · feasibility ${fmt('feasibility') ?? '—'} · market_fit ${fmt('market_fit') ?? '—'}`);
+    lines.push(`- **Scores (out of 10):** novelty ${fmt('novelty') ?? '—'} · feasibility ${fmt('feasibility') ?? '—'} · market_fit ${fmt('market_fit') ?? '—'}`);
   }
   if (run.comment) lines.push(`- **Human comment:** ${run.comment}`);
   if (run.started_at) {
