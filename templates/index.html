@@ -148,21 +148,15 @@
       <!-- Debate feed -->
       <div class="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
         <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
-        <!-- Live progress indicator (UI_UX_NOTES #2) -->
-        <div id="progress-bar" class="mb-4 hidden">
-          <div class="flex items-center justify-between mb-1">
-            <span id="current-agent" class="text-xs font-bold text-blue-400"></span>
-            <span id="elapsed" class="text-xs text-slate-500"></span>
-          </div>
-          <div class="flex gap-1">
-            <div id="phase-research" class="h-1.5 flex-1 rounded bg-slate-700"></div>
-            <div id="phase-advocate" class="h-1.5 flex-1 rounded bg-slate-700"></div>
-            <div id="phase-critic" class="h-1.5 flex-1 rounded bg-slate-700"></div>
-            <div id="phase-creative" class="h-1.5 flex-1 rounded bg-slate-700"></div>
-            <div id="phase-judge" class="h-1.5 flex-1 rounded bg-slate-700"></div>
-            <div id="phase-prd_writer" class="h-1.5 flex-1 rounded bg-slate-700"></div>
-            <div id="phase-auditor" class="h-1.5 flex-1 rounded bg-slate-700"></div>
-          </div>
+        <!-- Debate economics line -->
+        <div id="debate-econ" class="hidden mb-3 flex items-center gap-4 text-xs">
+          <span id="econ-cost" class="font-mono text-emerald-400">💰 $0.0000</span>
+          <span id="econ-elapsed" class="font-mono text-slate-400">⏱ 0:00</span>
+          <span id="econ-turns" class="font-mono text-slate-500"></span>
+        </div>
+        <!-- Participants strip: one chip per debate participant -->
+        <div id="participants" class="hidden mb-4">
+          <div id="participant-chips" class="flex flex-wrap gap-2"></div>
         </div>
         <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
       </div>
@@ -192,9 +186,13 @@
   </div>
 </div>
 
-  <!-- Idea detail modal: past debates, replay, resume (second brain) -->
-  <div id="idea-modal" class="fixed inset-0 z-50 hidden items-start justify-center overflow-y-auto bg-black/70 p-4 md:p-8">
-    <div class="w-full max-w-3xl rounded-2xl border border-slate-700 bg-slate-950 p-6">
+  <!-- Idea workspace: FULL-SCREEN view — past debates, replay by participant, resume -->
+  <div id="idea-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950">
+    <div class="sticky top-0 z-10 bg-slate-950/95 border-b border-slate-800 px-6 py-3 flex items-center justify-between">
+      <button onclick="closeIdeaModal()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold">← All ideas</button>
+      <span class="text-xs text-slate-500">Idea Workspace</span>
+    </div>
+    <div class="max-w-6xl mx-auto p-6">
       <!-- Header -->
       <div class="flex items-start justify-between gap-4 mb-4">
         <div class="min-w-0 flex-1">
@@ -210,21 +208,25 @@
       <h3 class="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Debate history</h3>
       <div id="idea-modal-runs" class="space-y-2 mb-5"></div>
 
-      <!-- Replay area: same look as the live debate feed -->
+      <!-- Replay area: participants as tabs → wide detail pane -->
       <div id="idea-modal-replay" class="hidden">
-        <div class="flex items-center justify-between mb-2">
-          <h3 id="idea-modal-replay-title" class="text-sm font-bold text-blue-400"></h3>
+        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
+          <h3 id="idea-modal-replay-title" class="text-base font-bold text-blue-400"></h3>
           <div class="flex gap-2">
+            <button id="idea-run-md-btn" class="hidden px-2 py-1 text-[11px] rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold">⬇ .md report</button>
+            <button id="idea-run-pdf-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">🖨 PDF</button>
             <button id="idea-modal-prd-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">View PRD</button>
             <button id="idea-modal-brief-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">Research brief</button>
           </div>
         </div>
+        <!-- Participant tabs -->
+        <div id="run-tabs" class="flex flex-wrap gap-1 mb-3 border-b border-slate-800 pb-2"></div>
         <pre id="idea-modal-doc" class="hidden text-xs text-slate-200 whitespace-pre-wrap bg-slate-900 p-3 rounded-lg max-h-72 overflow-y-auto mb-3"></pre>
-        <div id="idea-modal-feed" class="space-y-3 max-h-[420px] overflow-y-auto rounded-lg bg-slate-900/40 p-2"></div>
+        <div id="idea-modal-feed" class="space-y-3 max-h-none"></div>
       </div>
 
       <!-- Resume with a new comment -->
-      <div class="mt-5 pt-4 border-t border-slate-800">
+      <div class="mt-5 pt-4 border-t border-slate-800 mb-10">
         <label for="idea-resume-comment" class="text-xs uppercase tracking-wider text-slate-500 font-bold">Continue this idea — what's new?</label>
         <textarea id="idea-resume-comment" rows="2"
                   placeholder="e.g. A competitor just shut down; also I now think the niche is B2B only — re-run the debate with this in mind…"
@@ -436,69 +438,252 @@ async function getCurrentRunId() {
 }
 
 // ── SSE ────────────────────────────────────────────────────────────────
-const _PHASE_LABELS = {
-  research: '🔍 Research', advocate: '⚖️ Advocate', critic: '🛡️ Critic',
-  creative: '💡 Creative', judge: '🧑‍⚖️ Judge', prd_writer: '📝 PRD', auditor: '✅ Audit',
-};
-let _runTimer = null;
+// Participants of the debate, in pipeline order. The Orchestrator is a
+// participant too — it drives the loop between phases and decides when to stop.
+const _PARTICIPANTS = [
+  { key: 'orchestrator', label: '🎛 Orchestrator' },
+  { key: 'research',     label: '🔍 Researcher' },
+  { key: 'advocate',     label: '⚖️ Advocate' },
+  { key: 'critic',       label: '🛡️ Critic' },
+  { key: 'creative',     label: '💡 Creative' },
+  { key: 'judge',        label: '🧑‍⚖️ Judge' },
+  { key: 'prd_writer',   label: '📝 PRD Writer' },
+  { key: 'auditor',      label: '✅ Auditor' },
+];
 
-function showProgress() {
-  document.getElementById('progress-bar').classList.remove('hidden');
+const _chipState = {};   // key → { chip, status, timeEl, timer, startedAt }
+let _econTimer = null;
+let _costBaseline = null; // budget.spent when the debate started
+let _activeChip = null;
+
+function _fmtSecs(s) {
+  return Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 }
-function hideProgress() {
-  document.getElementById('progress-bar').classList.add('hidden');
-  if (_runTimer) { clearInterval(_runTimer); _runTimer = null; }
+
+function buildParticipants() {
+  const box = document.getElementById('participant-chips');
+  if (box.childElementCount) return;  // build once
+  _PARTICIPANTS.forEach(p => {
+    const chip = el('div', 'flex items-center gap-2 px-3 py-1.5 rounded-full border border-slate-700 bg-slate-900 text-xs text-slate-400');
+    chip.appendChild(el('span', '', p.label));
+    const status = el('span', 'text-slate-600', '·');
+    const time = el('span', 'font-mono text-slate-600', '');
+    chip.appendChild(status);
+    chip.appendChild(time);
+    box.appendChild(chip);
+    _chipState[p.key] = { chip, status, timeEl: time, timer: null };
+  });
 }
-function setPhaseActive(phase, active) {
-  const el = document.getElementById('phase-' + phase);
-  if (el) el.className = 'h-1.5 flex-1 rounded ' + (active ? 'bg-blue-500' : 'bg-slate-700');
+
+function chipSet(key, mode) {
+  // mode: idle | thinking | done | error
+  const st = _chipState[key];
+  if (!st) return;
+  if (st.timer) { clearInterval(st.timer); st.timer = null; }
+  const base = 'flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs ';
+  if (mode === 'thinking') {
+    st.chip.className = base + 'border-blue-500 bg-blue-500/10 text-blue-300';
+    st.status.textContent = '🧠 thinking…';
+    st.status.className = 'text-blue-400';
+    st.timeEl.className = 'font-mono text-blue-300';
+    st.startedAt = Date.now();
+    st.timeEl.textContent = '0:00';
+    st.timer = setInterval(() => {
+      st.timeEl.textContent = _fmtSecs((Date.now() - st.startedAt) / 1000);
+    }, 1000);
+  } else if (mode === 'done') {
+    st.chip.className = base + 'border-emerald-500/40 bg-emerald-500/5 text-emerald-300';
+    st.status.textContent = '✓ done';
+    st.status.className = 'text-emerald-400';
+    st.timeEl.className = 'font-mono text-emerald-400/80';
+    if (!st.timeEl.textContent) st.timeEl.textContent = '0:00';
+  } else if (mode === 'error') {
+    st.chip.className = base + 'border-red-500/50 bg-red-500/10 text-red-300';
+    st.status.textContent = '✗ failed';
+    st.status.className = 'text-red-400';
+  } else {
+    st.chip.className = base + 'border-slate-700 bg-slate-900 text-slate-400';
+    st.status.textContent = '·';
+    st.status.className = 'text-slate-600';
+    st.timeEl.textContent = '';
+    st.timeEl.className = 'font-mono text-slate-600';
+  }
 }
-function resetPhases() {
-  Object.keys(_PHASE_LABELS).forEach(p => setPhaseActive(p, false));
+
+function chipActivate(key) {
+  // Complete whichever chip is currently thinking, then start this one.
+  if (_activeChip && _activeChip !== key) chipSet(_activeChip, 'done');
+  _activeChip = key;
+  if (key) chipSet(key, 'thinking');
+}
+
+function participantsReset() {
+  buildParticipants();
+  document.getElementById('participants').classList.remove('hidden');
+  Object.keys(_chipState).forEach(k => chipSet(k, 'idle'));
+  _activeChip = null;
+}
+
+function participantsStopAll(failedKey) {
+  Object.keys(_chipState).forEach(k => {
+    const st = _chipState[k];
+    if (st.timer) { clearInterval(st.timer); st.timer = null; }
+    if (st.timeEl.textContent) chipSet(k, k === failedKey ? 'error' : 'done');
+  });
+}
+
+function econShow() {
+  document.getElementById('debate-econ').classList.remove('hidden');
+  document.getElementById('econ-cost').textContent = '💰 $0.0000';
+  document.getElementById('econ-turns').textContent = '';
+  document.getElementById('econ-elapsed').textContent = '⏱ 0:00';
+  if (_econTimer) clearInterval(_econTimer);
+  const t0 = Date.now();
+  _econTimer = setInterval(() => {
+    document.getElementById('econ-elapsed').textContent = '⏱ ' + _fmtSecs((Date.now() - t0) / 1000);
+  }, 1000);
+  // Live debate cost = delta of today's spend since the run started.
+  fetch('/api/state').then(r => r.json()).then(d => {
+    _costBaseline = (d.budget && typeof d.budget.spent === 'number') ? d.budget.spent : 0;
+  }).catch(() => { _costBaseline = 0; });
+}
+
+function econUpdateCost() {
+  if (_costBaseline === null) return;
+  fetch('/api/state').then(r => r.json()).then(d => {
+    const spent = (d.budget && typeof d.budget.spent === 'number') ? d.budget.spent : 0;
+    document.getElementById('econ-cost').textContent =
+      '💰 $' + Math.max(0, spent - _costBaseline).toFixed(4);
+  }).catch(() => {});
+}
+setInterval(econUpdateCost, 5000);
+
+function econFinish(final) {
+  if (_econTimer) { clearInterval(_econTimer); _econTimer = null; }
+  econUpdateCost();
+  if (final && typeof final.cost === 'number') {
+    document.getElementById('econ-cost').textContent = '💰 $' + final.cost.toFixed(4);
+  }
+  if (final && typeof final.elapsed_seconds === 'number') {
+    document.getElementById('econ-elapsed').textContent = '⏱ done in ' + _fmtSecs(final.elapsed_seconds);
+  }
+  if (final && typeof final.turns_used === 'number') {
+    document.getElementById('econ-turns').textContent = final.turns_used + ' orchestrator turns';
+  }
+}
+
+// ── Agent output rendering ─────────────────────────────────────────────
+// Structured agent output (JSON schemas like ResearchBrief) is rendered as
+// readable sections instead of a raw JSON dump.
+function looksLikeJson(text) {
+  const t = (text || '').trim();
+  return t.startsWith('{') || t.startsWith('[');
+}
+
+function appendStructuredJson(container, obj, depth) {
+  depth = depth || 0;
+  if (Array.isArray(obj)) {
+    obj.forEach(item => {
+      if (item && typeof item === 'object') {
+        const li = el('div', 'pl-3 border-l border-slate-700 my-1');
+        container.appendChild(li);
+        appendStructuredJson(li, item, depth + 1);
+      } else {
+        container.appendChild(el('div', 'pl-3 text-slate-200 my-0.5', '• ' + String(item)));
+      }
+    });
+    return;
+  }
+  Object.entries(obj).forEach(([k, v]) => {
+    if (v === null || v === undefined || v === '') return;
+    const row = el('div', depth === 0 ? 'my-2' : 'my-1');
+    row.appendChild(el('span', 'font-bold text-blue-300', k.replace(/_/g, ' ') + ': '));
+    if (typeof v === 'object') {
+      const sub = el('div', depth === 0 ? '' : '');
+      row.appendChild(sub);
+      appendStructuredJson(sub, v, depth + 1);
+    } else {
+      const val = el('span', 'text-slate-100 whitespace-pre-wrap', String(v));
+      row.appendChild(val);
+    }
+    container.appendChild(row);
+  });
+}
+
+function renderAgentOutput(container, text) {
+  // JSON → structured; otherwise plain pre-wrapped text. Never innerHTML.
+  if (looksLikeJson(text)) {
+    try {
+      const obj = JSON.parse(text.trim());
+      appendStructuredJson(container, obj, 0);
+      return;
+    } catch (_) { /* fall through to plain text */ }
+  }
+  container.appendChild(document.createTextNode(text));
+  return;
+}
+
+function addAgentMessage(agent, text) {
+  const div = el('div', 'msg p-3 rounded-lg bg-slate-800 text-slate-100 text-xs font-mono');
+  div.appendChild(el('span', 'text-yellow-400', '[' + agent + '] '));
+  const body = el('div', '');
+  renderAgentOutput(body, text);
+  div.appendChild(body);
+  feed().appendChild(div);
+  feed().scrollTop = feed().scrollHeight;
 }
 
 function connectSSE() {
   const es = new EventSource('/api/events');
   es.addEventListener('agent_message', (e) => {
     const d = JSON.parse(e.data);
-    addMessage(d.agent, d.text);
+    addAgentMessage(d.agent, d.text);
   });
   es.addEventListener('run_started', (e) => {
-    const d = JSON.parse(e.data);
-    resetPhases();
-    showProgress();
-    document.getElementById('current-agent').textContent = 'Starting…';
-    const start = Date.now();
-    if (_runTimer) clearInterval(_runTimer);
-    _runTimer = setInterval(() => {
-      const s = Math.floor((Date.now() - start) / 1000);
-      document.getElementById('elapsed').textContent = 'Running ' + Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
-    }, 1000);
+    participantsReset();
+    econShow();
+    chipActivate('orchestrator');
+    addMessage('System', '🎛 Orchestrator took over — planning the debate…');
   });
   es.addEventListener('phase_started', (e) => {
     const d = JSON.parse(e.data);
-    showProgress();
-    setPhaseActive(d.phase, true);
-    document.getElementById('current-agent').textContent = (d.agent || d.phase) + '…';
+    participantsReset();
+    chipActivate(d.phase);
   });
   es.addEventListener('phase_done', (e) => {
     const d = JSON.parse(e.data);
-    setPhaseActive(d.phase, true);
+    if (_activeChip === d.phase) { chipSet(d.phase, 'done'); _activeChip = null; }
+    chipActivate('orchestrator');  // orchestrator decides what happens next
+  });
+  es.addEventListener('orchestrator_decision', (e) => {
+    const d = JSON.parse(e.data);
+    if (_activeChip && _activeChip !== 'orchestrator') chipSet(_activeChip, 'done');
+    _activeChip = 'orchestrator';
+    chipSet('orchestrator', 'thinking');
+    addMessage('Orchestrator',
+      d.decision === 'stop'
+        ? `🛑 Decision: STOP the loop (${d.reason}) — after ${d.turns_used}/${d.max_turns} turns. Presenting results.`
+        : `▶ Decision: CONTINUE (${d.reason}).`);
   });
   es.addEventListener('agent_turn', (e) => {
     const d = JSON.parse(e.data);
-    addMessage(d.agent, d.text);
+    addAgentMessage(d.agent, d.text);
+  });
+  es.addEventListener('human_comment', (e) => {
+    const d = JSON.parse(e.data);
+    addMessage('Human', '💬 ' + d.comment);
   });
   es.addEventListener('run_finished', (e) => {
     const d = JSON.parse(e.data);
-    hideProgress();
-    if (d.creative_angles) addMessage('Creative', d.creative_angles);
+    participantsStopAll(d.status === 'failed' ? _activeChip : null);
+    econFinish(d);
+    if (d.creative_angles) addAgentMessage('Creative', d.creative_angles);
     if (d.verdict) showVerdict(d.verdict);
     if (d.has_prd && d.prd) showPRD(d.prd, d.security_audit);
     if (d.error) addMessage('System', 'ERROR: ' + d.error);
     fetchState();
   });
-  es.addEventListener('stopped', () => { hideProgress(); fetchState(); });
+  es.addEventListener('stopped', () => { participantsStopAll(); econFinish(null); fetchState(); });
   es.onerror = () => { /* EventSource auto-reconnects */ };
 }
 
@@ -788,7 +973,7 @@ async function openIdeaModal(ideaId, opts) {
 
   const modal = document.getElementById('idea-modal');
   modal.classList.remove('hidden');
-  modal.classList.add('flex');
+  window.scrollTo(0, 0);
   if (opts && opts.showPrd && idea.prd_text) {
     // Open the latest run's PRD directly ("View PRD" entry point)
     const runs = idea.runs || [];
@@ -879,9 +1064,7 @@ function renderIdeaHeader(idea, editMode) {
 }
 
 function closeIdeaModal() {
-  const modal = document.getElementById('idea-modal');
-  modal.classList.add('hidden');
-  modal.classList.remove('flex');
+  document.getElementById('idea-modal').classList.add('hidden');
   modalIdeaId = null;
 }
 
@@ -916,27 +1099,28 @@ function renderRunList(runs) {
   });
 }
 
+let _currentRun = null;   // full run payload for export buttons
+
 async function showRun(ideaId, runId, opts) {
   const res = await fetch(`/api/ideas/${ideaId}/runs/${runId}`);
   if (!res.ok) { alert('Could not load debate.'); return; }
   const run = await res.json();
+  _currentRun = run;
   const replay = document.getElementById('idea-modal-replay');
   replay.classList.remove('hidden');
   document.getElementById('idea-modal-replay-title').textContent =
     `Debate #${run.run_number} — ${run.status || '?'}${run.comment ? ' · 💬 ' + run.comment : ''}`;
 
-  // Replay the transcript in the same style as the live debate feed.
-  const feedBox = document.getElementById('idea-modal-feed');
-  feedBox.textContent = '';
-  (run.events || []).forEach(ev => {
-    const div = el('div', 'msg p-3 rounded-lg bg-slate-800 text-slate-100 text-xs font-mono');
-    div.appendChild(el('span', 'text-yellow-400', '[' + (ev.agent || '?') + '] '));
-    div.appendChild(document.createTextNode(ev.text || ''));
-    feedBox.appendChild(div);
-  });
-  if (!(run.events || []).length) {
-    feedBox.appendChild(el('p', 'text-xs text-slate-500 p-2', 'No transcript recorded for this debate.'));
-  }
+  buildRunTabs(run);
+  showRunTab('timeline');
+
+  // Export buttons
+  const mdBtn = document.getElementById('idea-run-md-btn');
+  const pdfBtn = document.getElementById('idea-run-pdf-btn');
+  mdBtn.classList.remove('hidden');
+  pdfBtn.classList.remove('hidden');
+  mdBtn.onclick = () => downloadRunMarkdown(run);
+  pdfBtn.onclick = () => printRunReport(run);
 
   // PRD / research brief toggles
   const doc = document.getElementById('idea-modal-doc');
@@ -948,12 +1132,140 @@ async function showRun(ideaId, runId, opts) {
   prdBtn.onclick = () => {
     doc.textContent = run.prd_text || '(no PRD)';
     doc.classList.remove('hidden');
+    window.scrollTo(0, 0);
   };
   briefBtn.onclick = () => {
     doc.textContent = run.research_brief || '(no research brief)';
     doc.classList.remove('hidden');
+    window.scrollTo(0, 0);
   };
   if (opts && opts.showPrd && run.prd_text) prdBtn.click();
+}
+
+// ── Participant tabs inside a past debate ──────────────────────────────
+function buildRunTabs(run) {
+  const tabs = document.getElementById('run-tabs');
+  tabs.textContent = '';
+  const agents = [];
+  (run.events || []).forEach(ev => {
+    const a = ev.agent || '?';
+    if (!agents.includes(a)) agents.push(a);
+  });
+  const mkTab = (id, label, count) => {
+    const t = el('button',
+      'px-3 py-1.5 text-xs font-bold rounded-t-lg rounded-b-lg bg-slate-900 border border-slate-800 hover:border-blue-500 text-slate-300',
+      label + (count ? ` (${count})` : ''));
+    t.dataset.tab = id;
+    t.onclick = () => showRunTab(id);
+    tabs.appendChild(t);
+  };
+  mkTab('timeline', '🕘 Timeline', (run.events || []).length);
+  agents.forEach(a => mkTab('agent:' + a, a,
+    run.events.filter(e2 => (e2.agent || '?') === a).length));
+}
+
+function showRunTab(tab) {
+  // highlight active tab
+  document.querySelectorAll('#run-tabs button').forEach(b => {
+    b.className = b.className.replace(/border-blue-500 text-white/g, '').replace(/bg-slate-800/g, '') +
+      (b.dataset.tab === tab ? ' !border-blue-500 !text-white !bg-slate-800' : '');
+  });
+  const feedBox = document.getElementById('idea-modal-feed');
+  feedBox.textContent = '';
+  const run = _currentRun;
+  if (!run) return;
+
+  if (tab === 'timeline') {
+    // Chronological transcript — compact, structured rendering per message.
+    (run.events || []).forEach(ev => {
+      const div = el('div', 'msg p-4 rounded-lg bg-slate-900 border border-slate-800 text-sm');
+      div.appendChild(el('span', 'font-bold text-yellow-400 text-xs', '[' + (ev.agent || '?') + ']'));
+      const body = el('div', 'mt-1 text-slate-100 whitespace-pre-wrap break-words');
+      renderAgentOutput(body, ev.text || '');
+      div.appendChild(body);
+      feedBox.appendChild(div);
+    });
+    if (!(run.events || []).length) {
+      feedBox.appendChild(el('p', 'text-xs text-slate-500 p-2', 'No transcript recorded for this debate.'));
+    }
+  } else if (tab.startsWith('agent:')) {
+    // Full-width detail pane with ALL outputs of this participant.
+    const agent = tab.slice(6);
+    (run.events || []).filter(e2 => (e2.agent || '?') === agent).forEach((ev, i, arr) => {
+      const card = el('div', 'p-5 rounded-xl bg-slate-900 border border-slate-700 mb-4');
+      card.appendChild(el('div', 'text-xs uppercase tracking-wider text-blue-400 font-bold mb-2',
+        agent + (arr.length > 1 ? ` — output ${i + 1} of ${arr.length}` : ' — full output')));
+      const body = el('div', 'text-sm text-slate-100 break-words');
+      renderAgentOutput(body, ev.text || '');
+      card.appendChild(body);
+      feedBox.appendChild(card);
+    });
+  }
+  document.getElementById('idea-modal-replay').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Run report export (.md download + browser-print PDF) ──────────────
+function buildRunMarkdown(run, ideaTitle) {
+  const lines = [];
+  lines.push(`# Debate #${run.run_number} — ${ideaTitle || ''}`);
+  lines.push('');
+  lines.push(`- **Status:** ${run.status || '?'}`);
+  lines.push(`- **Verdict:** ${run.verdict || '—'}`);
+  if (run.scores) {
+    const sc = run.scores;
+    const fmt = k => sc[k] && (sc[k].score !== undefined ? sc[k].score : sc[k]);
+    lines.push(`- **Scores:** novelty ${fmt('novelty') ?? '—'} · feasibility ${fmt('feasibility') ?? '—'} · market_fit ${fmt('market_fit') ?? '—'}`);
+  }
+  if (run.comment) lines.push(`- **Human comment:** ${run.comment}`);
+  if (run.started_at) {
+    const d = new Date(run.finished_at * 1000 || run.started_at * 1000);
+    lines.push(`- **Date:** ${d.toLocaleString()}`);
+  }
+  if (run.turns_used) lines.push(`- **Orchestrator turns:** ${run.turns_used}`);
+  lines.push('');
+  if (run.prd_text) {
+    lines.push('## PRD', '', run.prd_text, '');
+  }
+  if (run.research_brief) {
+    lines.push('## Research Brief', '', run.research_brief, '');
+  }
+  lines.push('## Transcript', '');
+  (run.events || []).forEach(ev => {
+    lines.push(`### [${ev.agent || '?'}]`, '', ev.text || '', '');
+  });
+  return lines.join('\n');
+}
+
+function downloadRunMarkdown(run) {
+  const md = buildRunMarkdown(run, modalIdea && modalIdea.title);
+  const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `debate-${run.run_number}-${(modalIdea && modalIdea.title || 'idea').replace(/[^a-z0-9]+/gi, '-').toLowerCase().slice(0, 50)}.md`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+function printRunReport(run) {
+  // Open the report in a clean window and trigger the browser's print-to-PDF.
+  const w = window.open('', '_blank');
+  if (!w) { alert('Pop-up blocked — allow pop-ups to print.'); return; }
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const bodyHtml = `
+    <h1>Debate #${run.run_number}${modalIdea ? ' — ' + esc(modalIdea.title) : ''}</h1>
+    <p><b>Status:</b> ${esc(run.status)} &nbsp; <b>Verdict:</b> ${esc(run.verdict || '—')}</p>
+    ${run.prd_text ? `<h2>PRD</h2><pre>${esc(run.prd_text)}</pre>` : ''}
+    ${run.research_brief ? `<h2>Research Brief</h2><pre>${esc(run.research_brief)}</pre>` : ''}
+    <h2>Transcript</h2>
+    ${(run.events || []).map(ev => `<h3>[${esc(ev.agent)}]</h3><pre>${esc(ev.text)}</pre>`).join('')}`;
+  w.document.write(`<!doctype html><html><head><title>Debate report</title>
+    <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;color:#111}
+    pre{white-space:pre-wrap;background:#f5f5f5;padding:.75rem;border-radius:6px;font-size:.8rem}
+    h1{border-bottom:2px solid #333}h2{border-bottom:1px solid #ccc;margin-top:2rem}
+    h3{margin-bottom:.25rem;color:#555}</style></head><body>${bodyHtml}
+    <script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.close();
 }
 
 function renderModalFooter(idea) {

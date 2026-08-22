@@ -806,7 +806,25 @@ async def run_orchestrator(
             should_stop, reason = _check_quality_gate(result, turns_used, stall_count)
             if should_stop:
                 store.log("System", "core", f"Quality gate: {reason}")
+                # Surface the stopping decision as a first-class UI event —
+                # the orchestrator is a debate participant too.
+                emit("orchestrator_decision", {
+                    "decision": "stop",
+                    "reason": reason,
+                    "turns_used": turns_used,
+                    "max_turns": max_turns,
+                    "run_id": run_id,
+                })
                 break
+
+            # Decision point: the orchestrator keeps the loop going.
+            emit("orchestrator_decision", {
+                "decision": "continue",
+                "reason": f"starting turn {turns_used + 1} of {max_turns}",
+                "turns_used": turns_used,
+                "max_turns": max_turns,
+                "run_id": run_id,
+            })
 
             # Build the prompt for this turn
             turn_prompt = _build_turn_prompt(result, turns_used, max_turns)
@@ -843,6 +861,13 @@ async def run_orchestrator(
             should_stop, reason = _check_quality_gate(result, turns_used, stall_count)
             if should_stop:
                 store.log("System", "core", f"Quality gate after turn {turns_used}: {reason}")
+                emit("orchestrator_decision", {
+                    "decision": "stop",
+                    "reason": reason,
+                    "turns_used": turns_used,
+                    "max_turns": max_turns,
+                    "run_id": run_id,
+                })
                 break
 
         result.turns_used = turns_used

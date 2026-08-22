@@ -257,6 +257,9 @@ async def api_run_phase1(request: Request):
 
 async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
                            resume_comment: str | None = None):
+    from . import budget
+    started = time.time()
+    spent_at_start = budget.get_spent()
     await _broadcast("run_started", {"idea": idea})
     result = await run_orchestrator(idea, inbox=_inbox, resume_idea_id=resume_idea_id,
                                     resume_comment=resume_comment)
@@ -269,6 +272,9 @@ async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
         "security_audit": result.security_audit,
         "turns_used": result.turns_used,
         "error": result.error,
+        # Debate economics + duration, for the live UI.
+        "cost": round(max(0.0, budget.get_spent() - spent_at_start), 4),
+        "elapsed_seconds": round(time.time() - started, 1),
     })
 
 
