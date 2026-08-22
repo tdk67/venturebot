@@ -931,6 +931,12 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
     # State summary
     parts.append(f"## Turn {turns_used + 1} of {max_turns}")
 
+    # The idea itself — MUST be in the turn-1 prompt, otherwise a fresh-run
+    # orchestrator has no idea what to evaluate (it would ask via clarify()).
+    # Session history keeps it available on later turns.
+    if turns_used == 0:
+        parts.append(f"\n## THE IDEA TO EVALUATE:\n{result.idea}")
+
     # If resuming with previous context, show it
     if turns_used == 0 and (result.research_brief or result.prd):
         parts.append("\n## RESUMED FROM PREVIOUS RUN")

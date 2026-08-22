@@ -176,6 +176,16 @@
           <div id="participant-chips" class="flex flex-wrap gap-2"></div>
         </div>
         <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
+        <!-- Clarify box: shown when the orchestrator pauses to ask the human -->
+        <div id="clarify-box" class="hidden mt-3 p-3 rounded-lg bg-amber-900/40 border border-amber-600/50">
+          <div class="text-xs font-bold text-amber-300 mb-2">🎛 Orchestrator needs your input:</div>
+          <div id="clarify-question" class="text-xs text-slate-100 mb-2 whitespace-pre-wrap"></div>
+          <div class="flex gap-2">
+            <input id="clarify-answer" type="text" placeholder="Your answer…"
+                   class="flex-1 px-3 py-1.5 text-xs rounded-lg bg-slate-800 border border-slate-600 text-slate-100 focus:outline-none focus:border-amber-500">
+            <button id="clarify-send" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-500 text-white">Answer</button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -293,6 +303,23 @@ async function fetchState() {
   const res = await fetch('/api/state');
   if (res.status === 401) { location.reload(); return; }
   const data = await res.json();
+  // Reload resilience: if a clarify question is pending (page was reloaded
+  // while the orchestrator waits), re-show the answer box.
+  if (data.status === 'running' && Array.isArray(data.messages)) {
+    let pendingQ = null, qIdx = -1;
+    data.messages.forEach((m, i) => {
+      if ((m.message || '').startsWith('Clarify:')) { pendingQ = m.message.slice('Clarify:'.length).trim(); qIdx = i; }
+      if ((m.message || '').startsWith('Clarify answer:')) { pendingQ = null; qIdx = -1; }
+    });
+    const box = document.getElementById('clarify-box');
+    if (pendingQ && box.classList.contains('hidden') && !box.dataset.answered) {
+      showClarifyBox(pendingQ, data.run_id);
+    } else if (!pendingQ && !box.classList.contains('hidden') && qIdx !== -1) {
+      hideClarifyBox();
+    }
+  } else {
+    hideClarifyBox();
+  }
   const badge = document.getElementById('status-badge');
   badge.textContent = (data.status || 'idle').toUpperCase();
   badge.className = 'px-3 py-1 text-xs font-bold rounded-full border ' +
@@ -700,12 +727,59 @@ function addAgentMessage(agent, text) {
   feed().scrollTop = feed().scrollHeight;
 }
 
+// ── Clarify (orchestrator → human question) ──────────────────────────
+function showClarifyBox(question, runId) {
+  const box = document.getElementById('clarify-box');
+  document.getElementById('clarify-question').textContent = question;
+  box.dataset.runId = runId || '';
+  box.classList.remove('hidden');
+  feed().scrollTop = feed().scrollHeight;
+}
+function hideClarifyBox() {
+  document.getElementById('clarify-box').classList.add('hidden');
+}
+async function sendClarifyAnswer() {
+  const box = document.getElementById('clarify-box');
+  const input = document.getElementById('clarify-answer');
+  const answer = input.value.trim();
+  if (!answer) return;
+  const btn = document.getElementById('clarify-send');
+  btn.disabled = true;
+  try {
+    const res = await fetch('/api/clarify/answer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ run_id: box.dataset.runId, answer }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    addMessage('Human', answer);
+    input.value = '';
+    hideClarifyBox();
+  } catch (err) {
+    addMessage('System', 'ERROR: could not send answer — ' + err.message + ' (the orchestrator waits 10 minutes, try again)');
+  } finally {
+    btn.disabled = false;
+  }
+}
+document.addEventListener('click', (e) => {
+  if (e.target && e.target.id === 'clarify-send') sendClarifyAnswer();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && e.target && e.target.id === 'clarify-answer' && !e.isComposing) sendClarifyAnswer();
+});
+
 function connectSSE() {
   const es = new EventSource('/api/events');
   es.addEventListener('agent_message', (e) => {
     const d = JSON.parse(e.data);
     addAgentMessage(d.agent, d.text);
   });
+  es.addEventListener('clarify', (e) => {
+    const d = JSON.parse(e.data);
+    addMessage('Orchestrator', '❓ ' + d.question);
+    showClarifyBox(d.question, d.run_id);
+  });
+  es.addEventListener('clarify_answered', () => hideClarifyBox());
   es.addEventListener('run_started', (e) => {
     participantsReset();
     econShow();
