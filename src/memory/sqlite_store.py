@@ -83,6 +83,23 @@ CREATE TABLE IF NOT EXISTS idea_tree (
     pruned_reason TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_idea_tree_status ON idea_tree(status);
+
+CREATE TABLE IF NOT EXISTS idea_runs (
+    id TEXT PRIMARY KEY,
+    idea_id TEXT NOT NULL,
+    run_number INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'running',
+    verdict TEXT,
+    scores TEXT,
+    research_brief TEXT,
+    debate_transcript TEXT,
+    prd_text TEXT,
+    comment TEXT,
+    turns_used INTEGER,
+    started_at REAL NOT NULL,
+    finished_at REAL
+);
+CREATE INDEX IF NOT EXISTS idx_idea_runs_idea ON idea_runs(idea_id, run_number);
 """
 
 _VALID_IDEA_STATUSES = {"ACTIVE", "PARK", "PRUNED"}
@@ -379,6 +396,9 @@ class MemoryStore:
             cur = self._ensure_conn().execute(
                 "DELETE FROM idea_tree WHERE id = ?", (idea_id,)
             )
+            self._ensure_conn().execute(
+                "DELETE FROM idea_runs WHERE idea_id = ?", (idea_id,)
+            )
             self._ensure_conn().commit()
             return cur.rowcount > 0
 
@@ -399,6 +419,112 @@ class MemoryStore:
                 scored.append((len(overlap), idea))
         scored.sort(key=lambda kv: -kv[0])
         return [idea for _, idea in scored[:limit]]
+
+    # ── idea runs (per-run immutable snapshots — P1.1) ───────────────
+
+    def start_idea_run(self, idea_id: str, comment: str | None = None) -> str:
+        """Open a new run row for an idea. Returns the run row id.
+        The row stays status='running' until finish_idea_run() completes it,
+        so a crashed run is still visible (and distinguishable) in history."""
+        import json as _json
+        import uuid
+        with self._lock:
+            conn = self._ensure_conn()
+            row = conn.execute(
+                "SELECT COALESCE(MAX(run_number), 0) AS n FROM idea_runs WHERE idea_id = ?",
+                (idea_id,),
+            ).fetchone()
+            run_id = uuid.uuid4().hex
+            conn.execute(
+                "INSERT INTO idea_runs (id, idea_id, run_number, status, comment, started_at)"
+                " VALUES (?, ?, ?, 'running', ?, ?)",
+                (run_id, idea_id, (row["n"] or 0) + 1, comment, time.time()),
+            )
+            conn.commit()
+        return run_id
+
+    def finish_idea_run(
+        self,
+        run_id: str,
+        *,
+        status: str,
+        verdict: str | None = None,
+        scores: dict | list | None = None,
+        research_brief: str | None = None,
+        debate_transcript: str | None = None,
+        prd_text: str | None = None,
+        turns_used: int | None = None,
+    ) -> None:
+        """Complete a run row with the final artifacts of that run."""
+        import json as _json
+        with self._lock:
+            conn = self._ensure_conn()
+            conn.execute(
+                "UPDATE idea_runs SET status = ?, verdict = ?, scores = ?, research_brief = ?,"
+                " debate_transcript = ?, prd_text = ?, turns_used = ?, finished_at = ?"
+                " WHERE id = ?",
+                (
+                    status,
+                    verdict,
+                    _json.dumps(scores) if scores is not None else None,
+                    research_brief,
+                    debate_transcript,
+                    prd_text,
+                    turns_used,
+                    time.time(),
+                    run_id,
+                ),
+            )
+            conn.commit()
+
+    def get_idea_runs(self, idea_id: str, *, include_blobs: bool = False) -> list[dict]:
+        """Run history for an idea, oldest first. Heavy blobs (transcript,
+        PRD, research brief) are only included when include_blobs=True."""
+        cols = (
+            "*" if include_blobs else
+            "id, idea_id, run_number, status, verdict, scores, comment, turns_used,"
+            " started_at, finished_at"
+        )
+        with self._lock:
+            rows = self._ensure_conn().execute(
+                f"SELECT {cols} FROM idea_runs WHERE idea_id = ? ORDER BY run_number ASC",
+                (idea_id,),
+            ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            if d.get("scores"):
+                try:
+                    d["scores"] = json.loads(d["scores"])
+                except Exception:
+                    pass
+            out.append(d)
+        return out
+
+    def get_idea_run(self, run_id: str) -> dict | None:
+        """Full single-run detail including transcript/PRD blobs."""
+        with self._lock:
+            row = self._ensure_conn().execute(
+                "SELECT * FROM idea_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if d.get("scores"):
+            try:
+                d["scores"] = json.loads(d["scores"])
+            except Exception:
+                pass
+        return d
+
+    def delete_idea_runs(self, idea_id: str) -> int:
+        """Remove all run rows for an idea (used on hard-delete)."""
+        with self._lock:
+            cur = self._ensure_conn().execute(
+                "DELETE FROM idea_runs WHERE idea_id = ?", (idea_id,)
+            )
+            self._ensure_conn().commit()
+            return cur.rowcount
 
 
 # ── process-wide singleton ──────────────────────────────────────────────

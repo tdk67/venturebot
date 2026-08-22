@@ -15,7 +15,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from . import auth, budget, config, run_manager, store
@@ -255,9 +255,11 @@ async def api_run_phase1(request: Request):
     return {"status": "started"}
 
 
-async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None):
+async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
+                           resume_comment: str | None = None):
     await _broadcast("run_started", {"idea": idea})
-    result = await run_orchestrator(idea, inbox=_inbox, resume_idea_id=resume_idea_id)
+    result = await run_orchestrator(idea, inbox=_inbox, resume_idea_id=resume_idea_id,
+                                    resume_comment=resume_comment)
     await _broadcast("run_finished", {
         "status": result.status,
         "verdict": result.verdict,
@@ -362,6 +364,52 @@ async def api_paused(request: Request):
 # ── Idea history + checkpoint persistence (IDEA_HISTORY_ADDENDUM) ────
 _ITEMS_PER_PAGE = 10
 
+# Statuses accepted on import (subset of the idea-tree lifecycle).
+_VALID_EXPORT_STATUSES = {"ACTIVE", "PARK", "PRUNED"}
+
+
+def _export_idea(idea: dict) -> dict:
+    """Full-fidelity export shape for one idea: current state + every run."""
+    scores = None
+    try:
+        scores = json.loads(idea.get("scores") or "null")
+    except (json.JSONDecodeError, TypeError):
+        pass
+    return {
+        "format": "venturebot-idea",
+        "version": 1,
+        "title": idea.get("title"),
+        "status": idea.get("status") or "ACTIVE",
+        "verdict": idea.get("verdict"),
+        "scores": scores,
+        "research_brief": idea.get("research_brief"),
+        "debate_transcript": idea.get("debate_transcript"),
+        "prd_text": idea.get("prd_text"),
+        "created_at": idea.get("created_at"),
+        "updated_at": idea.get("updated_at"),
+        # Full per-run history (transcripts, PRDs, comments) — the second brain.
+        "runs": get_store().get_idea_runs(idea["id"], include_blobs=True),
+    }
+
+
+def _safe_filename(title: str) -> str:
+    """Filesystem-safe slug from an idea title (for export filenames)."""
+    keep = [c if c.isalnum() else "-" for c in title.lower().strip()]
+    slug = "".join(keep)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return (slug.strip("-") or "idea")[:60]
+
+
+def _json_download(payload: dict, filename: str) -> Response:
+    """Serialize a JSON payload as an attachment download."""
+    body = json.dumps(payload, ensure_ascii=False, indent=2, default=str)
+    return Response(
+        content=body,
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
 
 def _idea_to_item(idea: dict) -> dict:
     """Shape an idea_tree row like the portfolio Project type."""
@@ -373,6 +421,7 @@ def _idea_to_item(idea: dict) -> dict:
         verdict = idea.get("verdict")
     description = _auto_description(idea)
     tags = _idea_tags(idea)
+    runs = get_store().get_idea_runs(idea["id"])
     return {
         "id": idea["id"],
         "title": idea["title"],
@@ -389,6 +438,7 @@ def _idea_to_item(idea: dict) -> dict:
         "created_at": idea["created_at"],
         "updated_at": idea["updated_at"],
         "has_prd": bool(idea.get("prd_text")),
+        "run_count": len(runs),
     }
 
 
@@ -547,6 +597,90 @@ async def api_ideas_csv(request: Request, category: str | None = None,
     )
 
 
+@app.get("/api/ideas/export")
+async def api_ideas_export_all(request: Request):
+    """Export ALL ideas + full run history as one JSON backup file.
+    Declared before /api/ideas/{idea_id} so 'export' is not captured as an id."""
+    auth.get_current_user(request)
+    ideas = get_store().get_idea_tree()
+    bundle = {
+        "format": "venturebot-ideas-backup",
+        "version": 1,
+        "exported_at": time.time(),
+        "ideas": [_export_idea(i) for i in ideas],
+    }
+    return _json_download(bundle, "venturebot-ideas-backup.json")
+
+
+@app.post("/api/ideas/import")
+async def api_ideas_import(request: Request):
+    """Import ideas from a JSON export (single-idea export or full backup).
+    Every imported idea gets fresh IDs; run history is preserved inside the
+    idea. Duplicate titles are kept (import is additive by design)."""
+    auth.get_current_user(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(400, "body is not valid JSON")
+
+    if isinstance(data, dict) and data.get("format") == "venturebot-ideas-backup":
+        ideas = data.get("ideas") or []
+    elif isinstance(data, dict) and data.get("format") == "venturebot-idea":
+        ideas = [data]
+    else:
+        raise HTTPException(400, "unrecognized format — expected a VentureBot idea export")
+
+    s = get_store()
+    imported: list[dict] = []
+    for raw in ideas:
+        if not isinstance(raw, dict) or not raw.get("title"):
+            raise HTTPException(400, "each idea needs at least a 'title'")
+        new_id = s.create_idea(str(raw["title"])[:200])
+        s.update_idea_content(
+            new_id,
+            research_brief=raw.get("research_brief"),
+            debate_transcript=raw.get("debate_transcript"),
+            prd_text=raw.get("prd_text"),
+            verdict=raw.get("verdict"),
+        )
+        if raw.get("scores"):
+            try:
+                scores = raw["scores"]
+                if isinstance(scores, str):
+                    scores = json.loads(scores)
+                s.update_idea_scores(new_id, scores)
+            except Exception:
+                pass
+        status = str(raw.get("status") or "ACTIVE").upper()
+        if status in _VALID_EXPORT_STATUSES and status != "ACTIVE":
+            s.update_idea_status(new_id, status, "imported")
+        # Restore run history (new run-row ids, same numbers/comments).
+        runs = raw.get("runs") or []
+        if isinstance(runs, list):
+            for r in sorted(runs, key=lambda x: x.get("run_number") or 0):
+                run_row = s.start_idea_run(new_id, comment=r.get("comment"))
+                r_scores = r.get("scores")
+                if isinstance(r_scores, str):
+                    try:
+                        r_scores = json.loads(r_scores)
+                    except Exception:
+                        r_scores = None
+                s.finish_idea_run(
+                    run_row,
+                    status=str(r.get("status") or "done"),
+                    verdict=r.get("verdict"),
+                    scores=r_scores if isinstance(r_scores, (dict, list)) else None,
+                    research_brief=r.get("research_brief"),
+                    debate_transcript=r.get("debate_transcript"),
+                    prd_text=r.get("prd_text"),
+                    turns_used=r.get("turns_used"),
+                )
+        imported.append({"id": new_id, "title": raw["title"][:200],
+                         "runs_restored": len(raw.get("runs") or [])})
+    await _broadcast("ideas_imported", {"count": len(imported)})
+    return {"status": "imported", "count": len(imported), "ideas": imported}
+
+
 @app.get("/api/ideas/{idea_id}")
 async def api_idea_detail(idea_id: str, request: Request):
     """Full idea detail (A2): PRD, transcript, scores."""
@@ -560,7 +694,62 @@ async def api_idea_detail(idea_id: str, request: Request):
     item["debate_transcript"] = idea.get("debate_transcript")
     item["workspace_path"] = idea.get("workspace_path")
     item["human_intervention_count"] = idea.get("human_intervention_count")
+    item["runs"] = get_store().get_idea_runs(idea_id)
     return item
+
+
+@app.get("/api/ideas/{idea_id}/export")
+async def api_idea_export(idea_id: str, request: Request):
+    """Export one idea + its full run history as a downloadable JSON file."""
+    auth.get_current_user(request)
+    idea = get_store().get_idea(idea_id)
+    if not idea:
+        raise HTTPException(404, "idea not found")
+    return _json_download(_export_idea(idea),
+                          f"venturebot-idea-{_safe_filename(idea['title'])}.json")
+
+
+@app.get("/api/ideas/{idea_id}/runs")
+async def api_idea_runs(idea_id: str, request: Request):
+    """Run history for an idea (summaries, no heavy blobs)."""
+    auth.get_current_user(request)
+    if not get_store().get_idea(idea_id):
+        raise HTTPException(404, "idea not found")
+    return {"runs": get_store().get_idea_runs(idea_id)}
+
+
+@app.get("/api/ideas/{idea_id}/runs/{run_id}")
+async def api_idea_run_detail(idea_id: str, run_id: str, request: Request):
+    """Full detail of one past debate run: transcript events, PRD, brief,
+    verdict, the human comment that started it — everything needed to replay
+    the debate exactly as it looked while it was running."""
+    auth.get_current_user(request)
+    run = get_store().get_idea_run(run_id)
+    if not run or run["idea_id"] != idea_id:
+        raise HTTPException(404, "run not found")
+    events: list[dict] = []
+    if run.get("debate_transcript"):
+        try:
+            parsed = json.loads(run["debate_transcript"])
+            if isinstance(parsed, list):
+                events = parsed
+        except Exception:
+            pass  # legacy/corrupt transcript → surface as empty, not a crash
+    return {
+        "id": run["id"],
+        "idea_id": run["idea_id"],
+        "run_number": run["run_number"],
+        "status": run["status"],
+        "verdict": run.get("verdict"),
+        "scores": run.get("scores"),
+        "comment": run.get("comment"),
+        "turns_used": run.get("turns_used"),
+        "started_at": run.get("started_at"),
+        "finished_at": run.get("finished_at"),
+        "events": events,
+        "prd_text": run.get("prd_text"),
+        "research_brief": run.get("research_brief"),
+    }
 
 
 @app.post("/api/ideas/{idea_id}/archive")
@@ -612,6 +801,8 @@ async def api_idea_resume(idea_id: str, request: Request):
     
     Loads all previous context (research brief, debate transcript, verdict, PRD)
     and starts a new orchestrator run that continues from where it left off.
+    Accepts an optional human comment ("what changed / what I want next") that
+    is injected into the first turn and recorded as part of the new run's history.
     """
     auth.get_current_user(request)
     idea = get_store().get_idea(idea_id)
@@ -623,9 +814,17 @@ async def api_idea_resume(idea_id: str, request: Request):
     if state.get("status") == "running":
         raise HTTPException(409, "a debate is already running")
     
-    # Start a new run with the previous context
-    asyncio.create_task(_run_phase1_loop(idea["title"], resume_idea_id=idea_id))
-    await _broadcast("idea_resumed", {"idea_id": idea_id, "title": idea["title"]})
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    comment = (body.get("comment") or "").strip() or None
+    
+    # Start a new run with the previous context + the human's new comment
+    asyncio.create_task(_run_phase1_loop(idea["title"], resume_idea_id=idea_id,
+                                         resume_comment=comment))
+    await _broadcast("idea_resumed", {"idea_id": idea_id, "title": idea["title"],
+                                      "has_comment": bool(comment)})
     return {"status": "resumed", "idea_id": idea_id, "title": idea["title"]}
 
 

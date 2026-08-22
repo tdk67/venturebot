@@ -169,6 +169,9 @@ class OrchestratorResult:
     turns_used: int = 0
     clarification_question: str | None = None
     clarification_state: str | None = None  # "awaiting_response" when clarify is active
+    # Per-run snapshot bookkeeping (idea_runs row) — set by run_orchestrator.
+    idea_run_id: str | None = None
+    resume_comment: str | None = None
 
 
 # ── Sub-agent wrapper — runs a sub-agent via ADK Runner ────────────────
@@ -655,6 +658,7 @@ async def run_orchestrator(
     inbox: SteeringInbox | None = None,
     session_id: str | None = None,
     resume_idea_id: str | None = None,
+    resume_comment: str | None = None,
 ) -> OrchestratorResult:
     """Run the autonomous orchestrator loop for one idea.
 
@@ -664,6 +668,10 @@ async def run_orchestrator(
     If resume_idea_id is provided, loads previous context (research, debate,
     verdict, PRD) from that idea and injects it into the orchestrator's initial
     state so it can continue from where it left off.
+
+    resume_comment is the human's new input on a resumed run ("what changed",
+    new direction, feedback) — injected into the first turn prompt and stored
+    with the run history.
 
     Returns an OrchestratorResult with the full debate transcript, verdict,
     PRD, and security audit.
@@ -697,6 +705,11 @@ async def run_orchestrator(
             # New idea
             result.idea_id = store_obj.create_idea(idea[:200])
             store_obj.update_idea_content(result.idea_id, workspace_path=f"runs/{run_id}/")
+        # Open the per-run snapshot row (P1.1): every debate gets its own
+        # immutable history entry — past debates are never overwritten.
+        if result.idea_id:
+            result.resume_comment = (resume_comment or "").strip() or None
+            result.idea_run_id = store_obj.start_idea_run(result.idea_id, comment=result.resume_comment)
     except Exception:
         pass
 
@@ -754,6 +767,13 @@ async def run_orchestrator(
 
     store.log("System", "core", f"Orchestrator starting: '{idea[:120]}'")
     emit("run_started", {"idea": idea, "run_id": run_id})
+    if result.resume_comment:
+        # The human's new input is part of the debate record — show it in the
+        # live feed AND persist it as the first transcript entry.
+        result.events.append({"agent": "Human", "text": result.resume_comment})
+        store.log("Human", "user", result.resume_comment[:200])
+        agent_turn("Human", result.resume_comment, run_id)
+        emit("human_comment", {"idea_id": result.idea_id, "comment": result.resume_comment})
 
     try:
         while turns_used < max_turns:
@@ -875,6 +895,11 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
             parts.append(f"\n### Previous PRD (first 500 chars):\n{result.prd[:500]}...")
         parts.append("\nYou can continue refining this work, or start fresh if the user provides new direction. Call research() again if you need updated information.")
 
+    # The human's new input on a resumed run — highest-priority guidance.
+    if turns_used == 0 and result.resume_comment:
+        parts.append(f"\n## HUMAN COMMENT (new direction from the user):\n{result.resume_comment}")
+        parts.append("Address this comment first. It reflects what changed since the last run (new evidence, new thoughts, market shifts, or feedback on the previous verdict/PRD).")
+
     progress = []
     if result.research_brief:
         progress.append("✅ Research done")
@@ -923,7 +948,7 @@ def _overall_average(verdict: dict) -> float | None:
 
 
 def _archive_result(result: OrchestratorResult, run_id: str) -> None:
-    """Persist the result to the idea tree."""
+    """Persist the result to the idea tree + close the per-run snapshot."""
     try:
         s = get_store()
         idea_id = result.idea_id
@@ -945,6 +970,18 @@ def _archive_result(result: OrchestratorResult, run_id: str) -> None:
                 s.update_idea_status(idea_id, "ACTIVE")
             elif result.status in ("stopped", "failed"):
                 s.update_idea_status(idea_id, "PARK", f"status={result.status}")
+        # Close the per-run snapshot row (P1.1) so this debate stays replayable.
+        if result.idea_run_id:
+            s.finish_idea_run(
+                result.idea_run_id,
+                status=result.status,
+                verdict=(result.verdict or {}).get("verdict"),
+                scores=scores,
+                research_brief=result.research_brief,
+                debate_transcript=json.dumps(result.events),
+                prd_text=result.prd,
+                turns_used=result.turns_used or None,
+            )
     except Exception:
         pass
 

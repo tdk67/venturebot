@@ -126,6 +126,11 @@
             <input id="ideas-search" type="text" placeholder="Search ideas…"
                    class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
                    oninput="fetchIdeas()">
+            <input id="ideas-import-file" type="file" accept="application/json,.json" class="hidden" onchange="importIdeas(this)">
+            <button onclick="document.getElementById('ideas-import-file').click()" title="Import ideas from JSON export"
+                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">⬆ Import</button>
+            <button onclick="exportAllIdeas()" title="Export ALL ideas + full history as JSON backup"
+                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">⬇ JSON</button>
             <button onclick="exportIdeas()" title="Export CSV"
                     class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">⬇ CSV</button>
           </div>
@@ -186,6 +191,47 @@
     </div>
   </div>
 </div>
+
+  <!-- Idea detail modal: past debates, replay, resume (second brain) -->
+  <div id="idea-modal" class="fixed inset-0 z-50 hidden items-start justify-center overflow-y-auto bg-black/70 p-4 md:p-8">
+    <div class="w-full max-w-3xl rounded-2xl border border-slate-700 bg-slate-950 p-6">
+      <!-- Header -->
+      <div class="flex items-start justify-between gap-4 mb-4">
+        <div class="min-w-0">
+          <h2 id="idea-modal-title" class="text-xl font-bold text-slate-100 break-words"></h2>
+          <div id="idea-modal-meta" class="text-xs text-slate-400 mt-1"></div>
+        </div>
+        <button onclick="closeIdeaModal()" title="Close"
+                class="shrink-0 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-lg">×</button>
+      </div>
+
+      <!-- Run history -->
+      <h3 class="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Debate history</h3>
+      <div id="idea-modal-runs" class="space-y-2 mb-5"></div>
+
+      <!-- Replay area: same look as the live debate feed -->
+      <div id="idea-modal-replay" class="hidden">
+        <div class="flex items-center justify-between mb-2">
+          <h3 id="idea-modal-replay-title" class="text-sm font-bold text-blue-400"></h3>
+          <div class="flex gap-2">
+            <button id="idea-modal-prd-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">View PRD</button>
+            <button id="idea-modal-brief-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">Research brief</button>
+          </div>
+        </div>
+        <pre id="idea-modal-doc" class="hidden text-xs text-slate-200 whitespace-pre-wrap bg-slate-900 p-3 rounded-lg max-h-72 overflow-y-auto mb-3"></pre>
+        <div id="idea-modal-feed" class="space-y-3 max-h-[420px] overflow-y-auto rounded-lg bg-slate-900/40 p-2"></div>
+      </div>
+
+      <!-- Resume with a new comment -->
+      <div class="mt-5 pt-4 border-t border-slate-800">
+        <label for="idea-resume-comment" class="text-xs uppercase tracking-wider text-slate-500 font-bold">Continue this idea — what's new?</label>
+        <textarea id="idea-resume-comment" rows="2"
+                  placeholder="e.g. A competitor just shut down; also I now think the niche is B2B only — re-run the debate with this in mind…"
+                  class="mt-2 w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"></textarea>
+        <div id="idea-modal-footer" class="flex flex-wrap gap-2 mt-2"></div>
+      </div>
+    </div>
+  </div>
 
 <script>
 let authChecked = false;
@@ -549,7 +595,8 @@ function renderIdeas(d) {
   list.innerHTML = '';
   empty.classList.toggle('hidden', d.total !== 0);
   (d.items || []).forEach(idea => {
-    const card = el('div', 'p-3 rounded-lg bg-slate-800/60 border border-slate-700');
+    const card = el('div', 'p-3 rounded-lg bg-slate-800/60 border border-slate-700 hover:border-blue-500 cursor-pointer');
+    card.onclick = () => openIdeaModal(idea.id);
     const dot = {ACTIVE:'🟢', PARK:'🟡', PRUNED:'🔴'}[idea.status] || '⚪';
     const row = el('div', 'flex items-center justify-between');
     row.appendChild(el('div', 'text-sm font-bold text-slate-100', `${dot} ${idea.title}`));
@@ -557,17 +604,23 @@ function renderIdeas(d) {
     card.appendChild(row);
     card.appendChild(el('div', 'text-xs text-slate-400 mt-1', idea.description));
     const tags = el('div', 'flex flex-wrap gap-1 mt-2');
+    if (idea.run_count > 1) {
+      tags.appendChild(el('span', 'px-2 py-0.5 text-[10px] rounded bg-blue-900/60 text-blue-300', `${idea.run_count} debates`));
+    }
     (idea.tags || []).forEach(t => tags.appendChild(el('span', 'px-2 py-0.5 text-[10px] rounded bg-slate-700 text-slate-300', t)));
     card.appendChild(tags);
     const actions = el('div', 'flex gap-2 mt-2');
+    actions.onclick = (e) => e.stopPropagation();  // don't open the modal from action buttons
     if (idea.has_prd) {
       const viewBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white', 'View PRD');
-      viewBtn.onclick = () => fetch(`/api/ideas/${idea.id}`).then(r => r.json()).then(full => {
-        const pre = el('pre', 'text-xs text-slate-200 whitespace-pre-wrap bg-slate-900 p-3 rounded mt-2', full.prd_text || '(no PRD text)');
-        card.appendChild(pre);
-      });
+      viewBtn.onclick = () => openIdeaModal(idea.id, { showPrd: true });
       actions.appendChild(viewBtn);
     }
+    // Export this idea (+ full debate history) as JSON
+    const expBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white', '⬇ JSON');
+    expBtn.title = 'Export this idea + full history as JSON';
+    expBtn.onclick = () => { window.location.href = `/api/ideas/${idea.id}/export`; };
+    actions.appendChild(expBtn);
     if (idea.status !== 'PARK') {
       const parkBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white', 'Park');
       parkBtn.onclick = async () => { await fetch(`/api/ideas/${idea.id}/archive`, {method:'POST'}); fetchIdeas(); fetchFacets(); };
@@ -676,6 +729,213 @@ async function exportIdeas() {
   const url = '/api/ideas/csv' + (params.toString() ? '?' + params.toString() : '');
   window.location.href = url;
 }
+
+function exportAllIdeas() {
+  window.location.href = '/api/ideas/export';
+}
+
+async function importIdeas(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  let text;
+  try {
+    text = await file.text();
+  } catch (e) { alert('Could not read file: ' + e.message); return; }
+  let payload;
+  try {
+    payload = JSON.parse(text);  // validate before POSTing
+  } catch (e) { alert('Not a valid JSON file.'); return; }
+  if (!confirm(`Import ideas from "${file.name}"? Imported ideas are added alongside existing ones.`)) {
+    input.value = '';
+    return;
+  }
+  const res = await fetch('/api/ideas/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert('Import failed: ' + (err.detail || res.status));
+    input.value = '';
+    return;
+  }
+  const d = await res.json();
+  addMessage('System', `📥 Imported ${d.count} idea(s) — full debate history preserved.`);
+  fetchIdeas();
+  fetchFacets();
+  input.value = '';
+}
+
+// ── Idea detail modal: past debates + replay + resume (second brain) ─
+let modalIdeaId = null;
+
+async function openIdeaModal(ideaId, opts) {
+  const res = await fetch(`/api/ideas/${ideaId}`);
+  if (!res.ok) { alert('Could not load idea.'); return; }
+  const idea = await res.json();
+  modalIdeaId = ideaId;
+  document.getElementById('idea-resume-comment').value = '';
+
+  const dot = {ACTIVE:'🟢', PARK:'🟡', PRUNED:'🔴'}[idea.status] || '⚪';
+  document.getElementById('idea-modal-title').textContent = `${dot} ${idea.title}`;
+  const meta = document.getElementById('idea-modal-meta');
+  meta.textContent = '';
+  const sc = idea.scores || {};
+  const parts = [];
+  if (idea.verdict) parts.push('verdict: ' + idea.verdict);
+  ['novelty','feasibility','market_fit'].forEach(k => {
+    const v = sc[k] && (sc[k].score !== undefined ? sc[k].score : sc[k]);
+    if (v !== undefined) parts.push(k + ': ' + v);
+  });
+  if (parts.length) meta.appendChild(el('span', '', parts.join(' · ')));
+  meta.appendChild(el('span', 'text-slate-600', `  ·  created ${idea.date}`));
+
+  renderRunList(idea.runs || []);
+  document.getElementById('idea-modal-replay').classList.add('hidden');
+  renderModalFooter(idea);
+
+  const modal = document.getElementById('idea-modal');
+  modal.classList.remove('hidden');
+  modal.classList.add('flex');
+  if (opts && opts.showPrd && idea.prd_text) {
+    // Open the latest run's PRD directly ("View PRD" entry point)
+    const runs = idea.runs || [];
+    const withPrd = [...runs].reverse().find(r => r.id);  // fall back to latest run
+    if (runs.length) showRun(ideaId, withPrd.id, { showPrd: true });
+  }
+}
+
+function closeIdeaModal() {
+  const modal = document.getElementById('idea-modal');
+  modal.classList.add('hidden');
+  modal.classList.remove('flex');
+  modalIdeaId = null;
+}
+
+function renderRunList(runs) {
+  const box = document.getElementById('idea-modal-runs');
+  box.textContent = '';
+  if (!runs.length) {
+    box.appendChild(el('p', 'text-xs text-slate-500', 'No recorded debates yet.'));
+    return;
+  }
+  runs.forEach(r => {
+    const row = el('div', 'flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-blue-500 cursor-pointer');
+    const left = el('div', 'min-w-0');
+    const head = el('div', 'text-xs font-bold text-slate-200',
+      `Debate #${r.run_number} · ${new Date((r.finished_at || r.started_at) * 1000).toLocaleString()} · ${r.status || '?'}`);
+    left.appendChild(head);
+    const bits = [];
+    if (r.verdict) bits.push('verdict: ' + r.verdict);
+    if (r.scores) {
+      const avg = ['novelty','feasibility','market_fit']
+        .map(k => r.scores[k] && (r.scores[k].score !== undefined ? r.scores[k].score : r.scores[k]))
+        .filter(v => v !== undefined && v !== null);
+      if (avg.length) bits.push('avg score: ' + (avg.reduce((a, b) => a + b, 0) / avg.length).toFixed(1));
+    }
+    if (r.turns_used) bits.push(r.turns_used + ' turns');
+    if (bits.length) left.appendChild(el('div', 'text-[11px] text-slate-400', bits.join(' · ')));
+    if (r.comment) left.appendChild(el('div', 'text-[11px] text-amber-300/90 mt-0.5 break-words', '💬 ' + r.comment));
+    row.appendChild(left);
+    row.appendChild(el('span', 'text-xs text-blue-400 shrink-0', 'Replay ▸'));
+    row.onclick = () => showRun(modalIdeaId, r.id);
+    box.appendChild(row);
+  });
+}
+
+async function showRun(ideaId, runId, opts) {
+  const res = await fetch(`/api/ideas/${ideaId}/runs/${runId}`);
+  if (!res.ok) { alert('Could not load debate.'); return; }
+  const run = await res.json();
+  const replay = document.getElementById('idea-modal-replay');
+  replay.classList.remove('hidden');
+  document.getElementById('idea-modal-replay-title').textContent =
+    `Debate #${run.run_number} — ${run.status || '?'}${run.comment ? ' · 💬 ' + run.comment : ''}`;
+
+  // Replay the transcript in the same style as the live debate feed.
+  const feedBox = document.getElementById('idea-modal-feed');
+  feedBox.textContent = '';
+  (run.events || []).forEach(ev => {
+    const div = el('div', 'msg p-3 rounded-lg bg-slate-800 text-slate-100 text-xs font-mono');
+    div.appendChild(el('span', 'text-yellow-400', '[' + (ev.agent || '?') + '] '));
+    div.appendChild(document.createTextNode(ev.text || ''));
+    feedBox.appendChild(div);
+  });
+  if (!(run.events || []).length) {
+    feedBox.appendChild(el('p', 'text-xs text-slate-500 p-2', 'No transcript recorded for this debate.'));
+  }
+
+  // PRD / research brief toggles
+  const doc = document.getElementById('idea-modal-doc');
+  const prdBtn = document.getElementById('idea-modal-prd-btn');
+  const briefBtn = document.getElementById('idea-modal-brief-btn');
+  doc.classList.add('hidden');
+  prdBtn.classList.toggle('hidden', !run.prd_text);
+  briefBtn.classList.toggle('hidden', !run.research_brief);
+  prdBtn.onclick = () => {
+    doc.textContent = run.prd_text || '(no PRD)';
+    doc.classList.remove('hidden');
+  };
+  briefBtn.onclick = () => {
+    doc.textContent = run.research_brief || '(no research brief)';
+    doc.classList.remove('hidden');
+  };
+  if (opts && opts.showPrd && run.prd_text) prdBtn.click();
+}
+
+function renderModalFooter(idea) {
+  const footer = document.getElementById('idea-modal-footer');
+  footer.textContent = '';
+
+  const resumeBtn = el('button', 'px-3 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-500 text-white', '▶ Resume debate');
+  resumeBtn.onclick = async () => {
+    const comment = document.getElementById('idea-resume-comment').value.trim();
+    const res = await fetch(`/api/ideas/${modalIdeaId}/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      alert('Resume failed: ' + (err.detail || res.status));
+      return;
+    }
+    closeIdeaModal();
+    addMessage('Human', comment ? '↻ Resumed with comment: ' + comment : '↻ Resumed debate');
+    document.getElementById('debate-feed').scrollIntoView({ behavior: 'smooth' });
+    fetchState();
+  };
+  footer.appendChild(resumeBtn);
+
+  const expBtn = el('button', 'px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-700 hover:bg-slate-600 text-white', '⬇ Export JSON');
+  expBtn.onclick = () => { window.location.href = `/api/ideas/${modalIdeaId}/export`; };
+  footer.appendChild(expBtn);
+
+  if (idea.status !== 'PARK') {
+    const parkBtn = el('button', 'px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-700 hover:bg-slate-600 text-white', 'Park');
+    parkBtn.onclick = async () => {
+      await fetch(`/api/ideas/${modalIdeaId}/archive`, { method: 'POST' });
+      closeIdeaModal();
+      fetchIdeas();
+      fetchFacets();
+    };
+    footer.appendChild(parkBtn);
+  }
+
+  const delBtn = el('button', 'px-3 py-1.5 text-xs font-bold rounded-lg bg-red-700/60 hover:bg-red-600 text-white', 'Delete');
+  delBtn.onclick = async () => {
+    if (!confirm(`Delete "${idea.title}" and all its debate history? This cannot be undone.`)) return;
+    await fetch(`/api/ideas/${modalIdeaId}`, { method: 'DELETE' });
+    closeIdeaModal();
+    fetchIdeas();
+    fetchFacets();
+  };
+  footer.appendChild(delBtn);
+}
+
+// Close the modal on backdrop click or Escape.
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeIdeaModal(); });
 
 async function fetchCheckpoints() {
   const res = await fetch('/api/checkpoints');
