@@ -238,7 +238,7 @@
         </div>
         <!-- Participant tabs -->
         <div id="run-tabs" class="flex flex-wrap gap-1 mb-3 border-b border-slate-800 pb-2"></div>
-        <pre id="idea-modal-doc" class="hidden text-xs text-slate-200 whitespace-pre-wrap bg-slate-900 p-3 rounded-lg max-h-72 overflow-y-auto mb-3"></pre>
+        <div id="idea-modal-doc" class="hidden text-xs text-slate-200 bg-slate-900 p-3 rounded-lg max-h-72 overflow-y-auto mb-3"></div>
         <div id="idea-modal-feed" class="space-y-3 max-h-none"></div>
       </div>
 
@@ -1158,16 +1158,17 @@ async function showRun(ideaId, runId, opts) {
   doc.classList.add('hidden');
   prdBtn.classList.toggle('hidden', !run.prd_text);
   briefBtn.classList.toggle('hidden', !run.research_brief);
-  prdBtn.onclick = () => {
-    doc.textContent = run.prd_text || '(no PRD)';
+  // Smart doc viewer: JSON → structured tree, markdown → formatted HTML,
+  // anything else → plain text (same renderer as the live debate feed).
+  const showDoc = (text, fallback) => {
+    doc.classList.remove('md-body', 'whitespace-pre-wrap');
+    doc.textContent = '';
+    renderAgentOutput(doc, text || fallback);
     doc.classList.remove('hidden');
     window.scrollTo(0, 0);
   };
-  briefBtn.onclick = () => {
-    doc.textContent = run.research_brief || '(no research brief)';
-    doc.classList.remove('hidden');
-    window.scrollTo(0, 0);
-  };
+  prdBtn.onclick = () => showDoc(run.prd_text, '(no PRD)');
+  briefBtn.onclick = () => showDoc(run.research_brief, '(no research brief)');
   if (opts && opts.showPrd && run.prd_text) prdBtn.click();
 }
 
