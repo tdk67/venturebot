@@ -1,98 +1,77 @@
 # VentureBot
 
-**A self-improving, multi-agent research & development system** built on Google ADK.  
-Takes a vague idea → researches it → debates it (Advocate vs Critic vs Judge) → produces a scored PRD → builds a working MVP through blind TDD.
-
-**Target:** Google Hackathon — Track 2: The Collaborative Partner
+**A self-improving, multi-agent research & development system** built on [Google ADK](https://github.com/google/adk-python).
+Takes a vague idea → researches it → debates it (Advocate vs Critic vs Judge) → produces a scored PRD — with a human in the loop at every consequential gate.
 
 ```
 Vague Idea
   ↓
-Research Agent (google_search) → Research Brief
+Orchestrator (autonomous ADK agent loop)
+  ├─ Research Agent (google_search) → Research Brief
+  ├─ Creative Ideator (divergent angles, temperature 1.0)
+  ├─ Advocate → Critic → Judge (asymmetric info access)
+  └─ [Human clarification if the idea is ambiguous — durable, survives restarts]
   ↓
-[Human Clarification if needed]
-  ↓
-Advocate → Critic → Judge (asymmetric info access)
-  ↓
-[Human: Proceed / Abort]
+[Human: Proceed / Rebut / Abort]
   ↓
 PRD Writer → Structured PRD
   ↓
+Security Auditor (proof-read gate: hallucinations, missing NFRs, injected secrets)
+  ↓
 [Human: Approve / Changes / Reject]
   ↓
-Phase 2: Blind TDD (PO → TestWriter → pytest → Coder → QA_PO)
-  ↓
-Working MVP
+Scored PRD + full debate transcript
 ```
 
 ---
 
-## Current Status (2026-08-19)
+## What it is
 
-> **Phase 1 pipeline works end-to-end.** The 5-agent debate chain (Research → Advocate → Critic → Judge → PRD Writer) runs on Google ADK with Gemini models, includes kill switch, budget enforcement, HITL gates, and SSE streaming. **Dashboard UI is fully wired** (SSE + rendering + HITL buttons + idea-history timeline). **Self-improvement layer (M3) is built** (SQLite memory store, auto_capture, review_fork, dream_review, idea-tree pruning). **Idea history + crash-safe checkpoint persistence is built** — ideas archive with PRD/transcript/scores, and mid-run checkpoints survive restarts via `resume_from_checkpoint`. **Phase 2 (blind TDD) is not built** (deliberately out of scope for the hackathon — see PRD §11 Build Plan, post-hackathon).
+VentureBot is a **debate-room for startup ideas**. Instead of a single LLM rubber-stamping your idea, a panel of agents with *deliberately asymmetric information access* argues it:
 
-### Milestone Progress
+- the **Advocate** sees only evidence that supports the idea,
+- the **Critique** sees only counter-evidence (via live `google_search`),
+- the **Judge** sees both and must reach a scored verdict (PROCEED / PIVOT / PARK),
+- a **Creative Ideator** runs hot to propose angles nobody asked for — and gets re-checked by the evidence-bound Critic before it can influence anything.
 
-| Milestone | Progress | Status |
-|-----------|----------|--------|
-| **M0.5** Safety Baseline (S0-S10) | 90% | ✅ Kill switch, sandbox, budget, auth, input guard, XSS-safe, Security Auditor (S10) + proof-read gate. ⚠️ MCP config (S8) missing |
-| **M1** Phase 1 Core Debate | 85% | ✅ 5 ADK agents, custom pipeline, HITL gates, steering injection, URL ingestion |
-| **M2** Observable UI | 95% | ✅ FastAPI + SSE + auth + JS rendering + HITL buttons + idea-history timeline with sidebar facets (status/tag/date), search, PRD viewer, pagination, CSV export |
-| **M3** Self-Improvement | 90% | ✅ SQLite store, idea tree + pruning, auto_capture, review_fork (wired fire-and-forget), dream_review, scheduler, `/api/memories` + technique-library UI panel |
-| **M4** Shadow Mode + GCP Deploy | 0% | ❌ Not started |
+An autonomous **orchestrator** (ADK `LlmAgent` with function tools) drives the whole loop, with a quality gate that stops it when the PRD + verdict are stable. Every expensive or irreversible step has a **human gate**. A **self-improvement layer** (SQLite memory: session facts, lessons, techniques, idea tree) makes later debates smarter than earlier ones — without ever re-running an old debate.
 
-### Component Status
+## Feature highlights
 
-| Component | File(s) | State |
-|-----------|---------|-------|
-| Phase 1 agents (Researcher, Advocate, Critic, Creative, Judge, PRD Writer) | `src/agents/agents.py` | ✅ Working on ADK 2.7.1 |
-| Pipeline orchestrator (resumable, kill-switch aware) | `src/agents/pipeline.py` | ✅ Working |
-| HITL gates (clarify, verdict, PRD approval) | `src/agents/clarify.py`, pipeline.py | ✅ Working |
-| Steering inbox (mid-run guidance injection) | `src/steering.py` | ✅ Working |
-| Kill switch (StopEvent + process group kill) | `src/run_manager.py` | ✅ Working |
-| Output guard (AST check + hardcoded secret scan) | `src/guard.py` | ✅ Working |
-| Artifact scanner + proof-read gate (S10) | `src/artifact_scanner.py` | ✅ Working — secret + injection + AST scans, never auto-passes |
-| Security Auditor agent (S10) | `src/agents/agents.py` (`auditor`) | ✅ Working — proofs PRD before approval |
-| Input guard (injection detection + quarantine) | `src/input_guard.py` | ✅ Working |
-| Sandbox (unprivileged UID + network isolation + rlimits) | `src/sandbox.py` | ✅ Working |
-| Budget enforcement (pre-call check + persistent tracking) | `src/budget.py` | ✅ Working |
-| Google SSO auth (allowlist + signed cookies) | `src/auth.py` | ✅ Working |
-| FastAPI dashboard (SSE + all API endpoints) | `src/dashboard.py` | ✅ API working |
-| Dashboard HTML/CSS | `templates/index.html` | ✅ Full SPA: SSO, SSE feed, steering, verdict/PRD HITL buttons |
-| State store (JSON file-backed) | `src/store.py` | ✅ Working |
-| URL fetcher (research material ingestion) | `src/url_fetch.py` | ✅ Working |
-| Gemini usage tracker | `src/gemini_usage.py` | ✅ Working |
-| Checkpoint persistence (crash-safe resume) | `src/agents/pipeline.py` | ✅ Working — atomic per-agent snapshots in `data/checkpoints/`, archived on completion |
-| Idea archive (PRD/transcript/scores in SQLite) | `src/memory/sqlite_store.py` | ✅ Working — `idea_tree` populated by pipeline, queried by `/api/ideas*` |
-| Tag extraction (portfolio-style categories) | `src/memory/tagging.py` | ✅ Working — keyword-based |
-| Phase 2 agents (PO, TestWriter, Coder, QA_PO) | — | ❌ Wiped (safety review), not rebuilt |
-| Self-improvement layer (auto_capture, review_fork, dream_review) | `src/memory/` | ✅ Built (M3) |
-| Idea tree with pruning | `src/memory/idea_tree.py` | ✅ Built + deterministic pruning rules |
-| Bridge (Phase 1 → Phase 2 handoff) | — | ❌ Not started |
-| GCP deployment (Agent Engine + Cloud Run) | — | ❌ Not started |
+- **Multi-agent debate** on Google ADK + Gemini, with structured Pydantic outputs
+- **Autonomous orchestrator** with turn/tool budgets, stall detection and quality gates
+- **Human-in-the-loop gates**: clarification (durable across server restarts), verdict rebuttal, PRD approval
+- **Steering**: inject guidance mid-run ("focus on the EU market; ignore competitor X")
+- **Idea history**: every debate is an immutable run under its idea; browse, resume, export (JSON/CSV/MD/PDF)
+- **Self-improvement**: auto-captured facts, LLM-analyzed turn reviews, nightly "dream review" consolidation, idea-tree pruning
+- **Safety stack**: input-injection guard, output guard (AST + secret scan), artifact scanner, sandboxed pytest (unprivileged UID + network isolation), hard daily budget, kill switch
+- **Hardened dashboard**: strict CSP, server-side sessions, Google login, SSE live feed
+- **Multi-user ready**: per-run workspace isolation, per-route ownership design, backend-amnesia architecture (see `notes/MULTI_USER_DESIGN.md`, `notes/MULTIUSER_SECURITY_REVIEW.md`)
 
 ---
 
 ## Architecture
+
+### Repository layout
 
 ```
 /root/venturebot/
 ├── PRD.md                          ← product requirements (VB-PRD-2026-08-18)
 ├── IMPLEMENTATION_PLAN.md          ← detailed build plan + task breakdown
 ├── SAFETY_REVIEW.md                ← safety audit that gated all work
-├── Review-PRD.md                   ← hackathon alignment + demo strategy
-├── README.md                       ← you are here
+├── notes/                          ← design + review docs (see below)
 ├── .env                            ← live secrets (NEVER committed)
 ├── .env.example                    ← env var template
-├── .gitignore                      ← excludes .env, state.json, data/, venv/
-├── state.json                      ← current pipeline state (resumable)
 │
-├── src/                            ← Python package (renamed from venturebot/venturebot)
-│   ├── __init__.py
-│   ├── config.py                   ← env-driven config (models, budgets, paths)
-│   ├── dashboard.py                ← FastAPI app: SSE, auth, HITL, all /api/* endpoints
+├── src/
+│   ├── config.py                   ← env-driven config (models, budgets, paths, auth)
+│   ├── dashboard.py                ← FastAPI app: SSE, auth routes, HITL, all /api/* endpoints,
+│   │                                 security-headers/CSRF middleware, /static mount
 │   ├── store.py                    ← JSON file-backed state (single source of truth)
-│   ├── auth.py                     ← Google SSO (jwt verification + allowlist)
+│   ├── auth.py                     ← session validation + Google identity helpers
+│   ├── oauth.py                    ← Google OAuth code flow: PKCE + state + nonce, BE-side exchange
+│   ├── sessions.py                 ← server-side session store (sha256-hashed tokens,
+│   │                                 rotation on login, logout revocation) + users table
 │   ├── budget.py                   ← cumulative LLM spend enforcement
 │   ├── run_manager.py              ← kill switch (StopEvent + process group kill)
 │   ├── guard.py                    ← post-LLM output guard (AST check + secret scan)
@@ -101,21 +80,19 @@ Working MVP
 │   ├── steering.py                 ← user guidance inbox (drained at checkpoints)
 │   ├── url_fetch.py                ← fetches user-provided URLs for research material
 │   ├── gemini_usage.py             ← Gemini token/cost tracker
-│   ├── artifact_scanner.py         ← S10 deterministic scanner + proof-read gate
+│   ├── artifact_scanner.py         ← deterministic scanner + proof-read gate
 │   ├── scheduler.py                ← nightly dream-review cron (APScheduler)
-│   ├── llm_client.py               ← legacy OpenRouter client (kept for reference)
 │   │
-│   └── agents/                     ← Phase 1 ADK agents
-│       ├── __init__.py
-│       ├── agents.py               ← 6 LlmAgent definitions (Researcher→PRD Writer→Auditor)
-│       ├── pipeline.py             ← custom orchestrator (resumable, kill-switch aware)
-│       ├── prompts.py              ← system prompts for all 5 agents
+│   └── agents/
+│       ├── agents.py               ← LlmAgent definitions (Researcher→…→PRD Writer→Auditor)
+│       ├── orchestrator.py         ← autonomous orchestrator loop + tools
+│       │                             (per-run workspace: workspace/runs/{run_id}/, traversal-guarded)
+│       ├── pipeline.py             ← resumable, kill-switch-aware wiring
+│       ├── prompts.py              ← system prompts for all agents
 │       ├── schemas.py              ← Pydantic output schemas (ResearchBrief, JudgeVerdict)
-│       ├── clarify.py              ← HITL clarification tool (LongRunningFunctionTool)
-│       └── (pipeline wires auto_capture into memory/)
+│       └── clarify.py              ← HITL clarification tool (LongRunningFunctionTool)
 │
-│   └── memory/                     ← self-improvement layer (M3)
-│       ├── __init__.py
+│   └── memory/                     ← self-improvement layer
 │       ├── sqlite_store.py         ← SQLite store (facts, lessons, techniques, profile, idea tree)
 │       ├── idea_tree.py            ← deterministic pruning rules (PRD §5.5)
 │       ├── auto_capture.py         ← Fork 1: persist session facts (throttled)
@@ -123,228 +100,303 @@ Working MVP
 │       ├── dream_review.py         ← Fork 3: nightly consolidation + pruning
 │       └── _throttle.py            ← 120s per-session fork cooldown
 │
-├── templates/
-│   └── index.html                  ← dashboard SPA (SSO, SSE, HITL buttons, XSS-safe rendering)
-│
-├── tests/                          ← pytest test suite (114 tests)
-│   ├── test_safety.py              ← guard, input_guard, sandbox, budget, kill switch
-│   ├── test_dashboard.py           ← API endpoint auth + status codes
-│   ├── test_pipeline.py            ← verdict parsing, debate flow (mocked)
-│   ├── test_steering.py            ← steering inbox + concurrency
-│   ├── test_auth.py                ← SSO verification + session tokens
-│   ├── test_url_fetch.py           ← URL validation + fetching
-│   ├── test_memory.py              ← memory store CRUD, pruning rules, throttle
-│   ├── test_review_fork.py         ← review_fork analysis, scheduler
-│   ├── test_artifact_scanner.py    ← S10 scanner + proof-read gate + audit parsing
-│   ├── test_checkpoint.py          ← checkpoint atomicity, resume, archive move
-│   ├── test_ideas_store.py         ← update_idea_content, partial/idempotent, tags
-│   └── test_ideas_api.py           ← /api/ideas* + checkpoints + facets + CSV
-│
-├── data/
-│   ├── budget.json                 ← daily spend limit config
-│   └── gemini_usage.json           ← cumulative LLM cost log
-│
-├── scripts/
-│   ├── secret_scan.sh              ← git pre-push secret scanner
-│   └── check_gemini_credits.sh     ← Gemini API quota checker
-│
-├── venv/                           ← Python 3.11 virtualenv (google-adk, fastapi, etc.)
-└── .git/                           ← git repo (pre-push hook runs secret_scan.sh)
+├── templates/index.html            ← dashboard SPA shell (login gate, HITL buttons, XSS-safe rendering)
+├── static/app.js                   ← dashboard application logic (externalized for strict CSP)
+├── static/vendor/                  ← pinned, self-hosted JS libs (tailwind, marked, dompurify)
+├── tests/                          ← pytest suite (149 tests)
+└── data/, state.json               ← runtime state (ideas DB, archives, checkpoints)
+```
+
+### Runtime architecture
+
+```
+Browser (SPA) ──── HTTPS ──── nginx ──── uvicorn (FastAPI, 127.0.0.1:8090)
+                                │
+                    ┌───────────┴────────────┐
+                    │  security middleware   │  CSP script-src 'self', XCTO,
+                    │  (headers + CSRF)      │  Referrer-Policy, frame-ancestors none,
+                    │                        │  HSTS; Sec-Fetch-Site check on mutations
+                    └───────────┬────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────────┐
+        │                       │                           │
+  Google OAuth             session store                debate engine
+  (code flow, PKCE,        (SQLite: sha256 token        (ADK orchestrator + agents,
+   state+nonce; secret     hashes, rotation,             per-run workspaces, budget,
+   stays server-side)      revocation, users table)      kill switch, HITL gates)
+                                │                           │
+                          state.json /                Gemini API (google_search
+                          data/venturebot.db          grounded research), memory
+                          (ideas, runs, archives)     store, sandboxed tools
 ```
 
 ---
 
-## Key Design Decisions
+## Key design decisions
 
-### 1. Custom Orchestrator over SequentialAgent
-The pipeline uses a custom orchestrator (`pipeline.py`) instead of ADK's `SequentialAgent` because:
-- SequentialAgent is deprecated in ADK 2.7
-- SequentialAgent runs all sub-agents unconditionally (no conditional verdict gate)
-- Custom orchestrator polls the kill switch between agents
-- Steering messages are injected at checkpoints (between agents), never mid-turn
-- Pipeline is resumable: paused state survives across human decisions
+### 1. Custom orchestrator over SequentialAgent
+The debate is not a fixed pipeline: the orchestrator decides per turn which sub-agent to call (research again? creative angle? straight to PRD?), with budgets (`ORCHESTRATOR_MAX_TURNS`, `MAX_TOOL_CALLS`) and a quality gate that stops on PRD + verdict + stall detection. Patterned after the ADK samples' `AgentTool` delegation (see Credits).
 
-### 2. Asymmetric Information Access (Blind Debate)
-- **Advocate** has NO tools — argues only from the research brief
-- **Critic** HAS `google_search` — can fact-check with live web evidence
-- This eliminates single-model confirmation bias
+### 2. Asymmetric information access (blind debate)
+Advocate and Critic see disjoint slices of evidence. This is the core product idea — it produces real argument instead of agreeable summarization, and the Judge's verdict cites both sides.
 
-### 3. Fail Loud, Fail Honest
-No silent fallbacks. When something fails:
-1. Stop (don't continue degraded)
-2. Report (full context: component, error type, what was attempted)
-3. Preserve state (save what was computed)
-4. Suggest fix (if known)
+### 3. Fail loud, fail honest
+Verdict parsing raises instead of silently PARKing; the artifact scanner never auto-passes; the budget enforcer blocks pre-call. A debate that can't be completed says so.
 
-### 4. Three-Layer Defense
-1. **Pre-LLM** (`input_guard.py`) — injection detection + quarantine convention
-2. **Post-LLM** (`guard.py`) — AST check (banned constructs) + hardcoded secret scan
-3. **Runtime** (`sandbox.py`) — unprivileged UID, network isolation, rlimits, filesystem restrictions
+### 4. Security as architecture, not afterthought
+Driven by an adversarial security review (`notes/MULTIUSER_SECURITY_REVIEW.md`, 6 design + 7 implementation findings, all P0s fixed):
+
+- **Per-run workspace isolation** — orchestrator file tools resolve strictly inside `workspace/runs/{run_id}/`; path traversal and cross-run access are blocked (a malicious prompt can't read another debate's files).
+- **Strict CSP + vendored JS** — `script-src 'self'`; marked/DOMPurify/Tailwind are pinned copies served from `/static/vendor/`, so a CDN compromise can't inject scripts. All inline event handlers removed.
+- **Log redaction at source** — the process log (journald) gets metadata only; debate content never leaves state.json.
+- **Server-side sessions** — cookies carry opaque random tokens; only sha256 hashes are stored; every login rotates; logout revokes. Session fixation is structurally impossible.
+- **OAuth done per OAuth 2.1** — authorization-code flow with PKCE, single-use state + nonce, secret server-side, no refresh tokens stored.
+- **CSRF beyond SameSite** — cross-site mutating requests are rejected via Sec-Fetch-Site.
+- **Planned (multi-user phase B)**: backend amnesia (ephemeral encrypted debate rows, ACK-before-wipe), per-route ownership with 404-not-403, BYOK keys in memory only, lesson-poisoning moderation. See `notes/MULTIUSER_TASKS.md` for the live task list.
+
+### 5. Local-first data ownership (target architecture)
+The design end-state keeps user data in the user's browser (IndexedDB + encrypted Google Drive `appDataFolder` backup); the backend stays an ephemeral compute node. The backend-amnesia trade-offs (including the v1 backup-key escrow caveat) are documented honestly in `notes/MULTI_USER_DESIGN.md`.
 
 ---
 
-## Quick Start
+## Install & Run
 
 ### Prerequisites
 
-```bash
-cd /root/venturebot
-source venv/bin/activate
+- Linux (systemd + nginx assumed for deployment), Python 3.12
+- A Google AI Studio API key (`GOOGLE_API_KEY`) for Gemini
+- (optional, for login) A Google Cloud OAuth client — see next section
 
-# Verify ADK is installed
-python -c "from google.adk.agents import LlmAgent; print('ADK OK')"
-
-# Verify Gemini API key
-python -c "from google.adk.models import Gemini; m = Gemini(model='gemini-2.0-flash'); print('Gemini OK')"
-```
-
-### Run the Dashboard
+### Local setup
 
 ```bash
-cd /root/venturebot
-uvicorn src.dashboard:app --host 0.0.0.0 --port 8080
+git clone <repo> venturebot && cd venturebot
+python3 -m venv venv
+./venv/bin/pip install -r requirements.txt   # google-adk, fastapi, uvicorn, apscheduler, google-auth, dotenv
+
+cp .env.example .env
+# fill in GOOGLE_API_KEY (required); auth vars optional for local dev
 ```
-
-Open http://localhost:8080 — the dashboard will show:
-- ✅ API endpoints are live (check `/api/state`, `/api/auth/me`)
-- ✅ Full debate pipeline: Researcher → Advocate → Critic → Creative → Judge → PRD
-
-### Stub Server (UI tuning, zero LLM cost)
 
 ```bash
-cd /root/venturebot
-./venv/bin/uvicorn src.stub_server:app --host 0.0.0.0 --port 8091
+# development server (no login required by default: VENTUREBOT_NO_AUTH=1)
+./venv/bin/uvicorn src.dashboard:app --host 127.0.0.1 --port 8090
+# open http://127.0.0.1:8090
 ```
 
-Scripted in-memory debate that auto-advances through all phases on a timer.
-Identical UI (same dashboard routes, auth, ideas, SSE) but every LLM call is
-replaced with canned data. Use this to iterate on UI changes without spending tokens.
+### Google OAuth setup (client secret)
 
-### API Endpoints
+To enable real login you need a Google Cloud OAuth client (web). If you already have a client ID, you only need its secret + redirect URI:
 
-| Method | Path | Description | Auth |
-|--------|------|-------------|------|
-| GET | `/` | Dashboard HTML | No (static) |
-| GET | `/api/auth/client-id` | Google OAuth client ID | No |
-| GET | `/api/auth/me` | Current user (or `authenticated: false`) | No |
-| POST | `/api/auth/google` | Verify Google credential, set session cookie | No |
-| POST | `/api/auth/logout` | Clear session cookie | No |
-| GET | `/api/state` | Full pipeline state + budget | ✅ |
-| POST | `/api/reset` | Reset state to initial | ✅ |
-| POST | `/api/stop` | Cancel active run (kill switch) | ✅ |
-| POST | `/api/run-phase1` | Start debate with `{"idea": "..."}` | ✅ |
-| POST | `/api/steering` | Queue guidance for next checkpoint | ✅ |
-| GET | `/api/steering` | Current steering inbox state | ✅ |
-| POST | `/api/resume` | Resume paused debate with decision | ✅ |
-| GET | `/api/paused` | List of paused run IDs | ✅ |
-| GET | `/api/events` | SSE stream of pipeline events | ✅ |
-| POST | `/api/budget/raise` | Raise daily budget limit | ✅ |
-| GET | `/api/ideas` | Paginated idea list (filters: search, status, category, date) | ✅ |
-| GET | `/api/ideas/facets` | Sidebar facets (tag/date/status counts) | ✅ |
-| GET | `/api/ideas/csv` | CSV export of filtered ideas | ✅ |
-| GET | `/api/ideas/{id}` | Full idea detail (PRD, transcript, scores) | ✅ |
-| POST | `/api/ideas/{id}/resume` | Load an idea as active debate context | ✅ |
-| POST | `/api/ideas/{id}/archive` | Park an idea | ✅ |
-| GET | `/api/checkpoints` | List in-progress (resumable) checkpointed runs | ✅ |
-| POST | `/api/checkpoints/{id}/resume` | Resume a checkpointed debate after restart | ✅ |
+1. Open [console.cloud.google.com/apis/credentials](https://console.cloud.google.com/apis/credentials) and pick the project that contains your client ID.
+2. Click your OAuth 2.0 Client ID → **Authorized redirect URIs → ADD URI**:
+   ```
+   https://venturebot.taskmind-ai.com/api/auth/callback   # or your own domain
+   ```
+   Save.
+3. Copy the **Client secret** from the same page (or create one if the client has none: *Credentials → + CREATE CREDENTIALS → OAuth client ID → Web application*, then use that client's ID + secret pair).
+4. In `.env`:
+   ```
+   GOOGLE_CLIENT_ID=…apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-…
+   VENTUREBOT_PUBLIC_BASE_URL=https://venturebot.taskmind-ai.com   # builds the redirect URI
+   VENTUREBOT_COOKIE_SECURE=true                                   # you're behind HTTPS
+   VENTUREBOT_ALLOWED_EMAILS=you@gmail.com                         # optional allowlist
+   ```
+5. Check **APIs & Services → OAuth consent screen**: publish the app or add your email as a test user (else Google shows an "unverified app" warning).
+6. Enable login:
+   ```bash
+   # in .env: VENTUREBOT_NO_AUTH=0
+   sudo systemctl restart venturebot
+   ```
+   The app now shows **Sign in with Google**; after consent you land back on the dashboard signed in. **Sign out** revokes the server-side session.
 
-### Run Tests
+Notes: the secret never leaves the backend (the code exchange happens server-side). To rotate it, reset it on the same credentials page and update `.env`. To freeze new registrations without locking out existing users, set `VENTUREBOT_SIGNUP_CLOSED=true`.
+
+### Production deployment (current: VPS + systemd + nginx)
+
+The app runs as a systemd service behind nginx with TLS (Let's Encrypt). SSE requires `proxy_buffering off` and a long read timeout.
+
+```ini
+# /etc/systemd/system/venturebot.service
+[Unit]
+Description=VentureBot Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/venturebot
+ExecStart=/root/venturebot/venv/bin/uvicorn src.dashboard:app --host 127.0.0.1 --port 8090
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```nginx
+# /etc/nginx/sites-enabled/venturebot.example.com
+server {
+    server_name venturebot.example.com;
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;   # used for OAuth redirect URI
+        proxy_buffering off;                          # required for SSE
+        proxy_read_timeout 3600s;
+    }
+    listen 443 ssl;   # + certificates (certbot)
+}
+```
 
 ```bash
-cd /root/venturebot
-pytest tests/ -v
+sudo systemctl enable --now venturebot
 ```
 
-Current test coverage: ~25% (safety tests are solid; most modules undertested)
+### GCP deployment — TODO
+
+Cloud Run (containerized uvicorn) + Secret Manager for `GOOGLE_API_KEY` / `GOOGLE_CLIENT_SECRET` + Cloud SQL or persistent disk for `data/` is the planned target, together with Agent Engine + Memory Bank for the self-improvement layer. Not started — the VPS setup above is the current production path.
+
+### Stub server (UI tuning, zero LLM cost)
+
+```bash
+./venv/bin/uvicorn src.stub_server:app --host 127.0.0.1 --port 8091
+```
+
+Same API surface as the real dashboard, with a canned debate — useful for UI work without burning tokens.
+
+### Run tests
+
+```bash
+./venv/bin/python -m pytest tests -q     # 149 tests
+```
 
 ---
 
-## Environment Variables
+## Using VentureBot
+
+1. **Submit an idea** — type it into the debate box (optionally add URLs for research material) and hit **▶ Debate**.
+2. **Watch the debate live** — the feed streams every agent turn over SSE.
+3. **Answer clarifications** — if the idea is ambiguous, the orchestrator pauses with a question; your answer persists across restarts (durable pause).
+4. **Steer mid-run** — use the steering box ("focus on B2B; ignore enterprise"); it's injected at the next checkpoint.
+5. **React to the verdict** — PROCEED ANYWAY / REBUT (with your counter-arguments) / ABORT.
+6. **Approve the PRD** — the Security Auditor proof-reads it first; approve, request changes, or reject.
+7. **Browse idea history** — every run is archived under its idea: transcript, PRD, scores. Export as JSON/CSV/Markdown/PDF; re-run or resume any idea.
+8. **Self-improvement console** — inspect captured lessons/techniques; run the nightly **Dream Review** manually anytime.
+9. **Budget** — the daily spend cap shows in the header; raise it in-session if needed. **⏹ Stop** is the kill switch.
+
+---
+
+## API endpoints (selection)
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/auth/login` | GET | Start Google OAuth (302 to Google; PKCE) |
+| `/api/auth/callback` | GET | OAuth callback → session cookie |
+| `/api/auth/me` | GET | Current user / auth status |
+| `/api/auth/logout` | POST | Revoke server-side session |
+| `/api/run-phase1` | POST | Start a debate for an idea |
+| `/api/state` | GET | Live pipeline state (also via SSE `/api/events`) |
+| `/api/steering` | POST | Inject mid-run guidance |
+| `/api/clarify/answer` | POST | Answer a durable clarification pause |
+| `/api/resume` | POST | Resume verdict/PRD gate |
+| `/api/ideas` | GET | Idea history (facets, pagination) |
+| `/api/ideas/export` | GET | Full JSON backup (all ideas + runs) |
+| `/api/ideas/import` | POST | Restore from JSON export |
+| `/api/usage` | GET | Token/cost usage |
+| `/api/budget/raise` | POST | Raise daily budget cap |
+| `/api/stop` | POST | Kill switch |
+| `/scheduler/dream-review` | POST | Run memory consolidation now |
+
+Mutating endpoints reject cross-site browser requests (CSRF); non-browser clients (curl/scripts) work unchanged.
+
+---
+
+## Environment variables
+
+See `.env.example` for the full annotated template. The essentials:
 
 ```bash
 # Required
-GEMINI_API_KEY=AIza...                    # Google AI Studio API key
+GOOGLE_API_KEY=            # Gemini (AI Studio)
 
-# Phase 1 models (all configurable)
-VENTUREBOT_MODEL_RESEARCHER=gemini-2.5-flash
-VENTUREBOT_MODEL_ADVOCATE=gemini-2.5-flash
-VENTUREBOT_MODEL_CRITIC=gemini-2.5-pro
-VENTUREBOT_MODEL_JUDGE=gemini-2.5-pro
-VENTUREBOT_MODEL_PRD_WRITER=gemini-2.5-pro
-
-# Google SSO (for dashboard auth)
-GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-VENTUREBOT_ALLOWED_EMAILS=you@gmail.com
+# Auth (optional locally; required for login)
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+VENTUREBOT_PUBLIC_BASE_URL=
+VENTUREBOT_COOKIE_SECURE=false
+VENTUREBOT_ALLOWED_EMAILS= # optional allowlist
+VENTUREBOT_SIGNUP_CLOSED=false
+VENTUREBOT_NO_AUTH=1       # 1 = no-login prototype mode; 0 = Google login enforced
 
 # Budget
-VENTUREBOT_DAILY_BUDGET_LIMIT=20.0        # USD, default $20
+VENTUREBOT_DAILY_BUDGET_LIMIT=20.00
 
-# Sandbox
-VENTUREBOT_SANDBOX_USER=nobody
-VENTUREBOT_SANDBOX_GROUP=nogroup
+# Models (all configurable; defaults are Gemini)
+VENTUREBOT_MODEL_RESEARCHER / _ADVOCATE / _CRITIC / _JUDGE / _PRD_WRITER / _AUDITOR / _CREATIVE / _ORCHESTRATOR
+
+# Paths (all optional)
+VENTUREBOT_WORKSPACE / _STATE / _DATA / _DB / _CHECKPOINT_DIR / _ARCHIVE_DIR / _SANDBOX
 ```
 
-See `.env.example` for the full template.
-
 ---
 
-## What's Next (Priority Order)
+## Status & roadmap
 
-### 🔴 P0 — Before Demo
+**Phase 1 (debate → PRD) is complete and deployed.** Multi-user hardening P0s are done (see `notes/MULTIUSER_TASKS.md`).
 
-- [x] **Write dashboard JavaScript** — SSE + rendering + HITL buttons (done, inline in `templates/index.html`)
-- [x] **Remove dead Phase 2 code** — `guard.py` is clean
-- [x] **Add critical tests** — budget, auth, kill switch, input guard, sandbox isolation
-- [x] **Fix verdict parser** — now fails loud (raises `ValueError`) instead of silently PARKing
-- [x] **Wire technique-library UI panel** — surface `/api/memories` in the dashboard right panel (last M3 UI piece)
-- [x] **Add scheduled dream-review** — wire APScheduler/cron to hit `/scheduler/dream-review` nightly
-- [x] **Add Security Auditor agent** (S10) — proof-read PRDs for hallucinations + missing NFRs
-- [ ] **Wire MCP tool config** (S8) — make `google_search` and messaging channels config-driven
-- [ ] **Add rate limiting** — Prevent API abuse (slowapi or similar)
-- [x] **Add review_fork firing to pipeline** — `analyze_turn` is wired as a fire-and-forget task after each agent turn
-
-### 🟢 P2 — Post-Hackathon
-
-- [ ] **Build Phase 2** — Rebuild blind TDD loop on ADK architecture (PO → TestWriter → Coder → QA_PO)
-- [ ] **Bridge Phase 1 → Phase 2** — Pass approved PRD from debate to TDD harness
-- [ ] **Shadow mode** — Run ADK coder alongside custom coder, compare metrics
-- [ ] **Anti-degradation gate** — Auto-revert if ADK pass rate drops below 80%
-- [ ] **GCP deployment** — Agent Engine + Cloud Run + Memory Bank
-- [ ] **Multi-provider fallback** — Add OpenRouter as tier 2 if Gemini is unavailable
-- [ ] **Per-run workspace** — Isolate artifacts under `runs/<run_id>/`
-
----
-
-## Known Issues
-
-1. **Phase 2 is missing** — The old Phase 2 code (OpenRouter blind TDD loop) was correctly wiped per SAFETY_REVIEW.md. Deliberately out of scope for the hackathon (PRD §11 Build Plan, post-hackathon); the dashboard has no Kanban panel for it.
-
-2. **Dream review is manual-only by default** — The endpoint works (`POST /scheduler/dream-review`) and the APScheduler cron is wired, but the scheduler is off unless `VENTUREBOT_ENABLE_SCHEDULER=1` is set.
-
-3. **Paused sessions are in-memory** — `_SESSIONS` holds ADK session objects (runtime-only) for the *verdict/PRD gate resume* path. The **checkpoint layer** (`data/checkpoints/<run_id>.json`) now covers crash/restart recovery: `resume_from_checkpoint` reconstructs `DebateResult` from disk and re-runs only the remaining phases, so mid-run data loss is solved even though the ADK session history itself is not persisted.
-
-4. **Test coverage is solid but ADK agents lightly tested** — 114 tests. Safety-critical paths (budget, auth, kill switch, sandbox), the memory layer, and idea-history/checkpoint persistence have coverage; the ADK agent logic itself is mocked at the Runner boundary.
+| Milestone | Status |
+|-----------|--------|
+| M0.5 Safety baseline | ✅ kill switch, sandbox, budget, guards, auditor |
+| M1 Phase 1 core debate | ✅ ADK agents + autonomous orchestrator + HITL |
+| M2 Observable UI | ✅ SSE, HITL buttons, idea history, exports |
+| M3 Self-improvement | ✅ memory store, capture, review forks, dream review |
+| Security hardening (multi-user P0) | ✅ workspace isolation, CSP, log redaction, OAuth+PKCE, server-side sessions, CSRF |
+| Multi-user data plane (Phase B) | 🚧 tenancy keys in place; ownership checks, ephemeral debate engine, BYOK pending |
+| GCP deployment (Agent Engine + Cloud Run) | ⬜ not started |
 
 ---
 
 ## Documentation
 
-- **PRD.md** — Full product requirements (1268 lines)
-- **IMPLEMENTATION_PLAN.md** — Detailed task breakdown with estimates (1473 lines)
-- **SAFETY_REVIEW.md** — Safety audit that gated all work
-- **Review-PRD.md** — Hackathon alignment, uniqueness analysis, demo strategy
-- **PLAN_REVIEW.md** — Plan critique and risk mitigation
-- **CODE_REVIEW_FINAL.md** — Principal engineer code review (2026-08-19)
-- **idea-01.md, idea-02.md** — Original concept documents
-- **GEMINI_CREDITS.md** — Gemini API quota and cost tracking
+- `PRD.md` — full product requirements
+- `IMPLEMENTATION_PLAN.md` — build plan incl. which ADK samples each part is patterned on
+- `SAFETY_REVIEW.md` — safety audit that gated all work
+- `notes/MULTI_USER_DESIGN.md` — multi-user end-to-end design (local-first hybrid)
+- `notes/MULTIUSER_SECURITY_REVIEW.md` — adversarial security review (findings + fix list)
+- `notes/MULTIUSER_TASKS.md` — live multi-user task list + implementation log
+- `notes/PUBLIC_DEPLOYMENT_DESIGN.md` — queue/rate-limit/BYOK mechanics
+- `notes/LOOP_ARCHITECTURE_V2.md` — orchestrator loop design (self-improvement design is covered in `PRD.md` §5 and `notes/IMPLEMENTATION_PLAN.md`)
+- `CODE_REVIEW_FINAL.md`, `PLAN_REVIEW.md` — internal reviews
+
+---
+
+## Credits & acknowledgments
+
+VentureBot stands on the shoulders of:
+
+- **[Google ADK](https://github.com/google/adk-python)** (Agent Development Kit) — the agent runtime, `LlmAgent`, `AgentTool` delegation, `LongRunningFunctionTool`, session services, and Gemini integration.
+- **[google/adk-samples](https://github.com/google/adk-samples)** — several agents here are patterned directly on samples from this repo (per `notes/IMPLEMENTATION_PLAN.md` §1.4):
+  - `llm-auditor/` — sequential critic chain with grounding (`google_search`) and callbacks → our Critic + Security Auditor pattern
+  - `academic-research/` — `AgentTool` delegation + google_search integration → our orchestrator's sub-agent tools
+  - `financial-advisor/` — `response_schema` enforcement → our Pydantic verdict/brief schemas
+  - `sdlc-task-planner/` + `sdlc-technical-designer/` — structured-output prompt style → our PRD writer prompts
+  - `customer-service/` — human-in-the-loop handoff patterns → our clarify/verdict/PRD gates
+  - `travel-concierge/eval/` — eval infrastructure pattern → our test approach for agent flows
+  - `cross-session-memory/` (core samples) — `PreloadMemoryTool` + after-agent-callback wiring and Memory Bank config → our memory preload + self-improvement forks
+- **[FastAPI](https://fastapi.tiangolo.com)** / **[Starlette](https://www.starlette.io)** — the dashboard backend and SSE.
+- **[Tailwind CSS](https://tailwindcss.com)** (Play runtime, pinned 3.4.16), **[marked](https://github.com/markedjs/marked)** (12.0.2) and **[DOMPurify](https://github.com/cure53/DOMPurify)** (3.2.4) — self-hosted under `static/vendor/` so the strict CSP holds without third-party requests at runtime.
+- **[APScheduler](https://github.com/agronholm/apscheduler)** — nightly dream-review scheduling.
+- **[google-auth](https://github.com/googleapis/google-auth-library-python)** — id_token verification in the OAuth flow.
 
 ---
 
 ## License
 
 Private — hackathon submission.
-
----
 
 ## Contact
 
