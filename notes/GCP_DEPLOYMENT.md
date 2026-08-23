@@ -1,6 +1,6 @@
 # GCP Deployment Runbook (Cloud Run + GitHub Actions CI/CD)
 
-**Status:** pipeline built and tested locally; cloud-side one-time setup pending.
+**Status:** pipeline live — first deploy triggered by operator request.
 Target: Cloud Run (managed), Artifact Registry, Secret Manager, GCS for state
 snapshots, Workload Identity Federation (no service-account keys).
 
