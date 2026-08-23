@@ -21,7 +21,7 @@ INITIAL_TASKS = [
     {"id": "t5", "title": "PRD Writer", "status": "todo", "assignee": "PRD Writer"},
 ]
 
-VALID_STATUSES = {"idle", "running", "approved", "failed", "stopped"}
+VALID_STATUSES = {"idle", "running", "approved", "failed", "stopped", "waiting_user"}
 
 
 def _initial_state() -> dict:

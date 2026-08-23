@@ -192,9 +192,100 @@ class OrchestratorResult:
     turns_used: int = 0
     clarification_question: str | None = None
     clarification_state: str | None = None  # "awaiting_response" when clarify is active
+    # The human's answer to a paused clarification — set when resuming from
+    # disk; consumed by the first turn prompt after resume.
+    clarification_answer: str | None = None
     # Per-run snapshot bookkeeping (idea_runs row) — set by run_orchestrator.
     idea_run_id: str | None = None
     resume_comment: str | None = None
+
+
+class ClarifyPaused(Exception):
+    """Raised by the clarify() tool to tear the run down durably.
+
+    The debate PAUSES (all state persisted to disk) until the human answers.
+    There is no timeout on purpose: the user may answer in 2 minutes or next
+    week, possibly after the server restarted. Resumption rebuilds everything
+    from the persisted pause record.
+    """
+
+    def __init__(self, question: str):
+        super().__init__(question)
+        self.question = question
+
+
+# ── Durable pause store ────────────────────────────────────────────────
+
+def _pause_dir() -> Path:
+    d = config.DATA_DIR / "paused_runs"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _pause_path(run_id: str) -> Path:
+    return _pause_dir() / f"{run_id}.json"
+
+
+def persist_pause(result: "OrchestratorResult", run_id: str) -> dict:
+    """Snapshot the full debate state so it survives server restarts."""
+    payload = {
+        "run_id": run_id,
+        "asked_at": time.time(),
+        "question": result.clarification_question,
+        "idea": result.idea,
+        "idea_id": result.idea_id,
+        "idea_run_id": result.idea_run_id,
+        "resume_comment": result.resume_comment,
+        "turns_used": result.turns_used,
+        "research_brief": result.research_brief,
+        "advocate_argument": result.advocate_argument,
+        "critic_rebuttal": result.critic_rebuttal,
+        "creative_angles": result.creative_angles,
+        "verdict_text": result.verdict_text,
+        "verdict": result.verdict,
+        "prd": result.prd,
+        "security_audit": result.security_audit,
+        "events": result.events[-100:],  # cap transcript tail for the pause file
+    }
+    write_pause(payload)
+    return payload
+
+
+def write_pause(payload: dict) -> None:
+    """Write (or re-write) a pause snapshot dict atomically."""
+    tmp = _pause_path(payload["run_id"]).with_suffix(".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False))
+    tmp.replace(_pause_path(payload["run_id"]))
+
+
+def get_pause(run_id: str) -> dict | None:
+    p = _pause_path(run_id)
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except Exception:
+        return None
+
+
+def any_pending_pause() -> dict | None:
+    """The oldest pending clarification across restarts (for /api/state)."""
+    pauses = []
+    for p in _pause_dir().glob("*.json"):
+        try:
+            pauses.append(json.loads(p.read_text()))
+        except Exception:
+            continue
+    if not pauses:
+        return None
+    return min(pauses, key=lambda x: x.get("asked_at", 0))
+
+
+def pop_pause(run_id: str) -> dict | None:
+    data = get_pause(run_id)
+    if data:
+        _pause_path(run_id).unlink(missing_ok=True)
+    return data
 
 
 # ── Sub-agent wrapper — runs a sub-agent via ADK Runner ────────────────
@@ -347,8 +438,6 @@ class OrchestratorTools:
         self.user_id = user_id
         self.inbox = inbox
         self.run_id = run_id
-        self._clarify_answered_event: asyncio.Event | None = None
-        self._clarify_answer: str | None = None
 
     async def load_memories(self) -> str:
         """Load past lessons and techniques from VentureBot's memory store.
@@ -579,17 +668,16 @@ class OrchestratorTools:
         # Store the artifact reference in the result for the dashboard
         return f"Artifact '{path}' saved."
 
-    def set_clarify_answer(self, answer: str) -> None:
-        """Called by the dashboard when the human answers a clarification."""
-        self._clarify_answer = answer
-        if self._clarify_answered_event:
-            self._clarify_answered_event.set()
-
     async def clarify(self, question: str) -> str:
-        """Ask the human a clarifying question. PAUSES until the human responds.
+        """Ask the human a clarifying question. PAUSES the debate durably.
 
         Use when the idea is vague, research is contradictory, you need domain
         expertise, or you're presenting results for approval.
+
+        The full debate state is persisted to disk and this run ENDS cleanly;
+        answering (any time later, even after a server restart) starts a
+        continuation run that resumes from the snapshot. No timeouts — the
+        human may be at lunch or come back next week.
         """
         self.result.clarification_question = question
         self.result.clarification_state = "awaiting_response"
@@ -599,35 +687,9 @@ class OrchestratorTools:
         })
         store.log("Orchestrator", "core", f"Clarify: {question[:200]}")
 
-        # Wait for the dashboard to call set_clarify_answer()
-        self._clarify_answered_event = asyncio.Event()
-        self._clarify_answer = None
-
-        # Yield to allow the SSE event to reach the client
-        await asyncio.sleep(0.1)
-
-        # Wait up to 10 minutes for the human to answer
-        try:
-            await asyncio.wait_for(self._clarify_answered_event.wait(), timeout=600)
-        except asyncio.TimeoutError:
-            self.result.clarification_state = None
-            self.result.clarification_question = None
-            return "TIMEOUT: Human did not respond within 10 minutes. Continue with what you have."
-
-        answer = self._clarify_answer or "(no answer)"
-        self.result.clarification_state = None
-        self.result.clarification_question = None
-        store.log("Human", "user", f"Clarify answer: {answer[:200]}")
-
-        # Record the human interaction in the idea tree
-        try:
-            s = get_store()
-            if self.result.idea_id:
-                s.note_human_intervention(self.result.idea_id)
-        except Exception:
-            pass
-
-        return f"HUMAN ANSWER: {answer}"
+        # Persist BEFORE raising so even a crash right after keeps state.
+        persist_pause(self.result, self.run_id)
+        raise ClarifyPaused(question)
 
 
 # ── Verdict + audit parsers ────────────────────────────────────────────
@@ -682,6 +744,8 @@ async def run_orchestrator(
     session_id: str | None = None,
     resume_idea_id: str | None = None,
     resume_comment: str | None = None,
+    paused_state: dict | None = None,
+    clarify_answer: str | None = None,
 ) -> OrchestratorResult:
     """Run the autonomous orchestrator loop for one idea.
 
@@ -696,6 +760,10 @@ async def run_orchestrator(
     new direction, feedback) — injected into the first turn prompt and stored
     with the run history.
 
+    paused_state + clarify_answer resume a durably-paused clarification: all
+    fields are restored from the pause snapshot and the human's answer is
+    injected into the first turn prompt. Works across server restarts.
+
     Returns an OrchestratorResult with the full debate transcript, verdict,
     PRD, and security audit.
     """
@@ -703,13 +771,36 @@ async def run_orchestrator(
 
     inbox = inbox or SteeringInbox()
     result = OrchestratorResult(idea=idea)
+
+    if paused_state:
+        # Restore the debate exactly as it was when the question was asked.
+        result.idea = paused_state.get("idea") or idea
+        result.idea_id = paused_state.get("idea_id")
+        result.idea_run_id = paused_state.get("idea_run_id")
+        result.resume_comment = paused_state.get("resume_comment")
+        result.turns_used = int(paused_state.get("turns_used") or 0)
+        result.research_brief = paused_state.get("research_brief")
+        result.advocate_argument = paused_state.get("advocate_argument")
+        result.critic_rebuttal = paused_state.get("critic_rebuttal")
+        result.creative_angles = paused_state.get("creative_angles")
+        result.verdict_text = paused_state.get("verdict_text")
+        result.verdict = paused_state.get("verdict")
+        result.prd = paused_state.get("prd")
+        result.security_audit = paused_state.get("security_audit")
+        result.events = list(paused_state.get("events") or [])
+        result.clarification_answer = clarify_answer
+        result.clarification_question = paused_state.get("question")
+
     run_id = store.start_run()["run_id"]
     run_manager.manager.start(run_id)
 
     # Record or resume the idea in the idea tree
     try:
         store_obj = get_store()
-        if resume_idea_id:
+        if paused_state:
+            # Continuation of a paused debate — idea row already exists.
+            pass
+        elif resume_idea_id:
             # Resume existing idea — load previous context
             result.idea_id = resume_idea_id
             prev = store_obj.get_idea(resume_idea_id)
@@ -913,6 +1004,18 @@ async def run_orchestrator(
         result.status = "stopped"
         store.set_status("stopped")
         _archive_result(result, run_id)
+    except ClarifyPaused:
+        # Durable pause: state is already persisted to disk by clarify().
+        # Do NOT archive (that would finalize the checkpoint / park the idea).
+        result.status = "needs_clarification"
+        store.set_status("waiting_user")
+        store.log("System", "core",
+                  f"Debate paused — waiting for your answer (no time limit). Run {run_id}")
+        emit("run_paused", {
+            "run_id": run_id,
+            "question": result.clarification_question,
+            "idea_id": result.idea_id,
+        })
     except Exception as e:
         result.status = "failed"
         result.error = f"{type(e).__name__}: {e}"
@@ -935,6 +1038,19 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
     # truncated/lost (e.g. after a clarify timeout the loop keeps going), and
     # without it the orchestrator hallucinates an idea from memory lessons.
     parts.append(f"\n## THE IDEA TO EVALUATE:\n{result.idea}")
+
+    # The human's answer to the question that paused this debate — injected
+    # into the FIRST turn after resume only.
+    if turns_used == 0 and result.clarification_answer:
+        parts.append(
+            "\n## HUMAN ANSWER TO YOUR QUESTION\n"
+            "You asked (the debate then paused, possibly for hours or days):\n"
+            f"{(result.clarification_question or '(question)')[:500]}\n\n"
+            "The human answered:\n"
+            f"{result.clarification_answer}\n\n"
+            "Continue from where you left off using this answer. Do NOT restart "
+            "the research from scratch unless the answer invalidates it."
+        )
 
     # If resuming with previous context, show it
     if turns_used == 0 and (result.research_brief or result.prd):
@@ -980,7 +1096,7 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
         progress.append("⬜ Audit needed")
     parts.append("Progress: " + " | ".join(progress))
 
-    if result.clarification_question:
+    if result.clarification_question and not result.clarification_answer:
         parts.append(f"\n⚠️  Pending clarification: {result.clarification_question}")
 
     parts.append("\nTake the NEXT step in the engineering process. If you have a PRD and audit, and they are clean — present to the human. If the PRD needs revision, call write_prd() with specific instructions. If you need information, call research() or clarify().")
@@ -1044,13 +1160,11 @@ def get_run(run_id: str) -> OrchestratorResult | None:
     return _RUNS.get(run_id)
 
 
-def answer_clarify(run_id: str, answer: str) -> bool:
-    """Answer a pending clarify() call. Returns True if the run was found."""
-    result = _RUNS.get(run_id)
-    if result is None:
-        return False
-    tools = getattr(result, "_tools", None)
-    if tools is None:
-        return False
-    tools.set_clarify_answer(answer)
-    return True
+def answer_clarify(run_id: str, answer: str) -> dict | None:
+    """Answer a durably-paused clarification.
+
+    Pops the pause snapshot (works across server restarts). Returns the pause
+    record for the caller to spawn a continuation run with, or None if there
+    is no pending pause under this run_id.
+    """
+    return pop_pause(run_id)

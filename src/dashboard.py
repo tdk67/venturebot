@@ -36,7 +36,14 @@ from .steering import SteeringInbox
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     from . import scheduler
+    from .agents.orchestrator import any_pending_pause
+    from . import store as _store
     scheduler.start_scheduler()
+    # If the server (re)started while a debate was paused on a clarifying
+    # question, restore the waiting state so the UI re-offers the answer box.
+    if any_pending_pause():
+        _store.set_status("waiting_user")
+        _store.log("System", "core", "Restored: a debate is paused waiting for your answer.")
     yield
     scheduler.stop_scheduler()
 
@@ -152,6 +159,16 @@ async def api_state(request: Request):
     state = store.load_state()
     state["budget"] = budget.status()
     state["usage"] = gemini_usage.summary()
+    # Surface any debate paused on a clarifying question (survives restarts).
+    from .agents.orchestrator import any_pending_pause
+    pending = any_pending_pause()
+    if pending:
+        state["pending_clarification"] = {
+            "run_id": pending.get("run_id"),
+            "question": pending.get("question"),
+            "asked_at": pending.get("asked_at"),
+            "idea": (pending.get("idea") or "")[:120],
+        }
     return state
 
 
@@ -263,6 +280,10 @@ async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
     await _broadcast("run_started", {"idea": idea})
     result = await run_orchestrator(idea, inbox=_inbox, resume_idea_id=resume_idea_id,
                                     resume_comment=resume_comment)
+    if result.status == "needs_clarification":
+        # Debate durably paused on a question — the orchestrator already
+        # emitted run_paused; do NOT signal finished.
+        return
     await _broadcast("run_finished", {
         "status": result.status,
         "verdict": result.verdict,
@@ -877,19 +898,51 @@ async def api_checkpoints(request: Request):
 
 @app.post("/api/clarify/answer")
 async def api_clarify_answer(request: Request):
-    """Answer a pending clarify() question from the orchestrator."""
+    """Answer a paused clarification and resume the debate from disk.
+
+    Works no matter how much time has passed — even after server restarts —
+    because the pause snapshot is durable (data/paused_runs/{run_id}.json).
+    """
     auth.get_current_user(request)
     data = await request.json()
     run_id = data.get("run_id", "").strip()
     answer = data.get("answer", "").strip()
     if not run_id or not answer:
         raise HTTPException(400, "run_id and answer are required")
-    ok = answer_clarify(run_id, answer)
-    if not ok:
-        raise HTTPException(404, f"No active run with id {run_id}, or no pending clarification")
+
+    pause = answer_clarify(run_id, answer)  # pops the durable snapshot
+    if not pause:
+        raise HTTPException(404, f"No pending clarification for run {run_id}")
+    state = store.load_state()
+    if state.get("status") == "running":
+        # Another debate took over while this one was waiting — put the
+        # snapshot back so it isn't lost.
+        from .agents.orchestrator import write_pause
+        write_pause(pause)
+        raise HTTPException(409, "another debate is currently running — answer it after it finishes")
+
     store.log("Human", "user", f"Clarify answer: {answer[:200]}")
+
+    async def _resume():
+        result = await run_orchestrator(
+            pause.get("idea") or "",
+            paused_state=pause,
+            clarify_answer=answer,
+        )
+        await _broadcast("run_finished", {
+            "status": result.status,
+            "verdict": result.verdict,
+            "creative_angles": result.creative_angles,
+            "has_prd": bool(result.prd),
+            "prd": result.prd,
+            "security_audit": result.security_audit,
+            "turns_used": result.turns_used,
+            "error": result.error,
+        })
+
+    asyncio.create_task(_resume())
     await _broadcast("clarify_answered", {"run_id": run_id})
-    return {"status": "answered", "run_id": run_id}
+    return {"status": "resumed", "resumed_run_id": run_id}
 
 
 # ── Self-improvement (M3) ────────────────────────────────────────────

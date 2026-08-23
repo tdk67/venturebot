@@ -303,19 +303,13 @@ async function fetchState() {
   const res = await fetch('/api/state');
   if (res.status === 401) { location.reload(); return; }
   const data = await res.json();
-  // Reload resilience: if a clarify question is pending (page was reloaded
-  // while the orchestrator waits), re-show the answer box.
-  if (data.status === 'running' && Array.isArray(data.messages)) {
-    let pendingQ = null, qIdx = -1;
-    data.messages.forEach((m, i) => {
-      if ((m.message || '').startsWith('Clarify:')) { pendingQ = m.message.slice('Clarify:'.length).trim(); qIdx = i; }
-      if ((m.message || '').startsWith('Clarify answer:')) { pendingQ = null; qIdx = -1; }
-    });
+  // Durable pause: if a debate is paused on a clarifying question (possibly
+  // from days ago / across server restarts), re-show the answer box.
+  if (data.pending_clarification) {
     const box = document.getElementById('clarify-box');
-    if (pendingQ && box.classList.contains('hidden') && !box.dataset.answered) {
-      showClarifyBox(pendingQ, data.run_id);
-    } else if (!pendingQ && !box.classList.contains('hidden') && qIdx !== -1) {
-      hideClarifyBox();
+    if (box.classList.contains('hidden')) {
+      showClarifyBox(data.pending_clarification.question,
+                     data.pending_clarification.run_id);
     }
   } else {
     hideClarifyBox();
@@ -325,6 +319,7 @@ async function fetchState() {
   badge.className = 'px-3 py-1 text-xs font-bold rounded-full border ' +
     ({idle:'bg-slate-600', running:'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
       approved:'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+      waiting_user:'bg-amber-500/10 text-amber-400 border-amber-500/20',
       failed:'bg-red-500/10 text-red-400 border-red-400/20',
       stopped:'bg-amber-500/10 text-amber-400 border-amber-400/20'}[data.status] || 'bg-slate-600');
   if (data.budget) {
@@ -813,6 +808,12 @@ function connectSSE() {
   es.addEventListener('human_comment', (e) => {
     const d = JSON.parse(e.data);
     addMessage('Human', '💬 ' + d.comment);
+  });
+  es.addEventListener('run_paused', (e) => {
+    const d = JSON.parse(e.data);
+    participantsStopAll();
+    addMessage('System', '⏸ Debate paused — waiting for your answer below. No time limit; the state is saved, you can come back later (even after closing the browser).');
+    fetchState();
   });
   es.addEventListener('run_finished', (e) => {
     const d = JSON.parse(e.data);
