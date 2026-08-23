@@ -228,8 +228,59 @@ Each phase keeps the single-user demo working (feature flag), so the hackathon a
 
 ## 9. Open questions (decide before Phase B)
 
-1. **Self-improvement loop vs amnesia:** lessons/dream-review currently learn from stored transcripts. Options: (a) lessons become client-side (each user's own lessons only — weaker), (b) BE distills lessons at debate end *before* wipe, keeping only anonymized lesson text (no ideas), (c) opt-in "share anonymized lessons" community pool. Lean: (b) + (c) opt-in.
+1. ~~Self-improvement loop vs amnesia~~ — **DECIDED (2026-08-23): option (b) — see §10.** BE distills lessons at debate end, *before* the wipe. Raw transcripts are never persisted; only abstracted, idea-masked lesson text survives.
 2. **Backup key escrow (a) vs passphrase E2EE (b)** — ship (a) with (b) as opt-in at v2?
 3. **TTL numbers:** ack-wait 7d, waiting-user 14d — reasonable?
 4. Do we keep the current single-user mode as a "local-only, no login" fallback (Excalidraw-style) or force login for everyone?
 5. VPS capacity: N workers × concurrent Gemini rate limits — do we need per-user model quota discovery (429 backpressure) in v1?
+
+---
+
+## 10. Self-improvement without memory — anonymized lesson distillation (DECIDED)
+
+The self-improvement loop survives the backend-amnesia principle by keeping **process knowledge only**, never idea knowledge.
+
+### 10.1 What may become a lesson vs what must not
+
+| ✅ Lesson material (abstract, reusable) | ❌ Never persisted |
+|---|---|
+| "Verify market-size claims with an explicit search step" | The idea itself, pitch text, any paraphrase of it |
+| "Always run security audit before presenting a PRD" | Competitor names/URLs discovered for *this* idea |
+| "Judge scores skew optimistic when research brief lacks sources" | Verdict rationales tied to this idea's specifics |
+| "Clarify early when the user's audience is ambiguous" | Any quote or near-quote from the transcript |
+
+### 10.2 Pipeline (runs at debate end, BEFORE ack/wipe)
+
+```
+transcript (in memory, about to be wiped)
+   │
+   ▼
+1. DISTILL   LLM call: "Extract reusable process lessons from this debate.
+   │          Rules must be generic engineering/process rules, applicable to
+   │          ANY startup idea. Do NOT mention the product, domain, market,
+   │          competitors, or any specific claim."
+   ▼
+2. MASK      deterministic pass over the distilled candidates:
+   │          - entity mask against the idea payload: every proper noun,
+   │            product name, URL, number-with-unit found in the original
+   │            idea/pitch/research is replaced by [MASKED]
+   │          - drop any candidate still containing one after masking twice
+   ▼
+3. LEAK GATE second LLM check (cheap model): "Could this rule reveal which
+   │          idea it was learned from?" → yes ⇒ discard (never queue for
+   │          human review; keep the loop fully automated)
+   ▼
+4. DEDUPE    similarity match (embedding cosine > 0.85) against existing
+   │          agent_lessons → merge/reinforce instead of append
+   ▼
+5. SAVE      save_lesson(name, rule, evidence="(anonymized)") — evidence
+              field stays empty in multi-user mode; no user_id linkage
+```
+
+### 10.3 Properties
+
+- **No dialog retention:** the transcript exists only inside the running debate's encrypted row and dies at wipe. Distillation happens in that same window; if the process crashes mid-distill, the lessons of that debate are simply lost — acceptable.
+- **No attribution:** lessons carry no user id, timestamp granularity is day-level. A leaked lessons table reveals *how VentureBot learns*, not *what users asked*.
+- **Quality gate:** leak gate failures are counted (metric: `lessons_rejected_leakgate`) so we can tune the distill prompt; masked-out garbage never reaches the shared pool.
+- **Existing plumbing reused:** `save_lesson` / `get_lessons` / `retire_lesson` stay unchanged; `_render_must_read()` keeps injecting active lessons into every orchestrator run — now fed exclusively by anonymized lessons.
+- **Opt-in community pool (future):** because lessons are unpersonalized, sharing them across ALL users (not just per-user) is privacy-safe by construction — flips the amnesia constraint into a network effect.
