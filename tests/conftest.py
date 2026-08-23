@@ -18,6 +18,9 @@ _ISOLATION = {
     "VENTUREBOT_ARCHIVE_DIR": os.path.join(_TMP, "archives"),
     "VENTUREBOT_WORKSPACE": os.path.join(_TMP, "workspace"),
     "VENTUREBOT_SANDBOX": os.path.join(_TMP, "sandbox"),
+    # Tests must not inherit the operator's auth mode from the live .env:
+    # API tests assume open access; test_auth_flow patches NO_AUTH itself.
+    "VENTUREBOT_NO_AUTH": "1",
 }
 
 for _key, _val in _ISOLATION.items():

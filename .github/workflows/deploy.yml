@@ -1,0 +1,82 @@
+# CD — build & deploy to Cloud Run on every push to main.
+#
+# PREREQUISITES (one-time, ~15 min): see notes/GCP_DEPLOYMENT.md §3 for the
+# exact commands. Summary:
+#   1. GCP project with billing; enable run, artifactregistry, iamcredentials,
+#      secretmanager, storage APIs
+#   2. Artifact Registry repo "venturebot" (docker, region europe-west1)
+#   3. Service account vb-deploy@… with roles/run.admin + roles/iam.serviceAccountUser
+#      (+ roles/storage.objectAdmin for the data bucket)
+#   4. Workload Identity Federation pool/provider for this GitHub repo
+#   5. GitHub repo VARIABLES (Settings → Secrets and variables → Actions → Variables):
+#        GCP_PROJECT           = your-project-id
+#        GCP_REGION            = europe-west1
+#        GCP_WIF_PROVIDER      = projects/<num>/locations/global/workloadIdentityPools/github/providers/github
+#        GCP_DEPLOY_SA         = vb-deploy@<project>.iam.gserviceaccount.com
+#   6. GitHub repo SECRETS (runtime app secrets, passed via --set-secrets):
+#        created in Secret Manager as GOOGLE_API_KEY / GOOGLE_CLIENT_SECRET
+#      (the workflow references them by name; values live only in GCP)
+#
+# The deploy job skips silently (with a notice) until those variables exist,
+# so enabling the workflow before GCP setup does not turn the repo red.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.GCP_PROJECT != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write  # WIF — no service-account keys anywhere
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push image
+        env:
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/venturebot/venturebot
+        run: |
+          gcloud builds submit \
+            --tag "$IMAGE:${GITHUB_SHA::12}" .
+
+      - name: Deploy to Cloud Run
+        env:
+          IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/venturebot/venturebot
+          SERVICE: venturebot
+          REGION: ${{ vars.GCP_REGION }}
+          BUCKET: ${{ vars.GCP_DATA_BUCKET }}
+          SA: ${{ vars.GCP_DEPLOY_SA }}
+        run: |
+          FLAGS=(
+            "--image=$IMAGE:${GITHUB_SHA::12}"
+            "--region=$REGION"
+            "--service-account=$SA"
+            "--max-instances=1"                # state consistency until Phase B (backend amnesia)
+            "--min-instances=0"
+            "--memory=1Gi"
+            "--allow-unauthenticated"          # app-level auth is enforced by Google login
+            "--set-env-vars=VENTUREBOT_NO_AUTH=0,VENTUREBOT_COOKIE_SECURE=true,GCS_DATA_BUCKET=$BUCKET"
+            "--set-secrets=GOOGLE_API_KEY=GOOGLE_API_KEY:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest"
+          )
+          gcloud run deploy "$SERVICE" "${FLAGS[@]}" --quiet
+        # NOTE: VENTUREBOT_PUBLIC_BASE_URL must match the final service URL
+        # (or custom domain). Set it after the first deploy once the URL is
+        # known: add --set-env-vars=...,VENTUREBOT_PUBLIC_BASE_URL=https://<url>

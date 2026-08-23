@@ -256,9 +256,21 @@ server {
 sudo systemctl enable --now venturebot
 ```
 
-### GCP deployment - TODO
+### GCP deployment (Cloud Run + CI/CD) — pipeline ready, cloud setup pending
 
-Cloud Run (containerized uvicorn) + Secret Manager for `GOOGLE_API_KEY` / `GOOGLE_CLIENT_SECRET` + Cloud SQL or persistent disk for `data/` is the planned target, together with Agent Engine + Memory Bank for the self-improvement layer. Not started - the VPS setup above is the current production path.
+The repo ships a production container (`Containerfile`) and GitHub Actions:
+
+- **CI** (`.github/workflows/ci.yml`): runs the full pytest suite on every push/PR — active now.
+- **CD** (`.github/workflows/deploy.yml`): on push to `main`, builds the image,
+  pushes to Artifact Registry and deploys Cloud Run via Workload Identity
+  Federation (keyless). It stays dormant (with a notice) until the one-time
+  GCP setup from **`notes/GCP_DEPLOYMENT.md`** is done.
+- **State persistence**: `scripts/data_snapshot.py` restores/pushes a snapshot
+  of `data/` to GCS around deploys (`max-instances=1` until Phase B removes
+  persistent state entirely).
+
+Follow `notes/GCP_DEPLOYMENT.md` sections 1-5 (~15 minutes of one-time setup)
+then every merge to `main` ships automatically.
 
 ### Stub server (UI tuning, zero LLM cost)
 
@@ -356,7 +368,7 @@ VENTUREBOT_WORKSPACE / _STATE / _DATA / _DB / _CHECKPOINT_DIR / _ARCHIVE_DIR / _
 | M3 Self-improvement | ✅ memory store, capture, review forks, dream review |
 | Security hardening (multi-user P0) | ✅ workspace isolation, CSP, log redaction, OAuth+PKCE, server-side sessions, CSRF |
 | Multi-user data plane (Phase B) | 🚧 tenancy keys in place; ownership checks, ephemeral debate engine, BYOK pending |
-| GCP deployment (Agent Engine + Cloud Run) | ⬜ not started |
+| GCP deployment (Cloud Run + CI/CD) | 🚧 pipeline built + container tested; cloud one-time setup pending (`notes/GCP_DEPLOYMENT.md`) |
 
 ---
 

@@ -26,3 +26,4 @@ APScheduler==3.11.3
 
 # HTTP client (URL fetch / tooling)
 httpx==0.28.1
+google-cloud-storage==3.13.1  # Cloud Run state snapshots (scripts/data_snapshot.py)

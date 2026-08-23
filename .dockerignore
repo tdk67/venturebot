@@ -1,13 +1,22 @@
-# Runtime files (never committed, never in the image)
-.env
-state.json
+# VCS / local junk
+.git
+.gitignore
+backups/
+*.pyc
+__pycache__/
+.venv/
+venv/
+
+# Runtime state — never baked into the image
 data/
+state.json
 workspace/
 sandbox/
-*.db
-*.sqlite
-__pycache__/
-.pytest_cache/
-*.pyc
-venv/
-.venv/
+.env
+
+# Not needed at runtime
+tests/
+notes/
+.github/
+*.md
+!README.md
