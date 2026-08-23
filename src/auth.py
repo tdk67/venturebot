@@ -1,44 +1,42 @@
-"""Dashboard authentication — S6. Google OAuth single sign-on (FastAPI port).
+"""Dashboard authentication — S6 + A5 hardening (multiuser security review).
 
-Ports the working pattern from /root/diary-app/app/auth.py:
-  - Google Identity Services (GIS) verifies the JWT with google-auth
-  - ALLOWED_EMAILS allowlist gates access
-  - @login_required protects every route
+Google Identity Services verifies the JWT with google-auth; access is gated by
+the ALLOWED_EMAILS allowlist (prototype) — replaced by SIGNUP_CLOSED in the
+multi-user phase.
 
-Sessions are signed cookies (itsdangerous) — no server-side session store
-needed for a single-user dashboard.
+Sessions are SERVER-SIDE (src/sessions.py): the cookie carries an opaque random
+token, only its sha256 hash is stored, every login rotates the token, and
+logout revokes the row. No stateless signed cookies — those cannot be revoked.
 """
 from __future__ import annotations
 
-import os
 from functools import wraps
 from typing import Callable
 
 from fastapi import HTTPException, Request
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
-from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from . import config
-
-# Session signing secret: use the explicit env var if set; otherwise derive a
-# stable per-install secret from the Google API key (not stored in the repo).
-_SESSION_SECRET = os.environ.get("VENTUREBOT_SESSION_SECRET", "").strip()
-if not _SESSION_SECRET:
-    _SESSION_SECRET = config.google_api_key()  # stable, secret, not committed
-_signer = URLSafeTimedSerializer(_SESSION_SECRET, salt="venturebot-session")
+from .sessions import session_store
 
 
 def create_session_token(email: str, name: str, picture: str) -> str:
-    return _signer.dumps({"email": email, "name": name, "picture": picture})
+    """Issue a fresh server-side session; returns the raw cookie token.
+
+    Rotation (G7): every call creates a NEW session — a token presented at
+    login is never reused, which prevents session fixation.
+    """
+    return session_store.create(email, name=name, picture=picture)
 
 
 def verify_session_token(token: str) -> dict | None:
-    try:
-        data = _signer.loads(token, max_age=30 * 24 * 3600)
-        return data
-    except (BadSignature, SignatureExpired):
-        return None
+    """Validate against the server-side store (revocation + sliding expiry)."""
+    return session_store.get(token)
+
+
+def revoke_session(token: str) -> None:
+    session_store.revoke(token)
 
 
 def verify_google_credential(credential: str) -> dict:
@@ -78,6 +76,7 @@ def verify_google_credential(credential: str) -> dict:
         "email": email,
         "name": idinfo.get("name", ""),
         "picture": idinfo.get("picture", ""),
+        "sub": idinfo.get("sub", ""),  # stable Google user id — Phase B primary key
     }
 
 

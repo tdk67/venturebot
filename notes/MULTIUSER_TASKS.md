@@ -12,7 +12,7 @@
 | A2 | **Security headers + CSP + externalize app JS + vendor/self-host CDN libs (pinned)** — HSTS, XCTO, Referrer-Policy, frame-ancestors; strict CSP `script-src 'self'`; move 1.2k-line inline script to `/static/app.js`; self-host marked/dompurify/tailwind | G1–G3, W3, W6 / P0-2 | ✅ done |
 | A3 | **Log redaction at source** — `store.log()` and orchestrator prints emit metadata only (agent/model/length), never debate content; state.json keeps UI feed | G4, W7 / P0-3 | ✅ done |
 | A4 | **Privacy wording fix** — design doc: stop claiming "in-flight only" breach blast radius while backup key escrow ships; state escrow trade-off plainly | W1 / P0-5 | ✅ done |
-| A5 | **Session hardening foundation** — server-side session store (hashed tokens), rotation on login, logout revocation; replaces signed-cookie-only auth | G5–G7 / P0-6 | ⬜ next |
+| A5 | **Session hardening foundation** — server-side session store (hashed tokens), rotation on login, logout revocation; replaces signed-cookie-only auth | G5–G7 / P0-6 | ✅ done |
 | A6 | **OAuth code flow + PKCE + state + nonce** replacing GIS inline flow (BE does exchange; secret stays server-side) | G6 / P0-6 | ⬜ |
 
 ## Phase B — Multi-user data plane
@@ -69,6 +69,15 @@
 - `store.log()` prints metadata only (`agent/model/message-length`) to stdout;
   full text still reaches state.json for the dashboard feed.
 - Orchestrator stdout prints of idea/transcript content removed.
+
+### A5 — Server-side sessions (2026-08-23)
+- `src/sessions.py`: SQLite session store — only sha256 token hashes persisted,
+  fresh token per login (rotation/anti-fixation), logout revokes the row,
+  30-day sliding expiry, lazy purge at startup.
+- `auth.py` rewritten off itsdangerous signed cookies; Google verify now also
+  returns `sub` (Phase B primary key).
+- Logout endpoint revokes server-side; expired-session purge in lifespan.
+- Tests: `tests/test_sessions.py` (7 cases incl. no-raw-token-on-disk).
 
 ### A4 — Privacy wording (2026-08-23)
 - MULTI_USER_DESIGN.md threat-table row corrected; escrow trade-off stated plainly.

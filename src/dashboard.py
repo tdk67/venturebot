@@ -45,6 +45,8 @@ async def _lifespan(app: FastAPI):
     if any_pending_pause():
         _store.set_status("waiting_user")
         _store.log("System", "core", "Restored: a debate is paused waiting for your answer.")
+    from .sessions import session_store
+    session_store.purge_expired()
     yield
     scheduler.stop_scheduler()
 
@@ -187,7 +189,12 @@ async def auth_google(request: Request):
 
 
 @app.post("/api/auth/logout")
-async def auth_logout():
+async def auth_logout(request: Request):
+    # A5/W8: revoke the server-side session row — a stolen cookie value becomes
+    # worthless after logout (stateless cookies could not do this).
+    token = request.cookies.get("vb_session")
+    if token:
+        auth.revoke_session(token)
     resp = JSONResponse({"authenticated": False})
     resp.delete_cookie("vb_session")
     return resp
