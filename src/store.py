@@ -121,7 +121,13 @@ def log(agent: str, model: str, message: str) -> dict:
         }
     )
     save_state(state)
-    print(f"[{state['messages'][-1]['timestamp']}] ({agent} / {model}): {message}")
+    # G4/W7 (security review): debate content must never reach stdout/journald.
+    # The full message stays in state.json for the dashboard feed; the process
+    # log gets metadata only. Multi-user note: state.json becomes per-user.
+    print(
+        f"[{state['messages'][-1]['timestamp']}] ({agent} / {model}): "
+        f"<log message, {len(message)} chars>"
+    )
     return state
 
 

@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -343,29 +344,58 @@ def _final_text_of(events) -> str:
 
 
 # ── Workspace file helpers ──────────────────────────────────────────────
+# W4a (security review): workspaces are PER-RUN. A malicious user must not be
+# able to steer an orchestrator (via prompt injection) into reading or writing
+# another debate's files, so every file tool resolves strictly inside
+# workspace/runs/{run_id}/ — never in a shared global directory.
 
-def _workspace_dir() -> Path:
-    return config.WORKSPACE_DIR
+_RUN_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
 
 
-def _read_workspace_file(path: str) -> str | None:
-    """Read a file from the workspace. Returns None if not found."""
-    full = _workspace_dir() / path
+def _workspace_dir(run_id: str | None = None) -> Path:
+    """Per-run workspace root. Unknown run_ids land in an isolated '_legacy' dir."""
+    safe = _RUN_ID_RE.sub("_", run_id) if run_id else ""
+    if not safe or safe in (".", ".."):
+        safe = "_legacy"
+    return config.WORKSPACE_DIR / "runs" / safe
+
+
+def _resolve_in_workspace(run_id: str | None, rel_path: str) -> Path | None:
+    """Resolve rel_path inside the run's workspace; None on traversal attempts."""
+    root = _workspace_dir(run_id).resolve()
     try:
-        if full.is_file() and full.exists():
+        candidate = (root / rel_path).resolve()
+    except (OSError, ValueError):
+        return None
+    if not candidate.is_relative_to(root):
+        return None  # path traversal (../, absolute path, symlink escape)
+    return candidate
+
+
+def _read_workspace_file(path: str, run_id: str | None = None) -> str | None:
+    """Read a file from THIS run's workspace. Returns None if not found/blocked."""
+    full = _resolve_in_workspace(run_id, path)
+    if full is None:
+        return None
+    try:
+        if full.is_file():
             return full.read_text()
     except OSError:
         pass
     return None
 
 
-def _write_workspace_file(path: str, content: str) -> str:
-    """Write a file to the workspace. Returns 'ok' or error message."""
-    _workspace_dir().mkdir(parents=True, exist_ok=True)
-    full = _workspace_dir() / path
+def _write_workspace_file(path: str, content: str, run_id: str | None = None) -> str:
+    """Write a file to THIS run's workspace. Returns 'ok' or error message."""
+    ws = _workspace_dir(run_id)
+    full = _resolve_in_workspace(run_id, path)
+    if full is None:
+        return "error: path escapes the run workspace (blocked)"
     try:
+        ws.mkdir(parents=True, exist_ok=True)
+        full.parent.mkdir(parents=True, exist_ok=True)
         full.write_text(content)
-        store.set_workspace_files([p.name for p in _workspace_dir().glob("*")])
+        store.set_workspace_files([p.name for p in ws.glob("*")])
         return "ok"
     except OSError as e:
         return f"error: {e}"
@@ -597,7 +627,7 @@ class OrchestratorTools:
             self.session_service, self.sid, self.user_id,
         )
         self.result.prd = prd
-        _write_workspace_file("PRD.md", prd)
+        _write_workspace_file("PRD.md", prd, run_id=self.run_id)
         store.update_task("t5", "done")
         emit("phase_done", {"phase": "prd_writer", "run_id": self.run_id})
         return prd
@@ -651,18 +681,18 @@ class OrchestratorTools:
 
     async def read_file(self, path: str) -> str:
         """Read a file from the workspace. Call before editing any file."""
-        content = _read_workspace_file(path)
+        content = _read_workspace_file(path, run_id=self.run_id)
         if content is None:
             return f"File not found: {path}"
         return content
 
     async def write_file(self, path: str, content: str) -> str:
         """Write a file to the workspace."""
-        return _write_workspace_file(path, content)
+        return _write_workspace_file(path, content, run_id=self.run_id)
 
     async def save_artifact(self, path: str) -> str:
         """Save a workspace file as an artifact for the user to download."""
-        content = _read_workspace_file(path)
+        content = _read_workspace_file(path, run_id=self.run_id)
         if content is None:
             return f"File not found: {path}"
         # Store the artifact reference in the result for the dashboard

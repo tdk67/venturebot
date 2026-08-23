@@ -14,6 +14,7 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -49,6 +50,46 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="VentureBot Command Center", lifespan=_lifespan)
+
+# ── Security headers (G1–G3, W3/W6 — multiuser security review) ─────────
+# Strict CSP: all scripts same-origin (app JS + pinned vendor copies under
+# /static/vendor). This kills the CDN-compromise mass-XSS path and shrinks
+# the XSS blast radius on IndexedDB data (ideas + BYOK key + tokens).
+# style-src keeps 'unsafe-inline': the Tailwind Play runtime injects <style>.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: https:; "  # Google profile pictures
+    "connect-src 'self'; "
+    "font-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = _CSP
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    if config.COOKIE_SECURE:
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains"
+        )
+    return response
+
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+app.mount(
+    "/static",
+    StaticFiles(directory=str(Path(__file__).parent.parent / "static")),
+    name="static",
+)
 
 # In-memory SSE fan-out (per-client queues). Max 50 concurrent clients.
 _MAX_SSE_CLIENTS = 50

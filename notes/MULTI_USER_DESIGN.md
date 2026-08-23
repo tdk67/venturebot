@@ -9,7 +9,7 @@
 ## 0. Design principles
 
 1. **The user's device is the source of truth.** Ideas, transcripts, PRDs, scores live in the browser (IndexedDB) and are backed up to the user's own cloud storage. The backend is a *compute node*, not a data warehouse.
-2. **Backend amnesia.** The BE keeps only what a *currently running debate* needs, encrypted at rest, with a short TTL. A hacked BE leaks ciphertext of in-flight debates — nothing else, nobody else's history.
+2. **Backend amnesia.** The BE keeps only what a *currently running debate* needs, encrypted at rest, with a short TTL. A hacked BE leaks ciphertext of in-flight debates — nothing else, nobody else's history. **Caveat (W1, security review):** while v1 backup-key escrow ships, a *full process compromise* also reaches users' Drive backup history via the escrowed keys — see threat table row 1; the privacy policy must state this plainly ("backups are encrypted; the service holds the backup key until you enable zero-knowledge mode").
 3. **No silent trust.** The BE may only delete a finished debate's data after the client **acknowledges durable receipt** of the results. Until then, results stay (encrypted) for crash recovery.
 4. **Every expensive action is owned:** rate limits, per-user budgets, and BYO API keys make the free shared infrastructure abuse-resistant.
 5. **One identity:** Google account. Registration = first login. No passwords of our own.
