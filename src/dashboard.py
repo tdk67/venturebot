@@ -17,9 +17,10 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 
-from . import auth, budget, config, run_manager, store
+from . import auth, budget, config, oauth, run_manager, store
+import urllib.parse
 from . import gemini_usage
 from .agents.orchestrator import (
     OrchestratorResult,
@@ -73,6 +74,14 @@ _CSP = (
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    # G5 — CSRF hardening beyond SameSite: browsers always send Sec-Fetch-Site;
+    # a cross-site attacker's form/fetch arrives as "cross-site" and is blocked
+    # on mutating routes. Non-browser clients (curl/scripts) omit the header
+    # and are unaffected.
+    if request.method in ("POST", "PUT", "PATCH", "DELETE") and request.url.path.startswith("/api/"):
+        site = request.headers.get("sec-fetch-site", "").lower()
+        if site in ("cross-site",):
+            return JSONResponse({"detail": "CSRF check failed"}, status_code=403)
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = _CSP
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -129,33 +138,80 @@ async def _broadcast(event: str, data: dict) -> None:
 
 
 # ── Auth routes ────────────────────────────────────────────────────────
+def _base_url(request: Request) -> str:
+    """Public base URL, trusting nginx's X-Forwarded-* headers."""
+    if config.PUBLIC_BASE_URL:
+        return config.PUBLIC_BASE_URL
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.headers.get("host", request.url.netloc))
+    return f"{proto}://{host}"
+
+
+def _set_session_cookie(resp: Response, token: str) -> None:
+    resp.set_cookie(
+        "vb_session", token,
+        httponly=True, samesite="lax",
+        secure=config.COOKIE_SECURE,
+        max_age=30 * 24 * 3600,
+    )
+
+
+@app.get("/api/auth/login")
+async def auth_login(request: Request):
+    """Start Google OAuth (code flow + PKCE). 302 to accounts.google.com."""
+    if config.NO_AUTH:
+        return RedirectResponse("/", status_code=302)
+    url = oauth.begin_login(_base_url(request))
+    return RedirectResponse(url, status_code=302)
+
+
+@app.get("/api/auth/callback")
+async def auth_callback(request: Request):
+    """OAuth callback: validate state/nonce/PKCE → mint server-side session.
+
+    Session rotation is inherent: every login creates a FRESH session token.
+    """
+    from .sessions import session_store
+
+    if config.NO_AUTH:
+        return RedirectResponse("/", status_code=302)
+    base = _base_url(request)
+    params = dict(request.query_params)
+    if params.get("error"):
+        return RedirectResponse(f"/?login_error={urllib.parse.quote(params['error'])}", status_code=302)
+    identity = oauth.exchange_code(params.get("code", ""), params.get("state", ""), base)
+
+    email = identity["email"]
+    # Optional operator allowlist still applies when configured.
+    if config.ALLOWED_EMAILS and email not in config.ALLOWED_EMAILS:
+        raise HTTPException(403, f"Access denied: {email} is not authorized.")
+
+    # Signup gate BEFORE any write: a blocked registration must not leave
+    # a user row behind.
+    if session_store.get_user(identity["sub"]) is None and config.SIGNUP_CLOSED:
+        raise HTTPException(403, "Registrations are currently closed.")
+
+    stored = session_store.upsert_user(identity["sub"], email, identity["name"], identity["picture"])
+
+    user = stored["user"]
+    token = auth.create_session_token(user["email"], user["name"], user["picture"])
+    resp = RedirectResponse("/", status_code=302)
+    _set_session_cookie(resp, token)
+    return resp
 @app.get("/api/auth/client-id")
 async def auth_client_id():
     return {"client_id": config.GOOGLE_CLIENT_ID}
 
 
-@app.post("/api/auth/dev-login")
-async def auth_dev_login(request: Request):
-    """Dev-mode endpoint: issues a session token for the first allowlisted email.
-
-    This bypasses Google OAuth and is meant for IP-based deployments where
-    the Google redirect URI hasn't been added to the OAuth client yet.
-    Set VENTUREBOT_DEV_LOGIN=1 in the environment to enable.
-    """
-    if os.environ.get("VENTUREBOT_DEV_LOGIN", "").strip() != "1":
-        raise HTTPException(404, "Not found")
-    allowed = config.ALLOWED_EMAILS
-    if not allowed:
-        raise HTTPException(400, "No allowed emails configured")
-    email = allowed[0]
-    token = auth.create_session_token(email, email.split("@")[0], "")
-    resp = JSONResponse({"authenticated": True, "email": email, "name": email.split("@")[0]})
-    is_secure = request.url.scheme == "https" or os.environ.get("VENTUREBOT_SECURE_COOKIES", "").lower() in ("1", "true", "yes")
-    resp.set_cookie(
-        "vb_session", token,
-        httponly=True, samesite="lax", secure=is_secure,
-        max_age=30 * 24 * 3600,
-    )
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request):
+    # A5/W8: revoke the server-side session row — a stolen cookie value becomes
+    # worthless after logout (stateless cookies could not do this).
+    token = request.cookies.get("vb_session")
+    if token:
+        auth.revoke_session(token)
+    resp = JSONResponse({"authenticated": False})
+    resp.delete_cookie("vb_session")
     return resp
 
 
@@ -166,26 +222,6 @@ async def auth_me(request: Request):
         return {"authenticated": True, **user}
     except HTTPException:
         return {"authenticated": False, "email": None}
-
-
-@app.post("/api/auth/google")
-async def auth_google(request: Request):
-    data = await request.json()
-    credential = data.get("credential", "").strip()
-    try:
-        user = auth.verify_google_credential(credential)
-    except HTTPException as e:
-        raise e
-    token = auth.create_session_token(user["email"], user["name"], user["picture"])
-    resp = JSONResponse({"authenticated": True, **user})
-    # secure=True when behind HTTPS (production), False for local dev
-    is_secure = request.url.scheme == "https" or os.environ.get("VENTUREBOT_SECURE_COOKIES", "").lower() in ("1", "true", "yes")
-    resp.set_cookie(
-        "vb_session", token,
-        httponly=True, samesite="lax", secure=is_secure,
-        max_age=30 * 24 * 3600,
-    )
-    return resp
 
 
 @app.post("/api/auth/logout")

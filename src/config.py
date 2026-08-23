@@ -77,12 +77,21 @@ OPENROUTER_BASE = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/a
 
 # ── Auth ───────────────────────────────────────────────────────────────
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+# Server-side OAuth secret (A6/G6): NEVER shipped to the browser. Required
+# for the authorization-code flow exchange; without it login returns 503.
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
 ALLOWED_EMAILS = [
     e.strip().lower()
     for e in os.environ.get("VENTUREBOT_ALLOWED_EMAILS", "").split(",")
     if e.strip()
 ]
+# Operator kill-switch: freeze NEW registrations while existing users keep
+# logging in (replaces the hard email allowlist as the primary gate).
+SIGNUP_CLOSED = os.environ.get("VENTUREBOT_SIGNUP_CLOSED", "false").lower() in ("1", "true", "yes")
 COOKIE_SECURE = os.environ.get("VENTUREBOT_COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
+# Public base URL (behind nginx). Used to build the OAuth redirect URI.
+# Falls back to deriving from X-Forwarded-* / Host headers when unset.
+PUBLIC_BASE_URL = os.environ.get("VENTUREBOT_PUBLIC_BASE_URL", "").strip().rstrip("/")
 
 # Prototype phase: auth disabled (single-user, no login). Set to 0 to re-enable
 # Google SSO when the multi-user feature lands. Default ON for the prototype.

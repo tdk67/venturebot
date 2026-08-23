@@ -1267,7 +1267,25 @@ async function doDreamReview() {
   fetchMemories();
 }
 
-window.onload = function() { showApp({ email: 'local' }); };
+// ── Boot (A6): gate the app on /api/auth/me ──────────────────────────
+window.onload = async function() {
+  try {
+    const res = await fetch('/api/auth/me');
+    const data = await res.json();
+    if (data.authenticated) {
+      showApp(data);
+      return;
+    }
+  } catch (_) { /* fall through to login */ }
+  // Not authenticated → show the Google login screen.
+  document.getElementById('login-screen').classList.remove('hidden');
+  const err = new URLSearchParams(location.search).get('login_error');
+  if (err) {
+    const el = document.getElementById('login-error');
+    el.textContent = 'Login failed: ' + err;
+    el.classList.remove('hidden');
+  }
+};
 
 // ── Event wiring (CSP-safe) ──────────────────────────────────────────
 // G2/G3: inline onclick/onchange/oninput attributes are blocked under a
@@ -1292,6 +1310,10 @@ window.onload = function() { showApp({ email: 'local' }); };
   on('btn-export-json', 'click', () => exportAllIdeas());
   on('btn-export-csv', 'click', () => exportIdeas());
   on('btn-dream-review', 'click', () => doDreamReview());
+  on('btn-logout', 'click', async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    location.href = '/';
+  });
 
   // Delegated clicks for repeated/parameterised buttons.
   document.addEventListener('click', (e) => {

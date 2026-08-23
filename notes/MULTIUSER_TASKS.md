@@ -13,7 +13,7 @@
 | A3 | **Log redaction at source** — `store.log()` and orchestrator prints emit metadata only (agent/model/length), never debate content; state.json keeps UI feed | G4, W7 / P0-3 | ✅ done |
 | A4 | **Privacy wording fix** — design doc: stop claiming "in-flight only" breach blast radius while backup key escrow ships; state escrow trade-off plainly | W1 / P0-5 | ✅ done |
 | A5 | **Session hardening foundation** — server-side session store (hashed tokens), rotation on login, logout revocation; replaces signed-cookie-only auth | G5–G7 / P0-6 | ✅ done |
-| A6 | **OAuth code flow + PKCE + state + nonce** replacing GIS inline flow (BE does exchange; secret stays server-side) | G6 / P0-6 | ⬜ |
+| A6 | **OAuth code flow + PKCE + state + nonce** replacing GIS inline flow (BE does exchange; secret stays server-side) | G6 / P0-6 | ✅ code done — needs GCP secret to go live (checklist below) |
 
 ## Phase B — Multi-user data plane
 
@@ -70,6 +70,19 @@
   full text still reaches state.json for the dashboard feed.
 - Orchestrator stdout prints of idea/transcript content removed.
 
+## A6 go-live checklist (needs operator / GCP console)
+1. GCP Console → APIs & Services → Credentials → OAuth client `353212586118-…`
+   → create a **client secret** → put it in `.env` as `GOOGLE_CLIENT_SECRET=…`.
+2. Same client → **Authorized redirect URIs** → add:
+   `https://venturebot.taskmind-ai.com/api/auth/callback`
+3. `.env` already prepared: `VENTUREBOT_PUBLIC_BASE_URL`,
+   `VENTUREBOT_COOKIE_SECURE=true`, allowlist = tdeak67 addresses.
+4. Flip `VENTUREBOT_NO_AUTH=0` in `.env` and restart the service.
+5. Verify: app shows "Sign in with Google" → login lands back on `/` signed in;
+   sign-out button revokes the server-side session.
+
+Rollback: set `VENTUREBOT_NO_AUTH=1` + restart (data is untouched either way).
+
 ### A5 — Server-side sessions (2026-08-23)
 - `src/sessions.py`: SQLite session store — only sha256 token hashes persisted,
   fresh token per login (rotation/anti-fixation), logout revokes the row,
@@ -78,6 +91,22 @@
   returns `sub` (Phase B primary key).
 - Logout endpoint revokes server-side; expired-session purge in lifespan.
 - Tests: `tests/test_sessions.py` (7 cases incl. no-raw-token-on-disk).
+
+### A6 — Google OAuth code flow (2026-08-23)
+- `src/oauth.py`: authorization-code flow, PKCE S256, single-use state+nonce
+  (10-min TTL), id_token verified server-side incl. nonce binding; secret never
+  leaves the BE; access_type=online (no refresh tokens stored anywhere).
+- Routes: `GET /api/auth/login` (302 to Google), `GET /api/auth/callback`
+  (validates → mints rotating server-side session). GIS inline endpoint and
+  `/api/auth/dev-login` REMOVED.
+- Users table (`users.user_id` = google sub) = Phase B tenancy key;
+  SIGNUP_CLOSED gate checked BEFORE any write (bug found by test: blocked
+  registrations previously left rows behind).
+- Sessions carry user_id; allowlist still honored when non-empty.
+- CSRF (G5): mutating /api routes reject Sec-Fetch-Site=cross-site.
+- Frontend: login gate screen + boot via /api/auth/me; sign-out button;
+  NO_AUTH mode still boots straight to the app.
+- Tests: `tests/test_auth_flow.py` (13 cases); full suite 149 passed.
 
 ### A4 — Privacy wording (2026-08-23)
 - MULTI_USER_DESIGN.md threat-table row corrected; escrow trade-off stated plainly.
