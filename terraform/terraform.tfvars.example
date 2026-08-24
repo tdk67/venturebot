@@ -1,0 +1,12 @@
+# VentureBot — Terraform variables (copy to terraform.tfvars and fill in)
+#
+# All secrets go into Secret Manager, not here.
+# This file is git-ignored by the template below.
+
+project_id          = "venturebot-506408"
+region              = "europe-west3"
+github_repo         = "tdk67/venturebot"
+public_base_url     = "https://venturebot-442488405067.europe-west3.run.app"
+google_client_id    = "442488405067-danioee2r9r0hrih94j6d7rjt6lraeoa.apps.googleusercontent.com"
+google_api_key      = "YOUR_GEMINI_API_KEY"
+google_client_secret = "YOUR_GOOGLE_CLIENT_SECRET"

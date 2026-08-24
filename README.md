@@ -256,23 +256,158 @@ server {
 sudo systemctl enable --now venturebot
 ```
 
-### GCP deployment (Cloud Run + CI/CD) — pipeline ready, cloud setup pending
+### GCP deployment (Cloud Run + CI/CD)
+
+**Live at:** `https://venturebot-442488405067.europe-west3.run.app`
 
 The repo ships a production container (`Containerfile`) and GitHub Actions:
 
-- **CI** (`.github/workflows/ci.yml`): runs the full pytest suite on every push/PR — active now.
+- **CI** (`.github/workflows/ci.yml`): runs the full pytest suite on every push/PR.
 - **CD** (`.github/workflows/deploy.yml`): on push to `main`, builds the image,
-  pushes to Artifact Registry and deploys Cloud Run via Workload Identity
-  Federation (keyless). It stays dormant (with a notice) until the one-time
-  GCP setup from **`notes/GCP_DEPLOYMENT.md`** is done.
+  pushes to Artifact Registry and deploys to Cloud Run via Workload Identity
+  Federation (keyless).
 - **State persistence**: `scripts/data_snapshot.py` restores/pushes a snapshot
   of `data/` to GCS around deploys (`max-instances=1` until Phase B removes
   persistent state entirely).
 
-Follow `notes/GCP_DEPLOYMENT.md` sections 1-5 (~15 minutes of one-time setup)
-then every merge to `main` ships automatically.
+**One-time setup** (2 ways):
 
-### Stub server (UI tuning, zero LLM cost)
+| Method | Command | Best for |
+|---|---|---|
+| **Setup script** | `./scripts/setup.sh` | Quick, one project |
+| **Terraform** | `cd terraform && terraform apply` | Teams, reproducibility, multiple envs |
+
+Both are fully documented in **`notes/GCP_DEPLOYMENT.md`**. After setup, every
+merge to `main` deploys automatically.
+
+### Terraform quick-start
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your project ID, secrets, etc.
+
+terraform init
+terraform plan    # review what will be created
+terraform apply   # deploy everything
+```
+
+Terraform creates: APIs, service accounts, IAM roles, Artifact Registry,
+Secret Manager secrets, GCS bucket, WIF pool + provider, and the Cloud Run
+service — all in one command. Idempotent. Run `terraform destroy` to tear down.
+
+### Cost model
+
+| Resource | Idle cost | Active cost | Notes |
+|---|---|---|---|
+| Cloud Run | $0/month | ~$0.00002/request | Scale-to-zero; 0 instances = 0 cost |
+| Artifact Registry | ~$0.10/month | same | ~0.1 GB of images |
+| Secret Manager | $0.06/secret/month | same | 2 secrets = $0.12/month |
+| GCS bucket | ~$0.01/month | same | State snapshots, negligible |
+| **Total infra** | **~$0.23/month** | **~$0.23/month** | Idle cost is near-zero |
+
+**LLM costs** (the real cost driver):
+
+| Model | Input / 1M tokens | Output / 1M tokens | Per debate (est.) |
+|---|---|---|---|
+| gemini-3.7-flash | $0.10 | $0.40 | ~$0.02 |
+| gemini-3.1-pro-preview | $1.25 | $10.00 | ~$0.30 |
+
+A typical debate uses ~4 flash calls + ~3 pro calls ≈ **$0.50–$1.00 per debate**.
+The app enforces a **daily budget cap** (default $20) that blocks new LLM
+calls when exceeded. Raise it in-app via the UI.
+
+**Cloud Run scaling:**
+
+- `max-instances=1` (for state consistency until Phase B)
+- `containerConcurrency=80` (80 concurrent requests per instance)
+- `min-instances=0` (scales to zero when idle — no cost)
+- Scale-to-zero cold start: ~2–5 seconds
+
+There is no built-in Cloud Run rate limiting. For public launch, the app-level
+queue/rate-limit model is designed in `notes/PUBLIC_DEPLOYMENT_DESIGN.md`
+(not yet implemented).
+
+### Custom domain
+
+You can map a custom domain to the Cloud Run service. For example,
+`venturebot.taskmind-ai.com`:
+
+**1. Add domain mapping in Cloud Run:**
+
+```bash
+# Verify domain ownership first (Cloud Run will give you a TXT record)
+gcloud run domain-mappings create \
+  --service=venturebot \
+  --domain=venturebot.taskmind-ai.com \
+  --region=europe-west3
+```
+
+Or via the console: `https://console.cloud.google.com/run/domains?project=venturebot-506408`
+→ **ADD MAPPING** → enter the domain → follow the verification flow.
+
+**2. Add DNS record:**
+
+In your DNS provider for `taskmind-ai.com`, add:
+
+```
+Type:   CNAME
+Name:   venturebot
+Value:  ghs.googlehosted.com
+```
+
+(Cloud Run will tell you the exact records during verification.)
+
+**3. Update env vars & OAuth:**
+
+```bash
+gcloud run services update venturebot --region=europe-west3 \
+  --update-env-vars="VENTUREBOT_PUBLIC_BASE_URL=https://venturebot.taskmind-ai.com"
+```
+
+Add `https://venturebot.taskmind-ai.com/api/auth/callback` to your Google
+OAuth client's authorized redirect URIs.
+
+**4. Update GitHub Actions:**
+
+Set the `PUBLIC_BASE_URL` and `GOOGLE_CLIENT_ID` variables in the repo:
+`https://github.com/tdk67/venturebot/settings/variables/actions` →
+`PUBLIC_BASE_URL=https://venturebot.taskmind-ai.com`
+
+---
+
+### Going public (from test → production)
+
+Currently the app is in **test mode** — only emails in `VENTUREBOT_ALLOWED_EMAILS`
+can log in. To open it to the public:
+
+**1. Publish the OAuth consent screen:**
+
+Go to `https://console.cloud.google.com/apis/credentials/consent?project=venturebot-506408`
+→ click **PUBLISH APP** (or "Go to verification" if Google requires it).
+
+**Note:** Google may require app verification for the `email` and `profile`
+scopes. This takes 1–3 days. For a hackathon: you can skip verification and
+have up to 100 test users. Add each judge's email to `VENTUREBOT_ALLOWED_EMAILS`
+as a workaround.
+
+**2. Remove the allowlist (or keep it open):**
+
+```bash
+# Option A: Allow anyone with a Google account (remove allowlist)
+gcloud run services update venturebot --region=europe-west3 \
+  --update-env-vars="VENTUREBOT_ALLOWED_EMAILS="
+
+# Option B: Freeze registrations but keep existing users
+# (set VENTUREBOT_SIGNUP_CLOSED=true in env vars)
+```
+
+**3. Consider rate limiting before public launch:**
+
+The app currently has no per-user rate limiting or queue. The design is
+in `notes/PUBLIC_DEPLOYMENT_DESIGN.md` — implement at least the queue cap
+and per-user budget before opening to the public to prevent one user from
+burning the entire daily LLM budget.
 
 ```bash
 ./venv/bin/uvicorn src.stub_server:app --host 127.0.0.1 --port 8091
@@ -368,7 +503,7 @@ VENTUREBOT_WORKSPACE / _STATE / _DATA / _DB / _CHECKPOINT_DIR / _ARCHIVE_DIR / _
 | M3 Self-improvement | ✅ memory store, capture, review forks, dream review |
 | Security hardening (multi-user P0) | ✅ workspace isolation, CSP, log redaction, OAuth+PKCE, server-side sessions, CSRF |
 | Multi-user data plane (Phase B) | 🚧 tenancy keys in place; ownership checks, ephemeral debate engine, BYOK pending |
-| GCP deployment (Cloud Run + CI/CD) | 🚧 pipeline built + container tested; cloud one-time setup pending (`notes/GCP_DEPLOYMENT.md`) |
+| GCP deployment (Cloud Run + CI/CD) | ✅ live at venturebot-442488405067.europe-west3.run.app; CI/CD on push to main |
 
 ---
 
@@ -377,12 +512,14 @@ VENTUREBOT_WORKSPACE / _STATE / _DATA / _DB / _CHECKPOINT_DIR / _ARCHIVE_DIR / _
 - `PRD.md` - full product requirements
 - `IMPLEMENTATION_PLAN.md` - build plan incl. which ADK samples each part is patterned on
 - `SAFETY_REVIEW.md` - safety audit that gated all work
+- `notes/GCP_DEPLOYMENT.md` - **complete GCP deployment guide** (setup script, Terraform, manual, costs, troubleshooting)
 - `notes/MULTI_USER_DESIGN.md` - multi-user end-to-end design (local-first hybrid)
 - `notes/MULTIUSER_SECURITY_REVIEW.md` - adversarial security review (findings + fix list)
 - `notes/MULTIUSER_TASKS.md` - live multi-user task list + implementation log
 - `notes/PUBLIC_DEPLOYMENT_DESIGN.md` - queue/rate-limit/BYOK mechanics
-- `notes/LOOP_ARCHITECTURE_V2.md` - orchestrator loop design (self-improvement design is covered in `PRD.md` section 5 and `notes/IMPLEMENTATION_PLAN.md`)
+- `notes/LOOP_ARCHITECTURE_V2.md` - orchestrator loop design
 - `CODE_REVIEW_FINAL.md`, `PLAN_REVIEW.md` - internal reviews
+- `terraform/` - **infrastructure-as-code** (Terraform modules for all GCP resources)
 
 ---
 
