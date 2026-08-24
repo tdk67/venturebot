@@ -17,3 +17,6 @@ __pycache__/
 venv/
 .venv/
 backups/
+
+# local-only disabled tests
+_auth_tests_disabled/
