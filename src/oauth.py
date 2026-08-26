@@ -1,4 +1,4 @@
-"""Google OAuth — authorization code flow with PKCE (A6 / G6 of the review).
+"""Google OAuth  -- authorization code flow with PKCE (A6 / G6 of the review).
 
 Replaces the GIS inline ID-token flow. Per OAuth 2.1 / RFC 8252 / Google
 guidance:
@@ -9,7 +9,7 @@ guidance:
   - id_token verified (signature, aud, exp, nonce) before a session is minted.
 
 Transient login attempts are held in-process (single-node deployment); they
-die with the process, which is safe — the user just starts over.
+die with the process, which is safe  -- the user just starts over.
 """
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ def begin_login(base_url: str) -> str:
         "nonce": nonce,
         "code_challenge": _b64url(hashlib.sha256(code_verifier.encode()).digest()),
         "code_challenge_method": "S256",
-        "access_type": "online",  # no refresh token — we only need identity
+        "access_type": "online",  # no refresh token  -- we only need identity
         "prompt": "select_account",
     }
     return f"{_AUTH_ENDPOINT}?{urllib.parse.urlencode(params)}"
@@ -80,8 +80,8 @@ def _pop_pending(state: str) -> dict:
     _cleanup()
     entry = _pending.pop(state, None)
     if entry is None:
-        # Unknown, expired, or already-used state → possible CSRF/replay.
-        raise HTTPException(400, "Invalid or expired login state — start again")
+        # Unknown, expired, or already-used state  -> possible CSRF/replay.
+        raise HTTPException(400, "Invalid or expired login state  -- start again")
     return entry
 
 
@@ -130,7 +130,7 @@ def exchange_code(code: str, state: str, base_url: str) -> dict:
 
     # Nonce check (G6): binds the id_token to THIS login attempt.
     if idinfo.get("nonce") != entry["nonce"]:
-        raise HTTPException(401, "Nonce mismatch — possible replay")
+        raise HTTPException(401, "Nonce mismatch  -- possible replay")
 
     email = (idinfo.get("email") or "").strip().lower()
     if not email or not idinfo.get("email_verified", False):

@@ -1,4 +1,4 @@
-"""File-backed JSON state store — single source of truth for observability.
+"""File-backed JSON state store  -- single source of truth for observability.
 
 Every module writes through this. State persists to config.STATE_FILE with
 atomic writes. This replaces the legacy sim_store.py (archived).

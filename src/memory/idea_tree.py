@@ -1,16 +1,16 @@
-"""Idea tree pruning rules — PRD §5.5 (deterministic, enforced by dream_review).
+"""Idea tree pruning rules  -- PRD Sec. 5.5 (deterministic, enforced by dream_review).
 
 Pure functions over idea-tree rows; no LLM, no I/O. This keeps the pruning
 policy auditable and unit-testable. `dream_review` calls `prune_ideas` and
 writes the resulting status changes back through the MemoryStore.
 
-Pruning rules (from PRD §5.5):
-  - score < 5 with 0 human interventions           → PRUNE after 24h
-  - score < 5 with ≥1 human intervention           → PARK (human wants it)
-  - no activity in 7 days                          → PARK
-  - PARKED for 30 days                             → PRUNE
-  - human explicitly REJECTED                      → PRUNE (keep record)
-  - human explicitly APPROVED + Phase 2 succeeded  → keep ACTIVE
+Pruning rules (from PRD Sec. 5.5):
+  - score < 5 with 0 human interventions            -> PRUNE after 24h
+  - score < 5 with >=1 human intervention            -> PARK (human wants it)
+  - no activity in 7 days                           -> PARK
+  - PARKED for 30 days                              -> PRUNE
+  - human explicitly REJECTED                       -> PRUNE (keep record)
+  - human explicitly APPROVED + Phase 2 succeeded   -> keep ACTIVE
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from dataclasses import dataclass, field
 
 _SCORE_KEYS = ("novelty", "feasibility", "market_fit")
 
-# Time windows (seconds) — module constants so tests can reason about them.
+# Time windows (seconds)  -- module constants so tests can reason about them.
 PRUNE_AFTER_SECONDS = 24 * 3600          # score < 5, no human touch
 PARK_INACTIVITY_SECONDS = 7 * 24 * 3600  # no activity in 7 days
 PRUNE_PARKED_SECONDS = 30 * 24 * 3600    # PARKED for 30 days
@@ -80,7 +80,7 @@ def decide_idea(idea: dict, *, now: float | None = None) -> PruneDecision:
     interventions = int(idea.get("human_intervention_count") or 0)
     updated_at = idea.get("updated_at")
 
-    # PRUNED is terminal (unless a later decision revives it — not our job here).
+    # PRUNED is terminal (unless a later decision revives it  -- not our job here).
     if status == "PRUNED":
         return PruneDecision(idea_id, "PRUNE", "already pruned", score)
 
@@ -98,7 +98,7 @@ def decide_idea(idea: dict, *, now: float | None = None) -> PruneDecision:
                 return PruneDecision(idea_id, "PRUNE",
                                      f"score {score:.1f} < 5, no human intervention, idle >24h", score)
             return PruneDecision(idea_id, "KEEP", "low score but within 24h grace", score)
-        # human cared about it → park, don't prune
+        # human cared about it  -> park, don't prune
         return PruneDecision(idea_id, "PARK", "score < 5 but human intervened", score)
 
     # score >= 5 (or unknown)

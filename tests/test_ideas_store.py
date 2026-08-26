@@ -72,7 +72,7 @@ def test_verdict_column_migration(store):
     assert "verdict" in cols
 
 
-# ── tag extraction ──────────────────────────────────────────────────────
+# -- tag extraction ------------------------------------------------------
 def test_extract_tags_empty():
     assert extract_tags() == []
     assert extract_tags(None, "") == []

@@ -1,4 +1,4 @@
-"""Fork 1: auto_capture — persist session facts after each turn (PRD §5.2).
+"""Fork 1: auto_capture  -- persist session facts after each turn (PRD Sec. 5.2).
 
 Wires into the pipeline's per-agent event stream (the custom orchestrator
 does not use ADK's `after_agent_callback` on a root agent, so capture is

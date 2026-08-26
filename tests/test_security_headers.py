@@ -1,4 +1,4 @@
-"""A2 (G1–G3): security headers + CSP + externalized app JS + vendored libs.
+"""A2 (G1-G3): security headers + CSP + externalized app JS + vendored libs.
 
 The SPA must ship a strict CSP (script-src 'self'), baseline hardening
 headers on every response, and load no third-party scripts.

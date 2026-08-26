@@ -1,8 +1,8 @@
-"""Deterministic artifact scanner + proof-read gate — S10.
+"""Deterministic artifact scanner + proof-read gate  -- S10.
 
-The automated version of the manual review discipline (secret grep → AST scan
-→ schema validation) that VentureBot itself was subjected to. Every generated
-artifact — research brief, PRD, generated code — passes through `scan_artifact`
+The automated version of the manual review discipline (secret grep  -> AST scan
+ -> schema validation) that VentureBot itself was subjected to. Every generated
+artifact  -- research brief, PRD, generated code  -- passes through `scan_artifact`
 before advancing to the next stage or to a human.
 
 Layers (each non-optional):
@@ -11,7 +11,7 @@ Layers (each non-optional):
   3. (code artifacts) AST allowlist + banned-call scan via guard.scan_code
 
 The LLM Security Auditor catches *semantic* problems; this scanner catches
-*mechanical* ones. The proof-read gate surfaces findings for human decision —
+*mechanical* ones. The proof-read gate surfaces findings for human decision  -- 
 never silently auto-passes.
 """
 from __future__ import annotations
@@ -83,8 +83,8 @@ def scan_injection_residue(text: str) -> list[ScanFinding]:
 def scan_artifact(content: str, *, kind: str = "text") -> ScanResult:
     """Scan a generated artifact.
 
-    kind: "text" (PRD, brief) → secret + injection scans.
-          "code"             → secret + injection + AST guard scans.
+    kind: "text" (PRD, brief)  -> secret + injection scans.
+          "code"              -> secret + injection + AST guard scans.
     """
     findings: list[ScanFinding] = []
     findings += scan_secrets(content)
@@ -104,7 +104,7 @@ def proof_read_gate(scanner_ok: bool, audit_verdict: str | None,
     """Combine scanner + LLM-auditor results into a single gate decision.
 
     A PASS requires: scanner clean AND auditor verdict == "PASS".
-    Anything else is FLAG and must reach the human — never auto-passed.
+    Anything else is FLAG and must reach the human  -- never auto-passed.
     """
     audit_pass = (audit_verdict or "").upper() == "PASS"
     ok = scanner_ok and audit_pass

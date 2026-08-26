@@ -20,3 +20,8 @@ backups/
 
 # local-only disabled tests
 _auth_tests_disabled/
+
+# ── Firebase Hosting ────────────────────────────────────
+# The `public/` placeholder is never served (all traffic is rewritten to
+# Cloud Run), but Firebase requires the directory to exist at deploy time.
+public/

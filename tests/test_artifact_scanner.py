@@ -10,7 +10,7 @@ from src import artifact_scanner as scanner
 from src.agents.pipeline import _parse_audit
 
 
-# ── Deterministic artifact scanner ──────────────────────────────────────
+# -- Deterministic artifact scanner --------------------------------------
 def test_scan_artifact_clean_text_passes():
     r = scanner.scan_artifact(
         "# PRD\n\n## Functional Requirements\nFR-1: users can log in.",
@@ -45,7 +45,7 @@ def test_scan_artifact_code_runs_ast_guard():
     assert "banned-call" in cats or "import-not-allowed" in cats
 
 
-# ── Proof-read gate ─────────────────────────────────────────────────────
+# -- Proof-read gate -----------------------------------------------------
 def test_gate_pass_requires_both_scanner_and_auditor():
     assert scanner.proof_read_gate(True, "PASS", [])["ok"] is True
 
@@ -66,7 +66,7 @@ def test_gate_flags_on_missing_audit_verdict():
     assert g["ok"] is False  # unverified never auto-passes
 
 
-# ── Auditor output parsing ───────────────────────────────────────────────
+# -- Auditor output parsing -----------------------------------------------
 def test_parse_audit_structured_json():
     d = _parse_audit('{"verdict": "FLAG", "findings": [{"section": "x", "issue": "y", "severity": "high"}]}')
     assert d["verdict"] == "FLAG"

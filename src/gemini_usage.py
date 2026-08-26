@@ -1,4 +1,4 @@
-"""Gemini (AI Studio prepaid) usage tracker + credit check — local spend ledger.
+"""Gemini (AI Studio prepaid) usage tracker + credit check  -- local spend ledger.
 
 AI Studio has NO public API for the prepaid credit balance. What we CAN do:
   1. Track every Gemini call's real token usage (usage_metadata) locally, in $.
@@ -117,5 +117,5 @@ def live_smoke_check() -> tuple[bool, str]:
     except Exception as e:
         msg = str(e)
         if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "depleted" in msg.lower():
-            return False, "CREDITS DEPLETED — top up at https://aistudio.google.com/billing"
+            return False, "CREDITS DEPLETED  -- top up at https://aistudio.google.com/billing"
         return False, f"check failed: {msg[:200]}"

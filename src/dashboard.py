@@ -1,4 +1,4 @@
-"""VentureBot unified dashboard — FastAPI app (M2).
+"""VentureBot unified dashboard  -- FastAPI app (M2).
 
 - Google SSO (S6) via /api/auth/* endpoints + signed session cookie
 - SSE streaming (Task 9) of the debate events
@@ -54,7 +54,7 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="VentureBot Command Center", lifespan=_lifespan)
 
-# ── Security headers (G1–G3, W3/W6 — multiuser security review) ─────────
+# -- Security headers (G1-G3, W3/W6 -- multiuser security review) ---------
 # Strict CSP: all scripts same-origin (app JS + pinned vendor copies under
 # /static/vendor). This kills the CDN-compromise mass-XSS path and shrinks
 # the XSS blast radius on IndexedDB data (ideas + BYOK key + tokens).
@@ -74,7 +74,7 @@ _CSP = (
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
-    # G5 — CSRF hardening beyond SameSite: browsers always send Sec-Fetch-Site;
+    # G5  -- CSRF hardening beyond SameSite: browsers always send Sec-Fetch-Site;
     # a cross-site attacker's form/fetch arrives as "cross-site" and is blocked
     # on mutating routes. Non-browser clients (curl/scripts) omit the header
     # and are unaffected.
@@ -106,11 +106,11 @@ app.mount(
 _MAX_SSE_CLIENTS = 50
 _SSE_CLIENTS: set[asyncio.Queue] = set()
 
-# Shared steering inbox — drained at checkpoints, never mid-turn
+# Shared steering inbox  -- drained at checkpoints, never mid-turn
 _inbox = SteeringInbox()
 
 
-# Bridge the in-process event bus → SSE. Subscribed once at import; the
+# Bridge the in-process event bus  -> SSE. Subscribed once at import; the
 # pipeline never imports the web layer, so this is the only coupling point.
 def _sse_event_sink():
     from . import events
@@ -137,7 +137,7 @@ async def _broadcast(event: str, data: dict) -> None:
             pass
 
 
-# ── Auth routes ────────────────────────────────────────────────────────
+# -- Auth routes --------------------------------------------------------
 def _base_url(request: Request) -> str:
     """Public base URL, trusting nginx's X-Forwarded-* headers."""
     if config.PUBLIC_BASE_URL:
@@ -148,10 +148,13 @@ def _base_url(request: Request) -> str:
 
 
 def _set_session_cookie(resp: Response, token: str) -> None:
+    # SameSite=None is required because the OAuth callback is reached via a
+    # cross-site redirect from accounts.google.com. With SameSite=Lax,
+    # browsers may drop Set-Cookie on the 302 back to /.
     resp.set_cookie(
         "vb_session", token,
-        httponly=True, samesite="lax",
-        secure=config.COOKIE_SECURE,
+        httponly=True, samesite="none",
+        secure=True,  # must be True when SameSite=None
         max_age=30 * 24 * 3600,
     )
 
@@ -167,7 +170,7 @@ async def auth_login(request: Request):
 
 @app.get("/api/auth/callback")
 async def auth_callback(request: Request):
-    """OAuth callback: validate state/nonce/PKCE → mint server-side session.
+    """OAuth callback: validate state/nonce/PKCE  -> mint server-side session.
 
     Session rotation is inherent: every login creates a FRESH session token.
     """
@@ -205,7 +208,7 @@ async def auth_client_id():
 
 @app.post("/api/auth/logout")
 async def auth_logout(request: Request):
-    # A5/W8: revoke the server-side session row — a stolen cookie value becomes
+    # A5/W8: revoke the server-side session row  -- a stolen cookie value becomes
     # worthless after logout (stateless cookies could not do this).
     token = request.cookies.get("vb_session")
     if token:
@@ -226,7 +229,7 @@ async def auth_me(request: Request):
 
 @app.post("/api/auth/logout")
 async def auth_logout(request: Request):
-    # A5/W8: revoke the server-side session row — a stolen cookie value becomes
+    # A5/W8: revoke the server-side session row  -- a stolen cookie value becomes
     # worthless after logout (stateless cookies could not do this).
     token = request.cookies.get("vb_session")
     if token:
@@ -236,7 +239,7 @@ async def auth_logout(request: Request):
     return resp
 
 
-# ── State + control ────────────────────────────────────────────────────
+# -- State + control ----------------------------------------------------
 @app.get("/api/state")
 async def api_state(request: Request):
     auth.get_current_user(request)
@@ -261,7 +264,7 @@ async def api_usage(request: Request, period: str = "today"):
     """Bucketed LLM call + cost aggregation (UI_UX_NOTES #6).
 
     period: today (by hour) | week (by day, last 7) | month (by day, last 30).
-    Reuses the local spend ledger in gemini_usage.json — no extra LLM cost.
+    Reuses the local spend ledger in gemini_usage.json  -- no extra LLM cost.
     """
     auth.get_current_user(request)
     import time as _time
@@ -338,7 +341,7 @@ async def api_budget_raise(request: Request):
     return {"status": "ok", **budget.status()}
 
 
-# ── Run Phase 1 ────────────────────────────────────────────────────────
+# -- Run Phase 1 --------------------------------------------------------
 @app.post("/api/run-phase1")
 async def api_run_phase1(request: Request):
     auth.get_current_user(request)
@@ -356,6 +359,50 @@ async def api_run_phase1(request: Request):
     return {"status": "started"}
 
 
+# -- BYOK: validate user-provided API key -------------------------------
+@app.post("/api/byok/verify")
+async def api_byok_verify(request: Request):
+    auth.get_current_user(request)
+    data = await request.json()
+    key = (data.get("key") or "").strip()
+    if not key:
+        return {"valid": False, "error": "No key provided"}
+    if key.startswith("sk-or-"):
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    body = resp.json()
+                    count = len(body) if isinstance(body, list) else 0
+                    return {"valid": True, "provider": "openrouter", "models": count}
+                return {"valid": False, "error": f"OpenRouter returned {resp.status_code}"}
+        except Exception as e:
+            return {"valid": False, "error": f"Connection failed: {e}"}
+    elif key.startswith("AIza") or key.startswith("AQ."):
+        try:
+            import httpx
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(
+                    "https://generativelanguage.googleapis.com/v1beta/models",
+                    params={"key": key},
+                    timeout=10,
+                )
+                if resp.status_code == 200:
+                    body = resp.json()
+                    count = len(body.get("models", []))
+                    return {"valid": True, "provider": "gemini", "models": count}
+                return {"valid": False, "error": f"Gemini returned {resp.status_code}"}
+        except Exception as e:
+            return {"valid": False, "error": f"Connection failed: {e}"}
+    else:
+        return {"valid": False, "error": "Unknown key format. Expected sk-or-... (OpenRouter) or AIza/AQ. (Gemini)"}
+
+
 async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
                            resume_comment: str | None = None):
     from . import budget
@@ -365,7 +412,7 @@ async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
     result = await run_orchestrator(idea, inbox=_inbox, resume_idea_id=resume_idea_id,
                                     resume_comment=resume_comment)
     if result.status == "needs_clarification":
-        # Debate durably paused on a question — the orchestrator already
+        # Debate durably paused on a question  -- the orchestrator already
         # emitted run_paused; do NOT signal finished.
         return
     await _broadcast("run_finished", {
@@ -383,7 +430,7 @@ async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
     })
 
 
-# ── Steering + HITL resume ───────────────────────────────────────────
+# -- Steering + HITL resume -------------------------------------------
 @app.post("/api/steering")
 async def api_steering(request: Request):
     """Queue steering guidance (ingested at the next checkpoint)."""
@@ -424,7 +471,7 @@ async def api_resume(request: Request):
     if decision in ("abort", "reject"):
         result.status = "stopped"
         store.set_status("stopped")
-        store.log("Human", "user", f"Decision: {decision.upper()} — stopping.")
+        store.log("Human", "user", f"Decision: {decision.upper()}  -- stopping.")
         await _broadcast("run_finished", {
             "status": result.status,
             "verdict": result.verdict,
@@ -454,12 +501,12 @@ async def api_resume(request: Request):
         return {"status": "approved", "run_id": run_id}
 
     if decision == "proceed":
-        # Human says proceed anyway — queue steering and let the orchestrator continue
+        # Human says proceed anyway  -- queue steering and let the orchestrator continue
         if steering:
             _inbox.add_steering(steering)
         if urls:
             _inbox.add_urls(urls)
-        store.log("Human", "user", "PROCEED — continuing orchestration.")
+        store.log("Human", "user", "PROCEED  -- continuing orchestration.")
         return {"status": "continuing", "run_id": run_id}
 
     raise HTTPException(400, f"Unknown decision: {decision}")
@@ -472,7 +519,7 @@ async def api_paused(request: Request):
     return {"paused_runs": list(_RUNS.keys())}
 
 
-# ── Idea history + checkpoint persistence (IDEA_HISTORY_ADDENDUM) ────
+# -- Idea history + checkpoint persistence (IDEA_HISTORY_ADDENDUM) ----
 _ITEMS_PER_PAGE = 10
 
 # Statuses accepted on import (subset of the idea-tree lifecycle).
@@ -499,7 +546,7 @@ def _export_idea(idea: dict) -> dict:
         "prd_text": idea.get("prd_text"),
         "created_at": idea.get("created_at"),
         "updated_at": idea.get("updated_at"),
-        # Full per-run history (transcripts, PRDs, comments) — the second brain.
+        # Full per-run history (transcripts, PRDs, comments)  -- the second brain.
         "runs": get_store().get_idea_runs(idea["id"], include_blobs=True),
     }
 
@@ -584,7 +631,7 @@ def _auto_description(idea: dict) -> str:
         return f"Research + debate complete. PRD ready for approval."
     if idea.get("research_brief"):
         return f"Research complete. Verdict: {verdict or 'pending'}."
-    return "Captured — debate not yet run."
+    return "Captured  -- debate not yet run."
 
 
 def _idea_tags(idea: dict) -> list[str]:
@@ -742,7 +789,7 @@ async def api_ideas_import(request: Request):
     elif isinstance(data, dict) and data.get("format") == "venturebot-idea":
         ideas = [data]
     else:
-        raise HTTPException(400, "unrecognized format — expected a VentureBot idea export")
+        raise HTTPException(400, "unrecognized format  -- expected a VentureBot idea export")
 
     s = get_store()
     imported: list[dict] = []
@@ -835,7 +882,7 @@ async def api_idea_runs(idea_id: str, request: Request):
 @app.get("/api/ideas/{idea_id}/runs/{run_id}")
 async def api_idea_run_detail(idea_id: str, run_id: str, request: Request):
     """Full detail of one past debate run: transcript events, PRD, brief,
-    verdict, the human comment that started it — everything needed to replay
+    verdict, the human comment that started it  -- everything needed to replay
     the debate exactly as it looked while it was running."""
     auth.get_current_user(request)
     run = get_store().get_idea_run(run_id)
@@ -848,7 +895,7 @@ async def api_idea_run_detail(idea_id: str, run_id: str, request: Request):
             if isinstance(parsed, list):
                 events = parsed
         except Exception:
-            pass  # legacy/corrupt transcript → surface as empty, not a crash
+            pass  # legacy/corrupt transcript  -> surface as empty, not a crash
     return {
         "id": run["id"],
         "idea_id": run["idea_id"],
@@ -984,7 +1031,7 @@ async def api_checkpoints(request: Request):
 async def api_clarify_answer(request: Request):
     """Answer a paused clarification and resume the debate from disk.
 
-    Works no matter how much time has passed — even after server restarts —
+    Works no matter how much time has passed  -- even after server restarts  -- 
     because the pause snapshot is durable (data/paused_runs/{run_id}.json).
     """
     auth.get_current_user(request)
@@ -999,11 +1046,11 @@ async def api_clarify_answer(request: Request):
         raise HTTPException(404, f"No pending clarification for run {run_id}")
     state = store.load_state()
     if state.get("status") == "running":
-        # Another debate took over while this one was waiting — put the
+        # Another debate took over while this one was waiting  -- put the
         # snapshot back so it isn't lost.
         from .agents.orchestrator import write_pause
         write_pause(pause)
-        raise HTTPException(409, "another debate is currently running — answer it after it finishes")
+        raise HTTPException(409, "another debate is currently running  -- answer it after it finishes")
 
     store.log("Human", "user", f"Clarify answer: {answer[:200]}")
 
@@ -1029,10 +1076,10 @@ async def api_clarify_answer(request: Request):
     return {"status": "resumed", "resumed_run_id": run_id}
 
 
-# ── Self-improvement (M3) ────────────────────────────────────────────
+# -- Self-improvement (M3) --------------------------------------------
 @app.post("/api/feedback")
 async def api_feedback(request: Request):
-    """Human feedback → lesson pipeline. When the user corrects the agent,
+    """Human feedback  -> lesson pipeline. When the user corrects the agent,
     this captures the correction as a durable lesson that future runs will read."""
     auth.get_current_user(request)
     data = await request.json()
@@ -1056,7 +1103,7 @@ async def api_feedback(request: Request):
 
 @app.get("/api/memories")
 async def api_memories(request: Request):
-    """Snapshot of the self-improvement state (PRD §6.1 right panel)."""
+    """Snapshot of the self-improvement state (PRD Sec. 6.1 right panel)."""
     auth.get_current_user(request)
     s = get_store()
     return {
@@ -1069,19 +1116,19 @@ async def api_memories(request: Request):
 
 @app.post("/scheduler/dream-review")
 async def api_dream_review(request: Request):
-    """Manually trigger the nightly consolidation (PRD §5.4)."""
+    """Manually trigger the nightly consolidation (PRD Sec. 5.4)."""
     auth.get_current_user(request)
     summary = await asyncio.to_thread(run_dream_review)
     await _broadcast("dream_review", summary)
     return summary
 
 
-# ── SSE stream ─────────────────────────────────────────────────────────
+# -- SSE stream ---------------------------------------------------------
 @app.get("/api/events")
 async def api_events(request: Request):
     auth.get_current_user(request)
     if len(_SSE_CLIENTS) >= _MAX_SSE_CLIENTS:
-        raise HTTPException(503, "Too many SSE clients — try again later")
+        raise HTTPException(503, "Too many SSE clients  -- try again later")
     q: asyncio.Queue = asyncio.Queue(maxsize=1000)
     _SSE_CLIENTS.add(q)
     async def gen():
@@ -1099,11 +1146,27 @@ async def api_events(request: Request):
     return StreamingResponse(gen(), media_type="text/event-stream")
 
 
-# ── Dashboard ──────────────────────────────────────────────────────────
+# -- Dashboard ----------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request):
     # Serve the SPA; auth is enforced client-side via /api/auth/me
     from pathlib import Path
     html = (Path(__file__).parent.parent / "templates" / "index.html").read_text()
-    # The SPA shell changes with every deploy — never let browsers cache it.
+    # The SPA shell changes with every deploy  -- never let browsers cache it.
     return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+# -- Impressum (legal, required by German law for commercial websites) ----
+_IMPRESSUM_HTML = None
+
+def _load_impressum():
+    global _IMPRESSUM_HTML
+    if _IMPRESSUM_HTML is None:
+        p = Path(__file__).parent.parent / "templates" / "impressum.html"
+        _IMPRESSUM_HTML = p.read_text() if p.is_file() else "<h1>Impressum</h1><p>Not configured.</p>"
+    return _IMPRESSUM_HTML
+
+
+@app.get("/impressum", response_class=HTMLResponse)
+async def impressum(request: Request):
+    return HTMLResponse(_load_impressum())

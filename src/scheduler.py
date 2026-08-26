@@ -1,15 +1,16 @@
-"""Scheduler — nightly dream-review cron (PRD §5.4, Task 16.3).
+"""Scheduler  -- nightly dream-review cron (PRD Sec. 5.4, Task 16.3).
 
 Uses APScheduler to hit the dream-review consolidation on a cron schedule.
 The endpoint POST /scheduler/dream-review (in dashboard.py) is the manual
 trigger; this module wires the automatic trigger at startup.
 
-Disabled by default in tests/dev — enable with VENTUREBOT_ENABLE_SCHEDULER=1.
+Disabled by default in tests/dev  -- enable with VENTUREBOT_ENABLE_SCHEDULER=1.
 """
 from __future__ import annotations
 
 import logging
-import os
+
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +23,8 @@ def start_scheduler() -> bool:
     Returns True if the scheduler was started, False if disabled (env not set).
     """
     global _scheduler
-    if os.environ.get("VENTUREBOT_ENABLE_SCHEDULER", "").lower() not in ("1", "true", "yes"):
-        logger.info("scheduler disabled (set VENTUREBOT_ENABLE_SCHEDULER=1 to enable)")
+    if not config.ENABLE_SCHEDULER:
+        logger.info("scheduler disabled (set enable_scheduler:true in config.json or VENTUREBOT_ENABLE_SCHEDULER=1)")
         return False
 
     from apscheduler.schedulers.background import BackgroundScheduler
@@ -31,7 +32,7 @@ def start_scheduler() -> bool:
 
     from .memory.dream_review import run_dream_review
 
-    hour = int(os.environ.get("VENTUREBOT_DREAM_REVIEW_HOUR", "3"))
+    hour = config.DREAM_REVIEW_HOUR
 
     def _job() -> None:
         try:

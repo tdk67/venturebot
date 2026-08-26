@@ -1,4 +1,4 @@
-"""Tests for the safety baseline modules (S2–S5, S7, S10)."""
+"""Tests for the safety baseline modules (S2-S5, S7, S10)."""
 import sys
 from pathlib import Path
 

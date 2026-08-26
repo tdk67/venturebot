@@ -1,4 +1,4 @@
-"""LLM client — OpenRouter chat-completions wrapper.
+"""LLM client  -- OpenRouter chat-completions wrapper.
 
 Budget enforcement (S7) is integrated: every call does `budget.check_budget()`
 before and `budget.record_usage()` after. Structured output is supported via

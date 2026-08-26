@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from src.memory.sqlite_store import MemoryStore
 
 
-# ── Store: idea_runs CRUD ──────────────────────────────────────────────
+# -- Store: idea_runs CRUD ----------------------------------------------
 
 def test_idea_run_lifecycle(tmp_path):
     s = MemoryStore(tmp_path / "m.db")
@@ -72,7 +72,7 @@ def test_delete_idea_cascades_runs(tmp_path):
     assert s.get_idea_runs(idea_id) == []
 
 
-# ── API: run history + replay ──────────────────────────────────────────
+# -- API: run history + replay ------------------------------------------
 
 @pytest.fixture()
 def client(monkeypatch, tmp_path):
@@ -124,12 +124,12 @@ def test_runs_list_and_detail(client):
     assert r.status_code == 200
     assert len(r.json()["runs"]) == 1
 
-    # unknown run → 404
+    # unknown run  -> 404
     assert client.get(f"/api/ideas/{idea_id}/runs/nope").status_code == 404
     assert client.get("/api/ideas/nope/runs").status_code == 404
 
 
-# ── API: export / import ───────────────────────────────────────────────
+# -- API: export / import -----------------------------------------------
 
 def test_export_single_idea_json(client):
     idea_id, _ = _seed_idea_with_run(client)
@@ -192,7 +192,7 @@ def test_import_backup_bundle_and_validation(client):
     assert client.post("/api/ideas/import", json={"format": "venturebot-idea"}).status_code == 400
 
 
-# ── Full pitch persistence + edit (second fix) ────────────────────────
+# -- Full pitch persistence + edit (second fix) ------------------------
 
 def test_create_idea_keeps_full_pitch(tmp_path):
     s = MemoryStore(tmp_path / "m.db")
@@ -237,7 +237,7 @@ def test_export_import_preserves_pitch(client):
     assert s.get_idea(new_id)["description"] == "full original pitch here"
 
 
-# ── Resume uses the full pitch, not the truncated title ───────────────
+# -- Resume uses the full pitch, not the truncated title ---------------
 
 def test_resume_passes_full_pitch_and_comment(client, monkeypatch):
     import asyncio
@@ -261,7 +261,7 @@ def test_resume_passes_full_pitch_and_comment(client, monkeypatch):
     assert captured["resume_comment"] == "look at competitor Z"
 
 
-# ── Orchestrator prompt: no raw context-variable placeholder (crash fix) ──
+# -- Orchestrator prompt: no raw context-variable placeholder (crash fix) --
 
 def test_orchestrator_instruction_has_no_raw_placeholder():
     from src.agents.orchestrator import _orchestrator_instruction

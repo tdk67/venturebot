@@ -1,4 +1,4 @@
-"""Test isolation — MUST run before any src import.
+"""Test isolation  -- MUST run before any src import.
 
 Without these env vars the test suite reads/writes the PRODUCTION state file
 (data/state.json), database and archives: tests have polluted live debate

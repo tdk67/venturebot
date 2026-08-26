@@ -1,4 +1,4 @@
-"""Custom HITL tool: clarify_question — pause and ask the human.
+"""Custom HITL tool: clarify_question  -- pause and ask the human.
 
 ADK's LongRunningFunctionTool pauses the invocation and emits an
 input-required event when the function is called. The human's answer is

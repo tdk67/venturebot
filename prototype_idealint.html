@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IdeaLint  -- Editorial Prototype</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #FBFBFA;
+    --surface: #FFFFFF;
+    --border: #E2E2DF;
+    --text-main: #111110;
+    --text-muted: #6B6B65;
+    --accent: #D9480F;
+    --green: #2B8A3E;
+    --amber: #E67700;
+    --red: #C92A2A;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text-main);
+    font-family: 'Inter', sans-serif;
+    margin: 0;
+    padding: 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .font-serif {
+    font-family: 'Newsreader', serif;
+  }
+
+  .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .border-subtle {
+    border: 1px solid var(--border);
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+</style>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="p-8 md:p-16 antialiased">
+
+  <div class="max-w-3xl mx-auto">
+    <!-- Header -->
+    <header class="flex justify-between items-baseline border-b border-[#E2E2DF] pb-6 mb-12">
+      <div>
+        <h1 class="text-3xl font-serif italic tracking-tight text-[#111110]">idealint<span class="text-[#D9480F]">.</span></h1>
+        <p class="text-xs text-[#6B6B65] font-mono mt-1">v0.9-alpha // static idea analysis</p>
+      </div>
+      <div class="text-xs font-mono text-[#6B6B65]">
+        SYSTEM: <span class="text-[#2B8A3E] font-bold">READY</span>
+      </div>
+    </header>
+
+    <!-- Hero / Input Section -->
+    <section class="mb-12">
+      <label class="block text-xs font-mono uppercase tracking-widest text-[#6B6B65] mb-3">Input Concept / Spark</label>
+      <div class="card p-4 shadow-sm flex flex-col gap-3">
+        <textarea rows="3" class="w-full bg-transparent text-[#111110] placeholder-[#6B6B65] text-base focus:outline-none resize-none font-serif" placeholder="e.g. An automated API that checks for GDPR compliance in real-time by reading AST trees..."></textarea>
+        <div class="flex justify-between items-center pt-3 border-t border-[#E2E2DF]">
+          <span class="text-[11px] font-mono text-[#6B6B65]">MAX TOKENS: 2,000 // TIER: FLASH+PRO</span>
+          <button class="bg-[#111110] hover:bg-[#D9480F] text-white text-xs font-mono px-5 py-2.5 rounded transition-colors">
+            Run Linter  -> 
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Diagnostic Output / Diagnostic Report Preview -->
+    <section class="space-y-6">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xs font-mono uppercase tracking-widest text-[#6B6B65]">Diagnostic Trace // Report #492</h2>
+        <span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-50 text-[#E67700] border border-amber-200">VERDICT: CONDITIONAL</span>
+      </div>
+
+      <!-- Finding 1 -->
+      <div class="card p-6">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-[#C92A2A]"></span>
+            <span class="text-xs font-mono uppercase font-semibold text-[#C92A2A]">Critical Vulnerability: Market Saturation</span>
+          </div>
+          <span class="text-[11px] font-mono text-[#6B6B65]">CONFIDENCE: <strong class="text-[#2B8A3E]">🟢 VERIFIED</strong></span>
+        </div>
+        <p class="text-sm text-[#111110] leading-relaxed font-sans mb-4">
+          Similar static AST compliance tools exist (e.g., Snyk Code, SonarQube AST rules). Direct replication without a proprietary regulatory graph will face severe customer acquisition friction against incumbent enterprise suites.
+        </p>
+        <div class="bg-[#FBFBFA] p-3 rounded border border-[#E2E2DF] text-xs font-mono text-[#6B6B65]">
+          SRC: SimilarWeb Enterprise API // Crunchbase Q2 Index // Confidence: 0.94
+        </div>
+      </div>
+
+      <!-- Finding 2 -->
+      <div class="card p-6">
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-[#E67700]"></span>
+            <span class="text-xs font-mono uppercase font-semibold text-[#E67700]">Architectural Warning: Latency Overhead</span>
+          </div>
+          <span class="text-[11px] font-mono text-[#6B6B65]">CONFIDENCE: <strong class="text-[#E67700]">🟡 ESTIMATED</strong></span>
+        </div>
+        <p class="text-sm text-[#111110] leading-relaxed font-sans mb-4">
+          Real-time AST parsing during CI builds introduces unacceptable latency if LLMs are placed directly in the critical path. Recommend shifting from synchronous blocking to asynchronous PR webhook annotations.
+        </p>
+        <div class="bg-[#FBFBFA] p-3 rounded border border-[#E2E2DF] text-xs font-mono text-[#6B6B65]">
+          SRC: GitHub Actions Benchmark Suite // Triangulated 3 sources
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Footer -->
+    <footer class="mt-20 pt-6 border-t border-[#E2E2DF] flex justify-between items-center text-xs font-mono text-[#6B6B65]">
+      <span>IDEALINT.COM // ALL RIGHTS RESERVED</span>
+      <span>SECURE A2A MESH</span>
+    </footer>
+  </div>
+
+</body>
+</html>

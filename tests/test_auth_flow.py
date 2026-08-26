@@ -1,4 +1,4 @@
-"""A6 (G6): Google OAuth code flow — PKCE + state + nonce + rotation.
+"""A6 (G6): Google OAuth code flow  -- PKCE + state + nonce + rotation.
 
 The token exchange and id_token verification are mocked; everything else
 (state single-use, signup gate, allowlist, session cookie, CSRF header)
@@ -27,7 +27,7 @@ def client(monkeypatch):
     return TestClient(app)
 
 
-# ── begin_login ───────────────────────────────────────────────────────────
+# -- begin_login -----------------------------------------------------------
 
 def test_begin_login_builds_pkce_request(client):
     resp = client.get("/api/auth/login", follow_redirects=False)
@@ -63,7 +63,7 @@ def test_state_is_single_use_and_expiring(monkeypatch):
         oauth.exchange_code("code", q["state"], "https://x.example")
 
 
-# ── exchange_code ────────────────────────────────────────────────────────
+# -- exchange_code --------------------------------------------------------
 
 class _FakeResp:
     def __init__(self, payload):
@@ -141,7 +141,7 @@ def test_exchange_code_unknown_state_rejected(monkeypatch):
         oauth.exchange_code("code", "never-issued-state", "https://x.example")
 
 
-# ── callback → session ────────────────────────────────────────────────────
+# -- callback  -> session ----------------------------------------------------
 
 def _do_callback(client, monkeypatch, email="user@example.com", sub="sub-123"):
     oauth._pending.clear()
@@ -187,7 +187,7 @@ def test_callback_allowlist_blocks(client, monkeypatch):
 def test_signup_closed_blocks_new_user_only(client, monkeypatch):
     monkeypatch.setattr(config, "SIGNUP_CLOSED", True)
 
-    # First login (new user) → blocked with 403 (FastAPI converts the raise).
+    # First login (new user)  -> blocked with 403 (FastAPI converts the raise).
     resp = _do_callback(client, monkeypatch, sub="brand-new-sub", email="fresh@example.com")
     assert resp.status_code == 403
 
@@ -195,7 +195,7 @@ def test_signup_closed_blocks_new_user_only(client, monkeypatch):
     from src.sessions import session_store
     assert session_store.get_user("brand-new-sub") is None
 
-    # Pre-existing user → allowed despite closed signup.
+    # Pre-existing user  -> allowed despite closed signup.
     from src.sessions import session_store
     session_store.upsert_user("existing-sub", "known@example.com")
     resp = _do_callback(client, monkeypatch, email="known@example.com", sub="existing-sub")
@@ -210,7 +210,7 @@ def test_rotation_two_logins_two_sessions(client, monkeypatch):
     assert t1 != t2  # fresh token per login (fixation defense)
 
 
-# ── CSRF (G5): cross-site mutating requests blocked ──────────────────────
+# -- CSRF (G5): cross-site mutating requests blocked ----------------------
 
 def test_cross_site_post_blocked(client):
     resp = client.post("/api/steering", json={"text": "x"},

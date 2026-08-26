@@ -1,4 +1,4 @@
-"""URL ingestion — fetch user-provided research URLs safely.
+"""URL ingestion  -- fetch user-provided research URLs safely.
 
 Uses ADK's `load_web_page` (which already has SSRF protection: no redirect
 following, and it validates against internal IP ranges). We add our own
@@ -40,7 +40,7 @@ def fetch_urls(urls: list[str], *, limit: int = MAX_URLS_PER_CHECKPOINT) -> str:
             continue
         text = (text or "").strip()
         if len(text) > MAX_CONTENT_CHARS:
-            text = text[:MAX_CONTENT_CHARS] + "\n…[truncated]"
+            text = text[:MAX_CONTENT_CHARS] + "\n...[truncated]"
         sections.append(f"## {url}\n\n{text}")
 
     return "\n\n".join(sections)

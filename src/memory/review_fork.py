@@ -1,4 +1,4 @@
-"""Fork 2: review_fork — fire-and-forget LLM analysis of the last turn (PRD §5.3).
+"""Fork 2: review_fork  -- fire-and-forget LLM analysis of the last turn (PRD Sec. 5.3).
 
 Analyzes the just-completed turn and proposes what to save to memory. This
 module is intentionally decoupled from the LLM client so the analysis

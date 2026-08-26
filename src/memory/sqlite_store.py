@@ -1,13 +1,13 @@
-"""SQLite memory store — M3 foundation (Task 13).
+"""SQLite memory store  -- M3 foundation (Task 13).
 
 Single source of truth for the self-improvement layer. Five tables
-(PRD §5.5 + §8.1):
+(PRD Sec. 5.5 + Sec. 8.1):
 
-  - session_facts     — what happened in each turn
-  - agent_lessons     — rules/techniques learned, with evidence + retire flag
-  - agent_techniques  — reusable techniques with success/failure counts
-  - user_profile      — key/value user preferences + style notes
-  - idea_tree         — idea nodes with scores, status, pruning metadata
+  - session_facts      -- what happened in each turn
+  - agent_lessons      -- rules/techniques learned, with evidence + retire flag
+  - agent_techniques   -- reusable techniques with success/failure counts
+  - user_profile       -- key/value user preferences + style notes
+  - idea_tree          -- idea nodes with scores, status, pruning metadata
 
 Connection management: a single sqlite3 connection guarded by a lock
 (serialized access). Simple and race-free for a single-user VPS demo;
@@ -110,12 +110,12 @@ class MemoryStore:
     """Thread-safe SQLite store for the self-improvement layer."""
 
     def __init__(self, db_path: Path | str | None = None):
-        # ":memory:" (string) → in-memory; None → config.DB_PATH
+        # ":memory:" (string)  -> in-memory; None  -> config.DB_PATH
         self.db_path = str(db_path) if db_path is not None else str(config.DB_PATH)
         self._lock = threading.Lock()
         self._conn: sqlite3.Connection | None = None
 
-    # ── connection management ──────────────────────────────────────────
+    # -- connection management ------------------------------------------
     def _ensure_conn(self) -> sqlite3.Connection:
         if self._conn is None:
             conn = sqlite3.connect(self.db_path, check_same_thread=False)
@@ -138,7 +138,7 @@ class MemoryStore:
                 self._conn.close()
                 self._conn = None
 
-    # ── session facts ───────────────────────────────────────────────────
+    # -- session facts ---------------------------------------------------
     def save_fact(self, session_id: str, agent: str, event_type: str,
                   content: str, *, now: float | None = None) -> str:
         fact_id = uuid.uuid4().hex
@@ -170,7 +170,7 @@ class MemoryStore:
             rows = self._ensure_conn().execute(q, params).fetchall()
         return [dict(r) for r in rows]
 
-    # ── lessons ─────────────────────────────────────────────────────────
+    # -- lessons ---------------------------------------------------------
     def save_lesson(self, name: str, rule: str, evidence: str = "",
                     *, now: float | None = None) -> str:
         lesson_id = uuid.uuid4().hex
@@ -214,7 +214,7 @@ class MemoryStore:
             c.commit()
             return cur.rowcount
 
-    # ── techniques ──────────────────────────────────────────────────────
+    # -- techniques ------------------------------------------------------
     def save_technique(self, name: str, description: str, when_to_use: str = "") -> str:
         with self._lock:
             c = self._ensure_conn()
@@ -268,7 +268,7 @@ class MemoryStore:
             c.commit()
             return cur.rowcount
 
-    # ── user profile ────────────────────────────────────────────────────
+    # -- user profile ----------------------------------------------------
     def update_profile(self, values: dict[str, str]) -> None:
         now = time.time()
         with self._lock:
@@ -289,7 +289,7 @@ class MemoryStore:
             ).fetchall()
         return {r["key"]: r["value"] for r in rows}
 
-    # ── idea tree ───────────────────────────────────────────────────────
+    # -- idea tree -------------------------------------------------------
     def create_idea(self, title: str, parent_id: str | None = None,
                     description: str | None = None) -> str:
         idea_id = uuid.uuid4().hex
@@ -414,7 +414,7 @@ class MemoryStore:
 
     def delete_idea(self, idea_id: str) -> bool:
         """Hard-delete an idea from the tree (UI_UX_NOTES #5). Returns True if
-        a row was removed. Only safe when the idea is not actively running —
+        a row was removed. Only safe when the idea is not actively running  -- 
         the caller is responsible for that guard."""
         with self._lock:
             cur = self._ensure_conn().execute(
@@ -444,7 +444,7 @@ class MemoryStore:
         scored.sort(key=lambda kv: -kv[0])
         return [idea for _, idea in scored[:limit]]
 
-    # ── idea runs (per-run immutable snapshots — P1.1) ───────────────
+    # -- idea runs (per-run immutable snapshots  -- P1.1) ---------------
 
     def start_idea_run(self, idea_id: str, comment: str | None = None) -> str:
         """Open a new run row for an idea. Returns the run row id.
@@ -551,7 +551,7 @@ class MemoryStore:
             return cur.rowcount
 
 
-# ── process-wide singleton ──────────────────────────────────────────────
+# -- process-wide singleton ----------------------------------------------
 _singleton: MemoryStore | None = None
 _singleton_lock = threading.Lock()
 

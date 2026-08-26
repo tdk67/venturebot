@@ -1,4 +1,4 @@
-"""Run manager — S2 kill switch + dead-man ceiling.
+"""Run manager  -- S2 kill switch + dead-man ceiling.
 
 A run is a cancellable unit of work. The loop (or ADK runner) polls
 `should_stop()` between every agent turn and between LLM calls. `stop()` is

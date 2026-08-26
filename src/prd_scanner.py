@@ -1,4 +1,4 @@
-"""PRD Completeness Scanner — deterministic quality gate (P0.3).
+"""PRD Completeness Scanner  -- deterministic quality gate (P0.3).
 
 Checks a PRD document for:
 - All required sections present
@@ -204,9 +204,9 @@ def _check_unsourced_claims(lines: list[str], findings: list[PrdFinding]) -> Non
 def format_scan_result(result: PrdScanResult) -> str:
     """Format the scan result as a human-readable string."""
     if result.verdict == "PASS":
-        return "✅ PRD Scanner: PASS — all required sections present and complete."
+        return "✅ PRD Scanner: PASS  -- all required sections present and complete."
     
-    lines = [f"⚠️ PRD Scanner: FLAG — {len(result.findings)} issue(s) found:\n"]
+    lines = [f"⚠️ PRD Scanner: FLAG  -- {len(result.findings)} issue(s) found:\n"]
     
     critical_count = sum(1 for f in result.findings if f.severity == "critical")
     high_count = sum(1 for f in result.findings if f.severity == "high")

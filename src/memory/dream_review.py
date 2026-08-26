@@ -1,8 +1,8 @@
-"""Fork 3: dream_review — nightly consolidation + idea-tree pruning (PRD §5.4).
+"""Fork 3: dream_review  -- nightly consolidation + idea-tree pruning (PRD Sec. 5.4).
 
 Algorithm:
   1. Load recent session facts (last 24h).
-  2. Run the deterministic idea-tree pruning rules (§5.5).
+  2. Run the deterministic idea-tree pruning rules (Sec. 5.5).
   3. Optionally call the LLM to consolidate lessons / update profile.
   4. Write all changes back through the MemoryStore.
 

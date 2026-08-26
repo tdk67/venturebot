@@ -1,11 +1,11 @@
-"""Budget enforcement — S7.
+"""Budget enforcement  -- S7.
 
 Cumulative spend tracking with a hard limit, configurable at runtime, and a
 human-override to raise the limit and continue. Every LLM call must pass
 `check_budget()` BEFORE the call and `record_usage()` AFTER.
 
 Pricing data is approximate (per-1M-token USD). It only needs to be a reliable
-guardrail, not a billing statement — track conservatively (round up).
+guardrail, not a billing statement  -- track conservatively (round up).
 """
 from __future__ import annotations
 

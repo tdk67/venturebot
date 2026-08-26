@@ -1,11 +1,11 @@
-"""Orchestrator — autonomous agentic loop that drives the debate sub-agents.
+"""Orchestrator  -- autonomous agentic loop that drives the debate sub-agents.
 
 The Orchestrator is a single ADK LlmAgent with function tools that wrap each
 sub-agent (Researcher, Advocate, Critic, Creative, Judge, PRD Writer, Auditor).
 It runs in a loop with an iteration budget and quality-gate stopping rules.
 
 Design:
-  - The orchestrator decides WHAT to do next — the system prompt encodes the
+  - The orchestrator decides WHAT to do next  -- the system prompt encodes the
     engineering process, not hardcoded phase counters.
   - Sub-agents retain their distinct models, temperatures, and tool access
     (Advocate blind, Critic has search, Creative hot).
@@ -41,16 +41,16 @@ from .agents import ALL_AGENTS
 
 logger = logging.getLogger(__name__)
 
-# ── Persisted run result (exposed to dashboard) ────────────────────────
+# -- Persisted run result (exposed to dashboard) ------------------------
 _RUNS: dict[str, "OrchestratorResult"] = {}
 
 # Throttle state for auto_capture fork
 _THROTTLE: dict[str, dict] = {}
 
-# ── Orchestrator system prompt ──────────────────────────────────────────
+# -- Orchestrator system prompt ------------------------------------------
 
 _ORCHESTRATOR_PROMPT = """You are VentureBot's Orchestrator. Your job is to evaluate a startup idea
-through a rigorous multi-agent engineering process. You don't debate yourself —
+through a rigorous multi-agent engineering process. You don't debate yourself  -- 
 you delegate to specialized sub-agents, each with a different perspective
 and (where appropriate) different information access.
 
@@ -72,12 +72,12 @@ technical landscape, and resource links. If the user provided URLs, pass them.
 ### 3. CLARIFY
 If the idea is vague, or the research reveals contradictory information, or you
 need domain expertise the user might have, call clarify(question). Wait for the
-answer — this tool PAUSES until the human responds. Then re-research with the
+answer  -- this tool PAUSES until the human responds. Then re-research with the
 new information. You may clarify multiple times if needed.
 
 ### 4. DEBATE
 Call advocate(), then critic(), then creative(). The Advocate is BLIND (no web
-search) — it argues from the brief alone. The Critic HAS web search — it finds
+search)  -- it argues from the brief alone. The Critic HAS web search  -- it finds
 counter-evidence. The Creative finds niches, pivots, and unfair advantages.
 
 ### 5. JUDGE
@@ -87,13 +87,13 @@ Call judge(). It returns a structured verdict with scores:
 
 ### 6. VERDICT GATE
 - PROCEED: continue to PRD drafting.
-- PARK or PRUNE: present the verdict to the human via clarify() — ask whether
+- PARK or PRUNE: present the verdict to the human via clarify()  -- ask whether
   to proceed anyway, park, or abandon.
 
 ### 7. DRAFT PRD
 Call write_prd(). This writes a structured PRD to the workspace.
 
-### 8. SELF-REVIEW — CRITICAL QUALITY GATE
+### 8. SELF-REVIEW  -- CRITICAL QUALITY GATE
 After drafting the PRD, FIRST call scan_prd() to run the deterministic completeness check. It checks for required sections, acceptance criteria, security coverage, and sourced claims. If it returns FLAG, fix the issues before continuing.
 
 Then call read_file("PRD.md") and review it yourself:
@@ -116,30 +116,30 @@ re-audit. Do NOT skip this step.
 Call clarify() with a summary of the PRD, the scores, and ask:
 "[Approve] [Changes] [Reject]"
 - If Changes: go back to RESEARCH with the human's feedback.
-- If Reject: stop — the run is done.
-- If Approve: stop — the run is a success.
+- If Reject: stop  -- the run is done.
+- If Approve: stop  -- the run is a success.
 
 ## STOPPING RULES
 
 You MUST stop and present whatever you have when ANY of these is true:
-1. The human has approved or rejected → done.
-2. You've used 10 turns AND have a PRD + verdict → present, don't loop forever.
+1. The human has approved or rejected  -> done.
+2. You've used 10 turns AND have a PRD + verdict  -> present, don't loop forever.
 3. You've made NO progress for 3 consecutive turns (same file contents, no
-   new information gathered, no new quality issues found) → present what you
+   new information gathered, no new quality issues found)  -> present what you
    have and explain what's missing.
-4. If you're genuinely stuck — clarify() is always available. Never loop in
+4. If you're genuinely stuck  -- clarify() is always available. Never loop in
    confusion.
 
 ## WORKSPACE DISCIPLINE
 
 - Write files to the workspace (RESEARCH_BRIEF.md, PRD.md).
 - ALWAYS call read_file() to re-read a file before editing it.
-- NEVER edit from memory — stale edits corrupt the artifact.
+- NEVER edit from memory  -- stale edits corrupt the artifact.
 - After the human approves, save the PRD with save_artifact().
 
 ## PAST LESSONS (from load_memories())
 
-These are lessons from previous runs. You MUST apply them — they exist because
+These are lessons from previous runs. You MUST apply them  -- they exist because
 the human or the system flagged a mistake that must not be repeated.
 
 {must_read_before_starting}
@@ -153,7 +153,7 @@ load_memories(), then research().
 
 def _render_must_read() -> str:
     """Render the 'must read before starting' block: active lessons from the
-    memory store. Rendered server-side — the raw {placeholder} must never reach
+    memory store. Rendered server-side  -- the raw {placeholder} must never reach
     ADK's instruction templating (it would raise 'Context variable not found').
     """
     try:
@@ -161,7 +161,7 @@ def _render_must_read() -> str:
     except Exception:
         lessons = []
     if not lessons:
-        return "(No lessons recorded yet — this may be one of the first runs.)"
+        return "(No lessons recorded yet  -- this may be one of the first runs.)"
     lines = [f"- {l['name']}: {l['rule']}" for l in lessons]
     return "\n".join(lines)
 
@@ -193,10 +193,10 @@ class OrchestratorResult:
     turns_used: int = 0
     clarification_question: str | None = None
     clarification_state: str | None = None  # "awaiting_response" when clarify is active
-    # The human's answer to a paused clarification — set when resuming from
+    # The human's answer to a paused clarification  -- set when resuming from
     # disk; consumed by the first turn prompt after resume.
     clarification_answer: str | None = None
-    # Per-run snapshot bookkeeping (idea_runs row) — set by run_orchestrator.
+    # Per-run snapshot bookkeeping (idea_runs row)  -- set by run_orchestrator.
     idea_run_id: str | None = None
     resume_comment: str | None = None
 
@@ -215,7 +215,7 @@ class ClarifyPaused(Exception):
         self.question = question
 
 
-# ── Durable pause store ────────────────────────────────────────────────
+# -- Durable pause store ------------------------------------------------
 
 def _pause_dir() -> Path:
     d = config.DATA_DIR / "paused_runs"
@@ -289,7 +289,7 @@ def pop_pause(run_id: str) -> dict | None:
     return data
 
 
-# ── Sub-agent wrapper — runs a sub-agent via ADK Runner ────────────────
+# -- Sub-agent wrapper  -- runs a sub-agent via ADK Runner ----------------
 
 async def _run_sub_agent(
     agent: LlmAgent, message: str, result: OrchestratorResult, label: str,
@@ -343,11 +343,11 @@ def _final_text_of(events) -> str:
     return out
 
 
-# ── Workspace file helpers ──────────────────────────────────────────────
+# -- Workspace file helpers ----------------------------------------------
 # W4a (security review): workspaces are PER-RUN. A malicious user must not be
 # able to steer an orchestrator (via prompt injection) into reading or writing
 # another debate's files, so every file tool resolves strictly inside
-# workspace/runs/{run_id}/ — never in a shared global directory.
+# workspace/runs/{run_id}/  -- never in a shared global directory.
 
 _RUN_ID_RE = re.compile(r"[^A-Za-z0-9_-]")
 
@@ -401,7 +401,7 @@ def _write_workspace_file(path: str, content: str, run_id: str | None = None) ->
         return f"error: {e}"
 
 
-# ── Quality gate: check if the orchestrator should stop ────────────────
+# -- Quality gate: check if the orchestrator should stop ----------------
 
 def _check_quality_gate(
     result: OrchestratorResult,
@@ -425,26 +425,26 @@ def _check_quality_gate(
     has_verdict = bool(result.verdict)
 
     if has_prd and has_verdict:
-        # Stall: PRD unchanged for too long → present what we have.
+        # Stall: PRD unchanged for too long  -> present what we have.
         if stall_count >= config.ORCHESTRATOR_STALL_TURNS:
-            return True, f"PRD unchanged for {stall_count} turns — quality gate satisfied"
+            return True, f"PRD unchanged for {stall_count} turns  -- quality gate satisfied"
 
-        # Near budget → present.
+        # Near budget  -> present.
         if turns_used >= max_turns:
             return True, f"reached max turns ({max_turns}) with PRD + verdict"
 
-        # Clean audit → present.
+        # Clean audit  -> present.
         if result.security_audit and result.security_audit.get("ok"):
-            return True, "security audit passed — PRD is ready for approval"
+            return True, "security audit passed  -- PRD is ready for approval"
 
-    # Out of turns with no PRD → stop anyway.
+    # Out of turns with no PRD  -> stop anyway.
     if turns_used >= max_turns:
         return True, f"reached max turns ({max_turns}) without completing PRD"
 
     return False, ""
 
 
-# ── Orchestrator tool implementations (called by the orchestrator agent) ─
+# -- Orchestrator tool implementations (called by the orchestrator agent) -
 
 class OrchestratorTools:
     """Function tool implementations for the orchestrator agent.
@@ -473,7 +473,7 @@ class OrchestratorTools:
         """Load past lessons and techniques from VentureBot's memory store.
 
         Call this FIRST, before any other tool. The orchestrator's system prompt
-        says to apply ALL returned lessons — they exist because past runs made
+        says to apply ALL returned lessons  -- they exist because past runs made
         mistakes that must not be repeated.
         """
         try:
@@ -527,7 +527,7 @@ class OrchestratorTools:
         return brief
 
     async def advocate(self) -> str:
-        """Argue FOR the idea. The Advocate is BLIND — it has no web search."""
+        """Argue FOR the idea. The Advocate is BLIND  -- it has no web search."""
         store.update_task("t2", "in_progress")
         emit("phase_started", {"phase": "advocate", "agent": "Advocate", "run_id": self.run_id})
 
@@ -562,7 +562,7 @@ class OrchestratorTools:
         return rebuttal
 
     async def creative(self) -> str:
-        """Find niches, pivots, unfair advantages — divergent, high-temperature."""
+        """Find niches, pivots, unfair advantages  -- divergent, high-temperature."""
         emit("phase_started", {"phase": "creative", "agent": "Creative", "run_id": self.run_id})
 
         brief = self.result.research_brief or "(no brief)"
@@ -706,7 +706,7 @@ class OrchestratorTools:
 
         The full debate state is persisted to disk and this run ENDS cleanly;
         answering (any time later, even after a server restart) starts a
-        continuation run that resumes from the snapshot. No timeouts — the
+        continuation run that resumes from the snapshot. No timeouts  -- the
         human may be at lunch or come back next week.
         """
         self.result.clarification_question = question
@@ -722,7 +722,7 @@ class OrchestratorTools:
         raise ClarifyPaused(question)
 
 
-# ── Verdict + audit parsers ────────────────────────────────────────────
+# -- Verdict + audit parsers --------------------------------------------
 
 def _parse_verdict(text: str) -> dict:
     """Parse the Judge's raw output into a verdict dict."""
@@ -765,7 +765,7 @@ def _parse_audit(text: str) -> dict:
     return {}
 
 
-# ── Main orchestrator run ──────────────────────────────────────────────
+# -- Main orchestrator run ----------------------------------------------
 
 async def run_orchestrator(
     idea: str,
@@ -787,7 +787,7 @@ async def run_orchestrator(
     state so it can continue from where it left off.
 
     resume_comment is the human's new input on a resumed run ("what changed",
-    new direction, feedback) — injected into the first turn prompt and stored
+    new direction, feedback)  -- injected into the first turn prompt and stored
     with the run history.
 
     paused_state + clarify_answer resume a durably-paused clarification: all
@@ -828,10 +828,10 @@ async def run_orchestrator(
     try:
         store_obj = get_store()
         if paused_state:
-            # Continuation of a paused debate — idea row already exists.
+            # Continuation of a paused debate  -- idea row already exists.
             pass
         elif resume_idea_id:
-            # Resume existing idea — load previous context
+            # Resume existing idea  -- load previous context
             result.idea_id = resume_idea_id
             prev = store_obj.get_idea(resume_idea_id)
             if prev:
@@ -846,11 +846,11 @@ async def run_orchestrator(
                         pass
                 store_obj.update_idea_content(resume_idea_id, workspace_path=f"runs/{run_id}/")
         else:
-            # New idea — keep the FULL pitch text, not just the truncated title.
+            # New idea  -- keep the FULL pitch text, not just the truncated title.
             result.idea_id = store_obj.create_idea(idea[:200], description=idea)
             store_obj.update_idea_content(result.idea_id, workspace_path=f"runs/{run_id}/")
         # Open the per-run snapshot row (P1.1): every debate gets its own
-        # immutable history entry — past debates are never overwritten.
+        # immutable history entry  -- past debates are never overwritten.
         if result.idea_id:
             result.resume_comment = (resume_comment or "").strip() or None
             result.idea_run_id = store_obj.start_idea_run(result.idea_id, comment=result.resume_comment)
@@ -877,7 +877,7 @@ async def run_orchestrator(
     # Store tools_obj on the result so the dashboard can reach clarify
     result._tools = tools_obj  # type: ignore[attr-defined]
 
-    # Build tools list — ADK function tools
+    # Build tools list  -- ADK function tools
     from google.adk.tools import FunctionTool
 
     orchestrator_agent = LlmAgent(
@@ -899,7 +899,7 @@ async def run_orchestrator(
             FunctionTool(tools_obj.save_artifact),
             FunctionTool(tools_obj.clarify),
         ],
-        description="VentureBot Orchestrator — researches, debates, and produces PRDs autonomously.",
+        description="VentureBot Orchestrator  -- researches, debates, and produces PRDs autonomously.",
     )
 
     # Drive loop
@@ -912,7 +912,7 @@ async def run_orchestrator(
     store.log("System", "core", f"Orchestrator starting: '{idea[:120]}'")
     emit("run_started", {"idea": idea, "run_id": run_id})
     if result.resume_comment:
-        # The human's new input is part of the debate record — show it in the
+        # The human's new input is part of the debate record  -- show it in the
         # live feed AND persist it as the first transcript entry.
         result.events.append({"agent": "Human", "text": result.resume_comment})
         store.log("Human", "user", result.resume_comment[:200])
@@ -927,7 +927,7 @@ async def run_orchestrator(
             should_stop, reason = _check_quality_gate(result, turns_used, stall_count)
             if should_stop:
                 store.log("System", "core", f"Quality gate: {reason}")
-                # Surface the stopping decision as a first-class UI event —
+                # Surface the stopping decision as a first-class UI event  -- 
                 # the orchestrator is a debate participant too.
                 emit("orchestrator_decision", {
                     "decision": "stop",
@@ -1010,13 +1010,13 @@ async def run_orchestrator(
                 if v == "PROCEED" or (avg is not None and avg >= 7):
                     # PRD is ready, but we need human approval
                     result.status = "needs_approval"
-                    store.log("System", "core", f"Orchestrator complete: PRD ready (avg {avg}) — awaiting human approval")
+                    store.log("System", "core", f"Orchestrator complete: PRD ready (avg {avg})  -- awaiting human approval")
                 else:
                     result.status = "needs_verdict"
-                    store.log("System", "core", f"Orchestrator complete: verdict {v} (avg {avg}) — awaiting human decision")
+                    store.log("System", "core", f"Orchestrator complete: verdict {v} (avg {avg})  -- awaiting human decision")
             else:
                 result.status = "needs_verdict"
-                store.log("System", "core", "Orchestrator complete: incomplete — awaiting human decision")
+                store.log("System", "core", "Orchestrator complete: incomplete  -- awaiting human decision")
 
         emit("run_finished", {
             "status": result.status,
@@ -1040,7 +1040,7 @@ async def run_orchestrator(
         result.status = "needs_clarification"
         store.set_status("waiting_user")
         store.log("System", "core",
-                  f"Debate paused — waiting for your answer (no time limit). Run {run_id}")
+                  f"Debate paused  -- waiting for your answer (no time limit). Run {run_id}")
         emit("run_paused", {
             "run_id": run_id,
             "question": result.clarification_question,
@@ -1064,12 +1064,12 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
     # State summary
     parts.append(f"## Turn {turns_used + 1} of {max_turns}")
 
-    # The idea itself — ALWAYS visible, every turn. Session history can be
+    # The idea itself  -- ALWAYS visible, every turn. Session history can be
     # truncated/lost (e.g. after a clarify timeout the loop keeps going), and
     # without it the orchestrator hallucinates an idea from memory lessons.
     parts.append(f"\n## THE IDEA TO EVALUATE:\n{result.idea}")
 
-    # The human's answer to the question that paused this debate — injected
+    # The human's answer to the question that paused this debate  -- injected
     # into the FIRST turn after resume only.
     if turns_used == 0 and result.clarification_answer:
         parts.append(
@@ -1094,7 +1094,7 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
             parts.append(f"\n### Previous PRD (first 500 chars):\n{result.prd[:500]}...")
         parts.append("\nYou can continue refining this work, or start fresh if the user provides new direction. Call research() again if you need updated information.")
 
-    # The human's new input on a resumed run — highest-priority guidance.
+    # The human's new input on a resumed run  -- highest-priority guidance.
     if turns_used == 0 and result.resume_comment:
         parts.append(f"\n## HUMAN COMMENT (new direction from the user):\n{result.resume_comment}")
         parts.append("Address this comment first. It reflects what changed since the last run (new evidence, new thoughts, market shifts, or feedback on the previous verdict/PRD).")
@@ -1129,7 +1129,7 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
     if result.clarification_question and not result.clarification_answer:
         parts.append(f"\n⚠️  Pending clarification: {result.clarification_question}")
 
-    parts.append("\nTake the NEXT step in the engineering process. If you have a PRD and audit, and they are clean — present to the human. If the PRD needs revision, call write_prd() with specific instructions. If you need information, call research() or clarify().")
+    parts.append("\nTake the NEXT step in the engineering process. If you have a PRD and audit, and they are clean  -- present to the human. If the PRD needs revision, call write_prd() with specific instructions. If you need information, call research() or clarify().")
 
     return "\n".join(parts)
 

@@ -1,4 +1,4 @@
-"""A5 (G5–G7): server-side session store — hashed tokens, rotation, revocation.
+"""A5 (G5-G7): server-side session store -- hashed tokens, rotation, revocation.
 
 A DB dump must not yield usable session cookies; logout must invalidate the
 token server-side; every login must mint a fresh token (fixation defense).

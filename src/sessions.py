@@ -1,14 +1,14 @@
-"""Server-side session store (A5 / G5–G7 of the multiuser security review).
+"""Server-side session store (A5 / G5-G7 of the multiuser security review).
 
 Replaces the stateless signed cookie:
   - tokens are random 256-bit values; ONLY sha256 hashes are persisted
     (a DB dump cannot be replayed as a valid cookie);
-  - every login creates a FRESH session (rotation → session-fixation defense);
+  - every login creates a FRESH session (rotation  -> session-fixation defense);
   - logout revokes the row; sliding 30-day expiry;
   - expired rows are purged lazily + by the scheduler.
 
 Storage is SQLite under DATA_DIR (same lifecycle as the rest of the app).
-Multi-user note: user_id here is the Google sub/email — Phase B keys ideas
+Multi-user note: user_id here is the Google sub/email  -- Phase B keys ideas
 and debates off the same identity.
 """
 from __future__ import annotations
@@ -54,7 +54,7 @@ class SessionStore:
             cols = [r[1] for r in self._conn.execute("PRAGMA table_info(sessions)")]
             if "user_id" not in cols:
                 self._conn.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT NOT NULL DEFAULT ''")
-            # Users (Phase B): user_id is the stable Google `sub` — the
+            # Users (Phase B): user_id is the stable Google `sub`  -- the
             # tenancy primary key every multi-user route will check against.
             self._conn.execute(
                 """CREATE TABLE IF NOT EXISTS users (

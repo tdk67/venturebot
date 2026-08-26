@@ -1,4 +1,4 @@
-"""Steering inbox — user control without disrupting the running loop.
+"""Steering inbox  -- user control without disrupting the running loop.
 
 The loop runs autonomously between checkpoints. At each checkpoint it drains
 this inbox and applies what arrived:
@@ -7,7 +7,7 @@ this inbox and applies what arrived:
   - research URLs: user-provided links, fetched and fed to the Researcher
   - new ideas: queued for future runs (never touched mid-loop)
 
-User messages NEVER interrupt an in-flight agent turn — they wait until the
+User messages NEVER interrupt an in-flight agent turn  -- they wait until the
 next checkpoint, so the loop is never corrupted mid-generation.
 """
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """A3 (G4/W7): log redaction at source.
 
 Debate content (idea text, transcripts, PRD drafts) must never reach
-stdout/journald — the process log gets metadata only. state.json keeps the
+stdout/journald  -- the process log gets metadata only. state.json keeps the
 full message for the dashboard feed.
 """
 import contextlib

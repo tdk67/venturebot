@@ -1,4 +1,4 @@
-"""Stub debate server — fake in-memory debate engine for UI/UX tuning.
+"""Stub debate server  -- fake in-memory debate engine for UI/UX tuning.
 
 Run instead of the real ADK debate engine when you want to iterate on the UI
 without spending a single LLM token:
@@ -30,13 +30,13 @@ from .dashboard import _broadcast, _inbox, app  # noqa: F401
 from .agents.pipeline import DebateResult
 
 
-# ── Scripted debate ─────────────────────────────────────────────────────
+# -- Scripted debate -----------------------------------------------------
 _PHASES = [
-    ("research", "Researcher", "🔍 Researching the idea across the web…"),
-    ("advocate", "Advocate", "⚖️ Building the strongest case FOR the idea…"),
-    ("critic", "Critic", "🛡️ Red-teaming every claim with counter-evidence…"),
-    ("creative", "Creative", "💡 Hunting the niche, pivots and unfair advantages…"),
-    ("judge", "Judge", "🧑‍⚖️ Weighing both sides into a structured verdict…"),
+    ("research", "Researcher", "🔍 Researching the idea across the web..."),
+    ("advocate", "Advocate", "⚖️ Building the strongest case FOR the idea..."),
+    ("critic", "Critic", "🛡️ Red-teaming every claim with counter-evidence..."),
+    ("creative", "Creative", "💡 Hunting the niche, pivots and unfair advantages..."),
+    ("judge", "Judge", "🧑‍⚖️ Weighing both sides into a structured verdict..."),
 ]
 
 # The stub verdict intentionally exercises the PARK gate so the UI's rebut
@@ -79,7 +79,7 @@ async def _stub_debate(idea: str) -> DebateResult:
         await _broadcast("phase_done", {"phase": phase})
 
     result.research_brief = (
-        f"# Research Brief — {idea}\n\n"
+        f"# Research Brief  -- {idea}\n\n"
         "- Prior art: CompetitorX (competitorx.com), CompetitorY (competitory.io)\n"
         "- Market signal: active community, clear but served demand\n"
     )
@@ -105,7 +105,7 @@ async def _stub_debate(idea: str) -> DebateResult:
     return result
 
 
-# ── Patch the debate entrypoint ─────────────────────────────────────────
+# -- Patch the debate entrypoint -----------------------------------------
 # Replace the real /api/run-phase1 handler with the stub. FastAPI stores the
 # route at import; we re-register a stub route on the same path (later
 # registration wins for matching). Simpler + robust: monkeypatch the underlying
@@ -120,7 +120,7 @@ async def _stub_loop(idea: str):
 _dash._run_phase1_loop = _stub_loop  # type: ignore[attr-defined]
 
 
-# ── App entrypoint (for `uvicorn src.stub_server:app`) ─────────────────
+# -- App entrypoint (for `uvicorn src.stub_server:app`) -----------------
 # `app` is the real dashboard app (already imported above). We only need to
 # ensure the stub is active; the patch above does that at import time.
 __all__ = ["app"]

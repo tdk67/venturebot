@@ -1,4 +1,4 @@
-"""Durable clarify pause/resume — state must survive restarts, no timeouts."""
+"""Durable clarify pause/resume  -- state must survive restarts, no timeouts."""
 import sys
 from pathlib import Path
 

@@ -1,11 +1,11 @@
-"""Generated-code guard — S3 (output guard) + S10 (deterministic scanner).
+"""Generated-code guard  -- S3 (output guard) + S10 (deterministic scanner).
 
 Statistically inspect LLM-generated code BEFORE it is written to disk or
 executed. Blocks dangerous constructs and hardcoded secrets.
 
 Two layers:
-  1. `scan_code()`  — deterministic, AST + regex, no LLM. Runs on EVERY artifact.
-  2. (S10) Security Auditor agent — semantic review, separate module.
+  1. `scan_code()`   -- deterministic, AST + regex, no LLM. Runs on EVERY artifact.
+  2. (S10) Security Auditor agent  -- semantic review, separate module.
 
 Returns a verdict dict; `requires_approval` is True when anything is flagged.
 """
@@ -42,7 +42,7 @@ class Verdict:
 
 
 # Allowlist for generated implementation code. Stdlib-only, and deliberately
-# narrow — anything with I/O, subprocess, or networking is NOT allowed.
+# narrow  -- anything with I/O, subprocess, or networking is NOT allowed.
 IMPLEMENTATION_ALLOWLIST = {
     # builtins available without import
     "abs", "all", "any", "bin", "bool", "bytes", "chr", "complex", "dict",

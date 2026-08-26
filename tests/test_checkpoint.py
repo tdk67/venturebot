@@ -1,4 +1,4 @@
-"""Checkpoint persistence tests (IDEA_HISTORY_ADDENDUM T1). Non-live — no LLM."""
+"""Checkpoint persistence tests (IDEA_HISTORY_ADDENDUM T1). Non-live  -- no LLM."""
 import json
 import sys
 from pathlib import Path

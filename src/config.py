@@ -1,11 +1,12 @@
 """VentureBot configuration.
 
-All tunables read from environment (via .env loaded by dotenv). No hardcoded
-secrets. The `budget` module exposes live state; static values live here.
+Loads non-secret defaults from config.json (committed to git), then overrides
+with environment variables. Secrets (GOOGLE_API_KEY, GOOGLE_CLIENT_SECRET,
+OPENROUTER_API_KEY) come ONLY from environment  -- they are never in config.json.
 
-Provider credential resolution:
-  - GOOGLE_API_KEY  -> Google AI Studio (Phase 1 ADK Gemini)
-  - OPENROUTER_API_KEY -> OpenRouter (Phase 2); falls back to ~/.pi/agent/auth.json
+Usage:
+  Every setting is available as config.SETTING_NAME.
+  All env overrides use VENTUREBOT_<UPPER_CASE> naming (e.g. VENTUREBOT_MAX_ITERATIONS=10).
 """
 from __future__ import annotations
 
@@ -13,91 +14,119 @@ import json
 import os
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
 
-# ── Paths ──────────────────────────────────────────────────────────────
-WORKSPACE_DIR = Path(os.environ.get("VENTUREBOT_WORKSPACE", BASE_DIR / "workspace"))
-STATE_FILE = Path(os.environ.get("VENTUREBOT_STATE", BASE_DIR / "state.json"))
-DATA_DIR = Path(os.environ.get("VENTUREBOT_DATA", BASE_DIR / "data"))
-DB_PATH = Path(os.environ.get("VENTUREBOT_DB", DATA_DIR / "venturebot.db"))
-SANDBOX_DIR = Path(os.environ.get("VENTUREBOT_SANDBOX", BASE_DIR / "sandbox"))
-CHECKPOINT_DIR = Path(os.environ.get("VENTUREBOT_CHECKPOINT_DIR", DATA_DIR / "checkpoints"))
-ARCHIVE_DIR = Path(os.environ.get("VENTUREBOT_ARCHIVE_DIR", DATA_DIR / "archives"))
+# Load .env into os.environ for local dev (Cloud Run sets real env vars)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(BASE_DIR / ".env")
+except ImportError:
+    pass  # dotenv not installed in production  -- env vars come from Cloud Run
 
-# ── Loop budget ────────────────────────────────────────────────────────
-MAX_ITERATIONS = int(os.environ.get("VENTUREBOT_MAX_ITERATIONS", "5"))
-LLM_TIMEOUT = int(os.environ.get("VENTUREBOT_LLM_TIMEOUT", "120"))
-MAX_TOKENS = int(os.environ.get("VENTUREBOT_MAX_TOKENS", "4096"))
-RUN_DEADLINE_SECONDS = int(os.environ.get("VENTUREBOT_RUN_DEADLINE", "900"))  # 15 min
+# -- Load non-secret defaults from committed config.json -----------------
 
-# ── Orchestrator loop budget ────────────────────────────────────────────
-# Maximum turns the orchestrator may take before it must stop and present results.
-ORCHESTRATOR_MAX_TURNS = int(os.environ.get("VENTUREBOT_ORCHESTRATOR_MAX_TURNS", "10"))
-# Maximum sub-agent calls per orchestrator turn.
-ORCHESTRATOR_MAX_TOOL_CALLS = int(os.environ.get("VENTUREBOT_ORCHESTRATOR_MAX_TOOL_CALLS", "50"))
-# Quality gate: if the orchestrator has a PRD + verdict and hasn't made progress
-# for this many consecutive turns, it stops.
-ORCHESTRATOR_STALL_TURNS = int(os.environ.get("VENTUREBOT_ORCHESTRATOR_STALL_TURNS", "3"))
+def _load_config_json() -> dict:
+    path = BASE_DIR / "config.json"
+    if path.is_file():
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {}
 
-# ── Budget (enforced in budget.py; configurable + human-raisable) ──────
-DAILY_BUDGET_LIMIT_USD = float(
-    os.environ.get("VENTUREBOT_DAILY_BUDGET_LIMIT", "20.00")
-)
+_cfg = _load_config_json()
 
-# ── Models: Phase 1 (Gemini / ADK) ─────────────────────────────────────
-MODEL_RESEARCHER = os.environ.get("VENTUREBOT_MODEL_RESEARCHER", "gemini-3.7-flash")
-MODEL_ADVOCATE = os.environ.get("VENTUREBOT_MODEL_ADVOCATE", "gemini-3.7-flash")
-MODEL_CRITIC = os.environ.get("VENTUREBOT_MODEL_CRITIC", "gemini-3.1-pro-preview")
-MODEL_JUDGE = os.environ.get("VENTUREBOT_MODEL_JUDGE", "gemini-3.1-pro-preview")
-MODEL_PRD_WRITER = os.environ.get("VENTUREBOT_MODEL_PRD_WRITER", "gemini-3.1-pro-preview")
-MODEL_AUDITOR = os.environ.get("VENTUREBOT_MODEL_AUDITOR", "gemini-3.1-pro-preview")
-MODEL_CREATIVE = os.environ.get("VENTUREBOT_MODEL_CREATIVE", "gemini-3.7-flash")
+# Strip comments (keys starting with //)
+_cfg = {k: v for k, v in _cfg.items() if not k.startswith("//")}
 
-# ── Model: Orchestrator ─────────────────────────────────────────────────
-MODEL_ORCHESTRATOR = os.environ.get("VENTUREBOT_MODEL_ORCHESTRATOR", "gemini-3.1-pro-preview")
+def _env(name: str, default: str) -> str:
+    return os.environ.get(name, default).strip()
 
-# ── Temperatures (higher = more exploratory) ───────────────────────────
-# The Creative head runs hot on purpose: it is the divergent thinker that the
-# precise Advocate/Critic/Judge cannot be. Its output is always re-checked by
-# the evidence-bound Critic before it can influence the verdict.
-CREATIVE_TEMPERATURE = float(os.environ.get("VENTUREBOT_CREATIVE_TEMPERATURE", "1.0"))
+def _env_int(name: str, default: int) -> int:
+    return int(os.environ.get(name, str(default)))
 
-# ── Models: Phase 2 (OpenRouter) ───────────────────────────────────────
-MODEL_PO = os.environ.get("VENTUREBOT_MODEL_PO", "deepseek/deepseek-v4-pro")
-MODEL_TESTWRITER = os.environ.get(
-    "VENTUREBOT_MODEL_TESTWRITER", "deepseek/deepseek-chat-v3-0324"
-)
-MODEL_CODER = os.environ.get("VENTUREBOT_MODEL_CODER", "deepseek/deepseek-chat-v3-0324")
-MODEL_QA = os.environ.get("VENTUREBOT_MODEL_QA", "deepseek/deepseek-v4-pro")
+def _env_float(name: str, default: float) -> float:
+    return float(os.environ.get(name, str(default)))
 
-OPENROUTER_BASE = os.environ.get("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+def _env_bool(name: str, default: bool) -> bool:
+    val = os.environ.get(name, str(default)).strip().lower()
+    return val in ("1", "true", "yes")
 
-# ── Auth ───────────────────────────────────────────────────────────────
-GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
-# Server-side OAuth secret (A6/G6): NEVER shipped to the browser. Required
-# for the authorization-code flow exchange; without it login returns 503.
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
-ALLOWED_EMAILS = [
-    e.strip().lower()
-    for e in os.environ.get("VENTUREBOT_ALLOWED_EMAILS", "").split(",")
-    if e.strip()
-]
-# Operator kill-switch: freeze NEW registrations while existing users keep
-# logging in (replaces the hard email allowlist as the primary gate).
-SIGNUP_CLOSED = os.environ.get("VENTUREBOT_SIGNUP_CLOSED", "false").lower() in ("1", "true", "yes")
-COOKIE_SECURE = os.environ.get("VENTUREBOT_COOKIE_SECURE", "false").lower() in ("1", "true", "yes")
-# Public base URL (behind nginx). Used to build the OAuth redirect URI.
-# Falls back to deriving from X-Forwarded-* / Host headers when unset.
-PUBLIC_BASE_URL = os.environ.get("VENTUREBOT_PUBLIC_BASE_URL", "").strip().rstrip("/")
+def _env_list(name: str, default: str) -> list[str]:
+    raw = os.environ.get(name, default)
+    return [e.strip().lower() for e in raw.split(",") if e.strip()]
 
-# Prototype phase: auth disabled (single-user, no login). Set to 0 to re-enable
-# Google SSO when the multi-user feature lands. Default ON for the prototype.
-NO_AUTH = os.environ.get("VENTUREBOT_NO_AUTH", "1").strip().lower() in ("1", "true", "yes", "")
+# -- Paths --------------------------------------------------------------
 
-# ── Credential resolution ──────────────────────────────────────────────
+WORKSPACE_DIR = Path(_env("VENTUREBOT_WORKSPACE", _cfg.get("workspace_dir", "workspace")))
+STATE_FILE    = Path(_env("VENTUREBOT_STATE", _cfg.get("state_file", "state.json")))
+DATA_DIR      = Path(_env("VENTUREBOT_DATA", _cfg.get("data_dir", "data")))
+DB_PATH       = Path(_env("VENTUREBOT_DB", str(DATA_DIR / "venturebot.db")))
+SANDBOX_DIR   = Path(_env("VENTUREBOT_SANDBOX", _cfg.get("sandbox_dir", str(BASE_DIR / "sandbox"))))
+CHECKPOINT_DIR = Path(_env("VENTUREBOT_CHECKPOINT_DIR", str(DATA_DIR / "checkpoints")))
+ARCHIVE_DIR    = Path(_env("VENTUREBOT_ARCHIVE_DIR", str(DATA_DIR / "archives")))
+
+# -- Loop budget --------------------------------------------------------
+
+MAX_ITERATIONS       = _env_int("VENTUREBOT_MAX_ITERATIONS", _cfg.get("max_iterations", 5))
+LLM_TIMEOUT          = _env_int("VENTUREBOT_LLM_TIMEOUT", _cfg.get("llm_timeout", 120))
+MAX_TOKENS           = _env_int("VENTUREBOT_MAX_TOKENS", _cfg.get("max_tokens", 4096))
+RUN_DEADLINE_SECONDS = _env_int("VENTUREBOT_RUN_DEADLINE", _cfg.get("run_deadline_seconds", 900))
+
+# -- Orchestrator loop budget --------------------------------------------
+
+ORCHESTRATOR_MAX_TURNS      = _env_int("VENTUREBOT_ORCHESTRATOR_MAX_TURNS", _cfg.get("orchestrator_max_turns", 10))
+ORCHESTRATOR_MAX_TOOL_CALLS = _env_int("VENTUREBOT_ORCHESTRATOR_MAX_TOOL_CALLS", _cfg.get("orchestrator_max_tool_calls", 50))
+ORCHESTRATOR_STALL_TURNS    = _env_int("VENTUREBOT_ORCHESTRATOR_STALL_TURNS", _cfg.get("orchestrator_stall_turns", 3))
+
+# -- Budget --------------------------------------------------------------
+
+DAILY_BUDGET_LIMIT_USD = _env_float("VENTUREBOT_DAILY_BUDGET_LIMIT", _cfg.get("daily_budget_limit_usd", 20.0))
+
+# -- Models: Phase 1 (Gemini / ADK) -------------------------------------
+
+MODEL_RESEARCHER  = _env("VENTUREBOT_MODEL_RESEARCHER", _cfg.get("model_researcher", "gemini-3.7-flash"))
+MODEL_ADVOCATE    = _env("VENTUREBOT_MODEL_ADVOCATE", _cfg.get("model_advocate", "gemini-3.7-flash"))
+MODEL_CRITIC      = _env("VENTUREBOT_MODEL_CRITIC", _cfg.get("model_critic", "gemini-3.1-pro-preview"))
+MODEL_JUDGE       = _env("VENTUREBOT_MODEL_JUDGE", _cfg.get("model_judge", "gemini-3.1-pro-preview"))
+MODEL_PRD_WRITER  = _env("VENTUREBOT_MODEL_PRD_WRITER", _cfg.get("model_prd_writer", "gemini-3.1-pro-preview"))
+MODEL_AUDITOR     = _env("VENTUREBOT_MODEL_AUDITOR", _cfg.get("model_auditor", "gemini-3.1-pro-preview"))
+MODEL_CREATIVE    = _env("VENTUREBOT_MODEL_CREATIVE", _cfg.get("model_creative", "gemini-3.7-flash"))
+
+# -- Model: Orchestrator -------------------------------------------------
+
+MODEL_ORCHESTRATOR = _env("VENTUREBOT_MODEL_ORCHESTRATOR", _cfg.get("model_orchestrator", "gemini-3.1-pro-preview"))
+
+# -- Temperatures -------------------------------------------------------
+
+CREATIVE_TEMPERATURE = _env_float("VENTUREBOT_CREATIVE_TEMPERATURE", _cfg.get("creative_temperature", 1.0))
+
+# -- Models: Phase 2 (OpenRouter) ---------------------------------------
+
+MODEL_PO         = _env("VENTUREBOT_MODEL_PO", _cfg.get("model_po", "deepseek/deepseek-v4-pro"))
+MODEL_TESTWRITER = _env("VENTUREBOT_MODEL_TESTWRITER", _cfg.get("model_testwriter", "deepseek/deepseek-chat-v3-0324"))
+MODEL_CODER      = _env("VENTUREBOT_MODEL_CODER", _cfg.get("model_coder", "deepseek/deepseek-chat-v3-0324"))
+MODEL_QA         = _env("VENTUREBOT_MODEL_QA", _cfg.get("model_qa", "deepseek/deepseek-v4-pro"))
+OPENROUTER_BASE  = _env("OPENROUTER_BASE_URL", _cfg.get("openrouter_base", "https://openrouter.ai/api/v1"))
+
+# -- Auth ---------------------------------------------------------------
+# Secrets  -- these come ONLY from the environment, never from config.json:
+
+GOOGLE_CLIENT_ID     = _env("GOOGLE_CLIENT_ID", _cfg.get("google_client_id", ""))
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()  # secret  -- no fallback to config.json
+ALLOWED_EMAILS       = _env_list("VENTUREBOT_ALLOWED_EMAILS", _cfg.get("allowed_emails", ""))
+SIGNUP_CLOSED        = _env_bool("VENTUREBOT_SIGNUP_CLOSED", _cfg.get("signup_closed", False))
+COOKIE_SECURE        = _env_bool("VENTUREBOT_COOKIE_SECURE", _cfg.get("cookie_secure", False))
+PUBLIC_BASE_URL      = _env("VENTUREBOT_PUBLIC_BASE_URL", _cfg.get("public_base_url", ""))
+NO_AUTH              = _env_bool("VENTUREBOT_NO_AUTH", _cfg.get("no_auth", True))
+
+# -- Scheduler -----------------------------------------------------------
+
+ENABLE_SCHEDULER   = _env_bool("VENTUREBOT_ENABLE_SCHEDULER", _cfg.get("enable_scheduler", False))
+DREAM_REVIEW_HOUR  = _env_int("VENTUREBOT_DREAM_REVIEW_HOUR", _cfg.get("dream_review_hour", 3))
+
+# -- Credential resolution (secrets  -- environment ONLY) -----------------
+
 def google_api_key() -> str:
     key = os.environ.get("GOOGLE_API_KEY", "").strip()
     if not key:

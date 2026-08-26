@@ -1,8 +1,8 @@
-"""Lightweight keyword-based tag extraction (IDEA_HISTORY_ADDENDUM §tags).
+"""Lightweight keyword-based tag extraction (IDEA_HISTORY_ADDENDUM Sec. tags).
 
 Tags are derived from idea text (title + research brief + debate transcript),
 not user-entered, so the idea timeline can be filtered by category without
-any extra UI to maintain. The rules are deliberately simple and auditable —
+any extra UI to maintain. The rules are deliberately simple and auditable  -- 
 this is a heuristic, not an ontology.
 """
 from __future__ import annotations

@@ -16,7 +16,7 @@ class Competitor(BaseModel):
     pricing: str = Field(default="", description="Pricing model (free, freemium, $X/mo, etc.)")
     strengths: str = Field(default="", description="What they do well")
     weaknesses: str = Field(default="", description="Weaknesses or complaints")
-    gap: str = Field(description="Gap this leaves unfilled — opportunity for us")
+    gap: str = Field(description="Gap this leaves unfilled  -- opportunity for us")
 
 
 class MarketSignal(BaseModel):
@@ -39,9 +39,9 @@ class ResearchBrief(BaseModel):
     tam_estimate: str = Field(default="", description="Total Addressable Market estimate with source URL")
     sam_estimate: str = Field(default="", description="Serviceable Addressable Market estimate")
     som_estimate: str = Field(default="", description="Serviceable Obtainable Market estimate")
-    demand_direction: str = Field(default="", description="rising | falling | stable — with evidence")
+    demand_direction: str = Field(default="", description="rising | falling | stable  -- with evidence")
     funding_activity: list[str] = Field(default_factory=list, description="Recent funding rounds in this space (with URLs if available)")
-    review_insights: list[str] = Field(default_factory=list, description="G2/Capterra/user review insights — common praise and complaints")
+    review_insights: list[str] = Field(default_factory=list, description="G2/Capterra/user review insights  -- common praise and complaints")
     technical_landscape: TechnicalLandscape = Field(default_factory=TechnicalLandscape, description="Required APIs, libraries, platforms")
     resource_links: list[str] = Field(default_factory=list, description="All key URLs found during research")
     open_questions: list[str] = Field(default_factory=list)

@@ -1,12 +1,12 @@
-"""Dashboard authentication — S6 + A5 hardening (multiuser security review).
+"""Dashboard authentication  -- S6 + A5 hardening (multiuser security review).
 
 Google Identity Services verifies the JWT with google-auth; access is gated by
-the ALLOWED_EMAILS allowlist (prototype) — replaced by SIGNUP_CLOSED in the
+the ALLOWED_EMAILS allowlist (prototype)  -- replaced by SIGNUP_CLOSED in the
 multi-user phase.
 
 Sessions are SERVER-SIDE (src/sessions.py): the cookie carries an opaque random
 token, only its sha256 hash is stored, every login rotates the token, and
-logout revokes the row. No stateless signed cookies — those cannot be revoked.
+logout revokes the row. No stateless signed cookies  -- those cannot be revoked.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from .sessions import session_store
 def create_session_token(email: str, name: str, picture: str, user_id: str = "") -> str:
     """Issue a fresh server-side session; returns the raw cookie token.
 
-    Rotation (G7): every call creates a NEW session — a token presented at
+    Rotation (G7): every call creates a NEW session  -- a token presented at
     login is never reused, which prevents session fixation.
     """
     return session_store.create(email, name=name, picture=picture, user_id=user_id)

@@ -1,4 +1,4 @@
-# VentureBot — Terraform Quick-Start
+# VentureBot  -- Terraform Quick-Start
 
 ## One-time setup
 
@@ -14,7 +14,7 @@ gcloud config set project venturebot-506408
 # 3. Deploy
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — fill in your secrets, client ID, etc.
+# Edit terraform.tfvars  -- fill in your secrets, client ID, etc.
 
 terraform init
 terraform plan    # review what will be created
@@ -31,7 +31,7 @@ terraform apply   # deploy everything
 | Artifact Registry | `google_artifact_registry_repository` | Docker repo, europe-west3 |
 | 2 secrets | `google_secret_manager_secret` | GOOGLE_API_KEY, GOOGLE_CLIENT_SECRET |
 | GCS bucket | `google_storage_bucket` | Data snapshots |
-| WIF pool + provider | `google_iam_workload_identity_pool*` | GitHub Actions → GCP |
+| WIF pool + provider | `google_iam_workload_identity_pool*` | GitHub Actions  -> GCP |
 | Cloud Run service | `google_cloud_run_v2_service` | venturebot, max-instances=1 |
 
 ## Daily use

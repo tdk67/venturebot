@@ -1,11 +1,11 @@
-"""In-process event bus — decouples pipeline progress from the SSE broadcaster.
+"""In-process event bus  -- decouples pipeline progress from the SSE broadcaster.
 
 The dashboard subscribes a coroutine callback; the pipeline emits typed events
 (phase_started, phase_done, agent_turn, verdict, etc.) without importing the
 web layer. This is what lets the UI show *live* turn/progress indicators while
 keeping the pipeline testable headless (no callback = events are dropped).
 
-All callbacks are wrapped in try/except — an event-sink failure must never
+All callbacks are wrapped in try/except  -- an event-sink failure must never
 break the debate.
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ def _emit_sync(event: str, payload: dict) -> None:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        # No running loop — run callbacks synchronously on a fresh loop.
+        # No running loop  -- run callbacks synchronously on a fresh loop.
         async def _run():
             for cb in subs:
                 try:

@@ -73,7 +73,7 @@ jobs:
             "--min-instances=0"
             "--memory=1Gi"
             "--allow-unauthenticated"          # app-level auth is enforced by Google login
-            "--set-env-vars=VENTUREBOT_NO_AUTH=0,VENTUREBOT_COOKIE_SECURE=true,GCS_DATA_BUCKET=$BUCKET,VENTUREBOT_PUBLIC_BASE_URL=${{ vars.PUBLIC_BASE_URL }},GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}"
+            "--set-env-vars=VENTUREBOT_NO_AUTH=1,VENTUREBOT_COOKIE_SECURE=true,GCS_DATA_BUCKET=$BUCKET,VENTUREBOT_PUBLIC_BASE_URL=${{ vars.PUBLIC_BASE_URL }},GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}"
             "--set-secrets=GOOGLE_API_KEY=GOOGLE_API_KEY:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest"
           )
           gcloud run deploy "$SERVICE" "${FLAGS[@]}" --quiet

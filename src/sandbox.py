@@ -1,4 +1,4 @@
-"""Sandboxed pytest execution — S4.
+"""Sandboxed pytest execution  -- S4.
 
 Runs generated tests in a hostile-code isolation boundary:
   - unprivileged UID/GID (nobody)
@@ -26,7 +26,7 @@ from . import config
 
 
 class SandboxError(Exception):
-    """Sandbox failed to execute — surface, don't swallow."""
+    """Sandbox failed to execute  -- surface, don't swallow."""
 
 
 def _run_unshare(workspace: Path, timeout: int) -> tuple[bool, str]:
@@ -124,10 +124,10 @@ def run_pytest_sandboxed(workspace: Path | None = None, timeout: int = 60) -> tu
     """Run pytest on the workspace inside the sandbox.
 
     Returns (passed: bool, output: str). Raises SandboxError on setup failure
-    (fail loud — never fall back to running on the host).
+    (fail loud  -- never fall back to running on the host).
 
     Docker (--network=none, read-only, unprivileged, tmpfs /tmp) is the primary
-    path — it is the most robust isolation boundary available on this VPS.
+    path  -- it is the most robust isolation boundary available on this VPS.
     """
     ws = workspace or config.WORKSPACE_DIR
     ws.mkdir(parents=True, exist_ok=True)

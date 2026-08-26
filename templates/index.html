@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VentureBot — Command Center</title>
+<title>VentureBot - Startup Idea Validator</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <script src="/static/vendor/tailwind-3.4.16.min.js"></script>
 <script src="/static/vendor/marked-12.0.2.min.js"></script>
 <script src="/static/vendor/purify-3.2.4.min.js"></script>
@@ -46,13 +47,29 @@
 <div id="app" class="hidden max-w-7xl mx-auto p-8">
   <header class="mb-8 flex justify-between items-center border-b border-slate-800 pb-4">
     <div>
-      <h1 class="text-3xl font-black text-white">VentureBot <span class="text-blue-500">Command Center</span></h1>
+      <div class="flex items-center gap-3 mb-2">
+        <img src="/static/logo.svg" alt="VentureBot" class="h-10" onerror="this.style.display='none'">
+        <div>
+          <h1 class="text-3xl font-black text-white">Venture<span class="text-blue-500">Bot</span></h1>
+        </div>
+      </div>
       <div class="flex items-center gap-3 mt-2">
         <span id="status-badge" class="px-3 py-1 text-xs font-bold rounded-full border bg-slate-600">IDLE</span>
-        <span id="budget-badge" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400">budget: —</span>
-        <button id="usage-toggle" data-action="toggle-usage" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400 hover:text-white">usage: —</button>
+        <span id="budget-badge" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400">budget:  -- </span>
+        <button id="usage-toggle" data-action="toggle-usage" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400 hover:text-white">usage:  -- </button>
         <span id="user-badge" class="text-xs text-slate-500"></span>
         <button id="btn-logout" title="Sign out" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400 hover:text-white">sign out</button>
+      </div>
+      <!-- BYOK settings panel -->
+      <div id="byok-panel" class="hidden mt-3 bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-slate-300 font-bold">Your API key:</span>
+          <input id="byok-input" type="password" placeholder="sk-or-v1-... or AIza..."
+                 class="flex-1 bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500 font-mono">
+          <button id="byok-verify" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold">Verify</button>
+          <button id="byok-clear" class="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white">Clear</button>
+        </div>
+        <div id="byok-status" class="text-slate-400"></div>
       </div>
       <!-- Usage panel (UI_UX_NOTES #6) -->
       <div id="usage-panel" class="hidden mt-3 bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs">
@@ -86,7 +103,7 @@
 
   <!-- Steering inbox (checkpoint-ingested, never interrupts the loop) -->
   <div class="mb-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
-    <label class="block text-sm font-bold text-slate-300 mb-2">Steer the running loop (ingested at next checkpoint — won't disrupt it)</label>
+    <label class="block text-sm font-bold text-slate-300 mb-2">Steer the running loop (ingested at next checkpoint  -- won't disrupt it)</label>
     <div class="flex gap-3">
       <input id="steering-input" type="text" placeholder="e.g. Focus on the EU market; ignore competitor X"
              class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
@@ -97,7 +114,7 @@
 
   <!-- Verdict gate (hidden until verdict) -->
   <div id="verdict-card" class="hidden mb-8 bg-slate-950 p-6 rounded-2xl border border-amber-500/40">
-    <h2 class="text-xl font-bold text-amber-400 mb-3">Verdict — human decision required</h2>
+    <h2 class="text-xl font-bold text-amber-400 mb-3">Verdict  -- human decision required</h2>
     <div id="verdict-scores" class="mb-4 grid grid-cols-3 gap-4"></div>
     <p id="verdict-rationale" class="text-slate-300 text-sm mb-4"></p>
     <div id="verdict-key-risks" class="text-xs text-slate-400 mb-4"></div>
@@ -115,7 +132,7 @@
 
   <!-- PRD approval (hidden until PRD) -->
   <div id="prd-card" class="hidden mb-8 bg-slate-950 p-6 rounded-2xl border border-emerald-500/40">
-    <h2 class="text-xl font-bold text-emerald-400 mb-3">PRD — approve?</h2>
+    <h2 class="text-xl font-bold text-emerald-400 mb-3">PRD  -- approve?</h2>
     <div id="audit-badge" class="mb-3"></div>
     <div id="audit-findings" class="mb-3"></div>
     <pre id="prd-text" class="text-slate-200 text-sm whitespace-pre-wrap bg-slate-900 p-4 rounded-lg max-h-96 overflow-y-auto"></pre>
@@ -173,7 +190,7 @@
           <div id="checkpoint-list" class="space-y-2"></div>
         </div>
         <div id="ideas-list" class="space-y-2"></div>
-        <p id="ideas-empty" class="text-xs text-slate-500 hidden">No past ideas yet — pitch one above and it will appear here.</p>
+        <p id="ideas-empty" class="text-xs text-slate-500 hidden">No past ideas yet  -- pitch one above and it will appear here.</p>
         <div id="ideas-pager" class="flex items-center gap-3 mt-4 text-xs text-slate-400"></div>
       </div>
 
@@ -228,7 +245,7 @@
   </div>
 </div>
 
-  <!-- Idea workspace: FULL-SCREEN view — past debates, replay by participant, resume -->
+  <!-- Idea workspace: FULL-SCREEN view  -- past debates, replay by participant, resume -->
   <div id="idea-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950">
     <div class="sticky top-0 z-10 bg-slate-950/95 border-b border-slate-800 px-6 py-3 flex items-center justify-between">
       <button data-action="close-idea-modal" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold">← All ideas</button>
@@ -250,7 +267,7 @@
       <h3 class="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Debate history</h3>
       <div id="idea-modal-runs" class="space-y-2 mb-5"></div>
 
-      <!-- Replay area: participants as tabs → wide detail pane -->
+      <!-- Replay area: participants as tabs  -> wide detail pane -->
       <div id="idea-modal-replay" class="hidden">
         <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
           <h3 id="idea-modal-replay-title" class="text-base font-bold text-blue-400"></h3>
@@ -269,9 +286,9 @@
 
       <!-- Resume with a new comment -->
       <div class="mt-5 pt-4 border-t border-slate-800 mb-10">
-        <label for="idea-resume-comment" class="text-xs uppercase tracking-wider text-slate-500 font-bold">Continue this idea — what's new?</label>
+        <label for="idea-resume-comment" class="text-xs uppercase tracking-wider text-slate-500 font-bold">Continue this idea  -- what's new?</label>
         <textarea id="idea-resume-comment" rows="2"
-                  placeholder="e.g. A competitor just shut down; also I now think the niche is B2B only — re-run the debate with this in mind…"
+                  placeholder="e.g. A competitor just shut down; also I now think the niche is B2B only  -- re-run the debate with this in mind…"
                   class="mt-2 w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"></textarea>
         <div id="idea-modal-footer" class="flex flex-wrap gap-2 mt-2"></div>
       </div>
@@ -279,5 +296,8 @@
   </div>
 
 <script src="/static/app.js" defer></script>
+<footer class="max-w-7xl mx-auto px-8 pb-6 text-center">
+  <a href="/impressum" class="text-xs text-slate-600 hover:text-slate-400">Impressum</a>
+</footer>
 </body>
 </html>

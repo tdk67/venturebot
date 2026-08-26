@@ -16,7 +16,7 @@ def store(tmp_path):
     s.close()
 
 
-# ── MemoryStore CRUD ────────────────────────────────────────────────────
+# -- MemoryStore CRUD ----------------------------------------------------
 def test_store_creates_tables(store):
     store._ensure_conn()
     tables = {r["name"] for r in store._conn.execute(
@@ -77,7 +77,7 @@ def test_idea_tree_crud(store):
         store.update_idea_status(iid, "BOGUS")
 
 
-# ── Idea tree pruning (PRD §5.5) ────────────────────────────────────────
+# -- Idea tree pruning (PRD Sec. 5.5) ----------------------------------------
 def _idea(**kw):
     base = {"id": "x", "title": "t", "status": "ACTIVE", "scores": None,
             "human_intervention_count": 0, "updated_at": time.time() - 1}
@@ -134,7 +134,7 @@ def test_prune_ideas_collects_changes():
         {"idea_id": c["idea_id"], "status": c["status"]} for c in changes]
 
 
-# ── Throttle ────────────────────────────────────────────────────────────
+# -- Throttle ------------------------------------------------------------
 def test_throttle_cooldown():
     state = {}
     assert _throttle.try_claim(state, "auto_capture") is True

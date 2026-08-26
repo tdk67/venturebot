@@ -34,12 +34,12 @@ EXCLUDE_PREFIXES = ("sessions.db",)  # ephemeral + sensitive
 
 def _client():
     if not BUCKET:
-        print("[snapshot] GCS_DATA_BUCKET not set — skipping")
+        print("[snapshot] GCS_DATA_BUCKET not set  -- skipping")
         return None
     try:
         from google.cloud import storage
     except ImportError:
-        print("[snapshot] google-cloud-storage not installed — skipping")
+        print("[snapshot] google-cloud-storage not installed  -- skipping")
         return None
     return storage.Client().bucket(BUCKET)
 
@@ -63,7 +63,7 @@ def restore() -> int:
         return 0
     blob = client.blob(OBJECT)
     if not blob.exists():
-        print("[snapshot] no existing snapshot in bucket — starting clean")
+        print("[snapshot] no existing snapshot in bucket  -- starting clean")
         return 0
     raw = blob.download_as_bytes()
     os.makedirs(DATA_DIR, exist_ok=True)

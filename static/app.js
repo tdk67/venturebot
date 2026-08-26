@@ -12,7 +12,7 @@ function showApp(user) {
   fetchCheckpoints();
 }
 
-// ── XSS-safe rendering: ALWAYS use textContent, never innerHTML ────────
+// -- XSS-safe rendering: ALWAYS use textContent, never innerHTML --------
 function el(tag, className, text) {
   const e = document.createElement(tag);
   if (className) e.className = className;
@@ -20,7 +20,7 @@ function el(tag, className, text) {
   return e;
 }
 
-// ── Debate feed ────────────────────────────────────────────────────────
+// -- Debate feed --------------------------------------------------------
 const feed = () => document.getElementById('debate-feed');
 
 function addMessage(agent, text) {
@@ -32,7 +32,7 @@ function addMessage(agent, text) {
   feed().scrollTop = feed().scrollHeight;
 }
 
-// ── State ──────────────────────────────────────────────────────────────
+// -- State --------------------------------------------------------------
 async function fetchState() {
   const res = await fetch('/api/state');
   if (res.status === 401) { location.reload(); return; }
@@ -92,7 +92,7 @@ function toggleUsage() {
   if (!p.classList.contains('hidden')) fetchUsage(_usagePeriod);
 }
 
-// ── Control ────────────────────────────────────────────────────────────
+// -- Control ------------------------------------------------------------
 async function doRun() {
   const idea = document.getElementById('idea-input').value.trim();
   if (!idea) return;
@@ -142,7 +142,7 @@ async function doSteering() {
   });
   const data = await res.json();
   document.getElementById('steering-input').value = '';
-  document.getElementById('steering-status').textContent = 'Queued — will be ingested at next checkpoint.';
+  document.getElementById('steering-status').textContent = 'Queued  -- will be ingested at next checkpoint.';
   addMessage('Human', '🛞 Steering: ' + text);
 }
 
@@ -154,7 +154,7 @@ async function doStop() {
 async function verdictAction(action) {
   if (action === 'rebut') {
     // Show the rebut box instead of immediately deciding (UI_UX_NOTES #3).
-    addMessage('Human', '↻ Rebut — explain what the debate missed');
+    addMessage('Human', '↻ Rebut  -- explain what the debate missed');
     document.getElementById('rebut-box').classList.remove('hidden');
     return;
   }
@@ -210,9 +210,9 @@ async function getCurrentRunId() {
   return data.run_id;
 }
 
-// ── SSE ────────────────────────────────────────────────────────────────
+// -- SSE ----------------------------------------------------------------
 // Participants of the debate, in pipeline order. The Orchestrator is a
-// participant too — it drives the loop between phases and decides when to stop.
+// participant too  -- it drives the loop between phases and decides when to stop.
 const _PARTICIPANTS = [
   { key: 'orchestrator', label: '🎛 Orchestrator' },
   { key: 'research',     label: '🔍 Researcher' },
@@ -224,7 +224,7 @@ const _PARTICIPANTS = [
   { key: 'auditor',      label: '✅ Auditor' },
 ];
 
-const _chipState = {};   // key → { chip, status, timeEl, timer, startedAt }
+const _chipState = {};   // key  -> { chip, status, timeEl, timer, startedAt }
 let _econTimer = null;
 let _costBaseline = null; // budget.spent when the debate started
 let _activeChip = null;
@@ -345,7 +345,7 @@ function econFinish(final) {
   }
 }
 
-// ── Agent output rendering ─────────────────────────────────────────────
+// -- Agent output rendering ---------------------------------------------
 // Structured agent output (JSON schemas like ResearchBrief) is rendered as
 // readable sections instead of a raw JSON dump.
 function looksLikeJson(text) {
@@ -372,7 +372,7 @@ function jsonToMarkdown(obj, level = 2) {
         const nested = Object.entries(item).filter(([, v]) => v && typeof v === 'object' && clean(v))
           .map(([, v]) => '\n  - ' + String(jsonToMarkdown(v, level + 1)).split('\n').join('\n    '))
           .join('');
-        return `- ${parts.join(' — ')}${nested}`;
+        return `- ${parts.join('  -- ')}${nested}`;
       }
       return `- ${item}`;
     }).filter(l => l !== '- ').join('\n');
@@ -422,8 +422,8 @@ function appendStructuredJson(container, obj, depth) {
 }
 
 function renderAgentOutput(container, text) {
-  // JSON → structured view; markdown → sanitized HTML (XSS-safe via DOMPurify);
-  // fallback → plain text. innerHTML is only ever set with sanitized output.
+  // JSON  -> structured view; markdown  -> sanitized HTML (XSS-safe via DOMPurify);
+  // fallback  -> plain text. innerHTML is only ever set with sanitized output.
   if (looksLikeJson(text)) {
     try {
       const obj = JSON.parse(text.trim());
@@ -456,7 +456,7 @@ function addAgentMessage(agent, text) {
   feed().scrollTop = feed().scrollHeight;
 }
 
-// ── Clarify (orchestrator → human question) ──────────────────────────
+// -- Clarify (orchestrator  -> human question) --------------------------
 function showClarifyBox(question, runId) {
   const box = document.getElementById('clarify-box');
   document.getElementById('clarify-question').textContent = question;
@@ -485,7 +485,7 @@ async function sendClarifyAnswer() {
     input.value = '';
     hideClarifyBox();
   } catch (err) {
-    addMessage('System', 'ERROR: could not send answer — ' + err.message + ' (the orchestrator waits 10 minutes, try again)');
+    addMessage('System', 'ERROR: could not send answer  -- ' + err.message + ' (the orchestrator waits 10 minutes, try again)');
   } finally {
     btn.disabled = false;
   }
@@ -513,7 +513,7 @@ function connectSSE() {
     participantsReset();
     econShow();
     chipActivate('orchestrator');
-    addMessage('System', '🎛 Orchestrator took over — planning the debate…');
+    addMessage('System', '🎛 Orchestrator took over  -- planning the debate…');
   });
   es.addEventListener('phase_started', (e) => {
     const d = JSON.parse(e.data);
@@ -532,7 +532,7 @@ function connectSSE() {
     chipSet('orchestrator', 'thinking');
     addMessage('Orchestrator',
       d.decision === 'stop'
-        ? `🛑 Decision: STOP the loop (${d.reason}) — after ${d.turns_used}/${d.max_turns} turns. Presenting results.`
+        ? `🛑 Decision: STOP the loop (${d.reason})  -- after ${d.turns_used}/${d.max_turns} turns. Presenting results.`
         : `▶ Decision: CONTINUE (${d.reason}).`);
   });
   es.addEventListener('agent_turn', (e) => {
@@ -546,7 +546,7 @@ function connectSSE() {
   es.addEventListener('run_paused', (e) => {
     const d = JSON.parse(e.data);
     participantsStopAll();
-    addMessage('System', '⏸ Debate paused — waiting for your answer below. No time limit; the state is saved, you can come back later (even after closing the browser).');
+    addMessage('System', '⏸ Debate paused  -- waiting for your answer below. No time limit; the state is saved, you can come back later (even after closing the browser).');
     fetchState();
   });
   es.addEventListener('run_finished', (e) => {
@@ -572,7 +572,7 @@ function showVerdict(v) {
     const item = s[k] || {};
     const cell = el('div', 'bg-slate-800 p-3 rounded-lg');
     cell.appendChild(el('div', 'text-xs uppercase text-slate-400', k));
-    cell.appendChild(el('div', 'text-2xl font-black', item.score !== undefined ? item.score + '/10' : '—'));
+    cell.appendChild(el('div', 'text-2xl font-black', item.score !== undefined ? item.score + '/10' : ' -- '));
     cell.appendChild(el('div', 'text-xs text-slate-400', item.rationale || ''));
     scoresEl.appendChild(cell);
   });
@@ -604,7 +604,7 @@ function showPRD(prd, audit) {
   }
 }
 
-// ── Past ideas + checkpoints (idea history) ───────────────────────────
+// -- Past ideas + checkpoints (idea history) ---------------------------
 let ideasPage = 1;
 let activeFilters = { category: null, year: null, month: null, status: null, search: '' };
 
@@ -632,7 +632,7 @@ function renderActiveFilters() {
   if (activeFilters.month) parts.push('month: ' + activeFilters.month);
   if (activeFilters.status) parts.push('status: ' + activeFilters.status);
   if (parts.length) {
-    el.textContent = 'Filtering by ' + parts.join(', ') + ' — ';
+    el.textContent = 'Filtering by ' + parts.join(', ') + '  -- ';
     const clear = document.createElement('button');
     clear.textContent = 'clear';
     clear.className = 'underline text-blue-400';
@@ -749,7 +749,7 @@ async function fetchFacets() {
     tagEl.appendChild(row);
   });
 
-  // Date tree: year → month
+  // Date tree: year  -> month
   const dateEl = document.getElementById('facet-dates');
   dateEl.innerHTML = '';
   (d.years || []).forEach(y => {
@@ -823,13 +823,13 @@ async function importIdeas(input) {
     return;
   }
   const d = await res.json();
-  addMessage('System', `📥 Imported ${d.count} idea(s) — full debate history preserved.`);
+  addMessage('System', `📥 Imported ${d.count} idea(s)  -- full debate history preserved.`);
   fetchIdeas();
   fetchFacets();
   input.value = '';
 }
 
-// ── Idea detail modal: past debates + replay + resume (second brain) ─
+// -- Idea detail modal: past debates + replay + resume (second brain) -
 let modalIdeaId = null;
 let modalIdea = null;   // full idea payload currently shown
 
@@ -902,7 +902,7 @@ function renderIdeaHeader(idea, editMode) {
     const ta = el('textarea', 'w-full bg-slate-900 border border-blue-500 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none');
     ta.rows = Math.min(10, Math.max(3, Math.ceil((idea.pitch || '').length / 90)));
     ta.value = idea.pitch || '';
-    ta.placeholder = 'The complete idea text — this is what a resumed debate receives as input.';
+    ta.placeholder = 'The complete idea text  -- this is what a resumed debate receives as input.';
     ta.id = 'idea-edit-pitch';
     pitchBox.appendChild(ta);
     const btns = el('div', 'flex gap-2 mt-2');
@@ -934,7 +934,7 @@ function renderIdeaHeader(idea, editMode) {
       const pre = el('pre', 'text-xs text-slate-300 whitespace-pre-wrap bg-slate-900/70 border border-slate-800 p-3 rounded-lg max-h-48 overflow-y-auto', text);
       pitchBox.appendChild(pre);
     } else {
-      pitchBox.appendChild(el('p', 'text-xs text-slate-500 italic', 'No full pitch stored (older idea) — click ✏️ Edit to add one; a resumed debate will use it as input.'));
+      pitchBox.appendChild(el('p', 'text-xs text-slate-500 italic', 'No full pitch stored (older idea)  -- click ✏️ Edit to add one; a resumed debate will use it as input.'));
     }
   }
 }
@@ -985,7 +985,7 @@ async function showRun(ideaId, runId, opts) {
   const replay = document.getElementById('idea-modal-replay');
   replay.classList.remove('hidden');
   document.getElementById('idea-modal-replay-title').textContent =
-    `Debate #${run.run_number} — ${run.status || '?'}${run.comment ? ' · 💬 ' + run.comment : ''}`;
+    `Debate #${run.run_number}  -- ${run.status || '?'}${run.comment ? ' · 💬 ' + run.comment : ''}`;
 
   buildRunTabs(run);
   showRunTab('timeline');
@@ -1005,8 +1005,8 @@ async function showRun(ideaId, runId, opts) {
   doc.classList.add('hidden');
   prdBtn.classList.toggle('hidden', !run.prd_text);
   briefBtn.classList.toggle('hidden', !run.research_brief);
-  // Smart doc viewer: JSON → structured tree, markdown → formatted HTML,
-  // anything else → plain text (same renderer as the live debate feed).
+  // Smart doc viewer: JSON  -> structured tree, markdown  -> formatted HTML,
+  // anything else  -> plain text (same renderer as the live debate feed).
   const showDoc = (text, fallback) => {
     doc.classList.remove('md-body', 'whitespace-pre-wrap');
     doc.textContent = '';
@@ -1019,7 +1019,7 @@ async function showRun(ideaId, runId, opts) {
   if (opts && opts.showPrd && run.prd_text) prdBtn.click();
 }
 
-// ── Participant tabs inside a past debate ──────────────────────────────
+// -- Participant tabs inside a past debate ------------------------------
 function buildRunTabs(run) {
   const tabs = document.getElementById('run-tabs');
   tabs.textContent = '';
@@ -1053,7 +1053,7 @@ function showRunTab(tab) {
   if (!run) return;
 
   if (tab === 'timeline') {
-    // Chronological transcript — compact, structured rendering per message.
+    // Chronological transcript  -- compact, structured rendering per message.
     (run.events || []).forEach(ev => {
       const div = el('div', 'msg p-4 rounded-lg bg-slate-900 border border-slate-800 text-sm');
       div.appendChild(el('span', 'font-bold text-yellow-400 text-xs', '[' + (ev.agent || '?') + ']'));
@@ -1071,7 +1071,7 @@ function showRunTab(tab) {
     (run.events || []).filter(e2 => (e2.agent || '?') === agent).forEach((ev, i, arr) => {
       const card = el('div', 'p-5 rounded-xl bg-slate-900 border border-slate-700 mb-4');
       card.appendChild(el('div', 'text-xs uppercase tracking-wider text-blue-400 font-bold mb-2',
-        agent + (arr.length > 1 ? ` — output ${i + 1} of ${arr.length}` : ' — full output')));
+        agent + (arr.length > 1 ? `  -- output ${i + 1} of ${arr.length}` : '  -- full output')));
       const body = el('div', 'text-sm text-slate-100 break-words');
       renderAgentOutput(body, ev.text || '');
       card.appendChild(body);
@@ -1081,17 +1081,17 @@ function showRunTab(tab) {
   document.getElementById('idea-modal-replay').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-// ── Run report export (.md download + browser-print PDF) ──────────────
+// -- Run report export (.md download + browser-print PDF) --------------
 function buildRunMarkdown(run, ideaTitle) {
   const lines = [];
-  lines.push(`# Debate #${run.run_number} — ${ideaTitle || ''}`);
+  lines.push(`# Debate #${run.run_number}  -- ${ideaTitle || ''}`);
   lines.push('');
   lines.push(`- **Status:** ${run.status || '?'}`);
-  lines.push(`- **Verdict:** ${run.verdict || '—'}`);
+  lines.push(`- **Verdict:** ${run.verdict || ' -- '}`);
   if (run.scores) {
     const sc = run.scores;
     const fmt = k => sc[k] && (sc[k].score !== undefined ? sc[k].score : sc[k]);
-    lines.push(`- **Scores (out of 10):** novelty ${fmt('novelty') ?? '—'} · feasibility ${fmt('feasibility') ?? '—'} · market_fit ${fmt('market_fit') ?? '—'}`);
+    lines.push(`- **Scores (out of 10):** novelty ${fmt('novelty') ?? ' -- '} · feasibility ${fmt('feasibility') ?? ' -- '} · market_fit ${fmt('market_fit') ?? ' -- '}`);
   }
   if (run.comment) lines.push(`- **Human comment:** ${run.comment}`);
   if (run.started_at) {
@@ -1127,9 +1127,9 @@ function downloadRunMarkdown(run) {
 function printRunReport(run) {
   // Open the report in a clean window and trigger the browser's print-to-PDF.
   const w = window.open('', '_blank');
-  if (!w) { alert('Pop-up blocked — allow pop-ups to print.'); return; }
+  if (!w) { alert('Pop-up blocked  -- allow pop-ups to print.'); return; }
   const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-  // Formatted block: markdown (or JSON→markdown) → sanitized HTML when the
+  // Formatted block: markdown (or JSON -> markdown)  -> sanitized HTML when the
   // renderer is available; falls back to escaped <pre> offline.
   const fmtBlock = text => {
     if (!text) return '';
@@ -1141,8 +1141,8 @@ function printRunReport(run) {
     return `<pre>${esc(formatDocText(text))}</pre>`;
   };
   const bodyHtml = `
-    <h1>Debate #${run.run_number}${modalIdea ? ' — ' + esc(modalIdea.title) : ''}</h1>
-    <p><b>Status:</b> ${esc(run.status)} &nbsp; <b>Verdict:</b> ${esc(run.verdict || '—')}</p>
+    <h1>Debate #${run.run_number}${modalIdea ? '  -- ' + esc(modalIdea.title) : ''}</h1>
+    <p><b>Status:</b> ${esc(run.status)} &nbsp; <b>Verdict:</b> ${esc(run.verdict || ' -- ')}</p>
     ${run.prd_text ? `<h2>PRD</h2>${fmtBlock(run.prd_text)}` : ''}
     ${run.research_brief ? `<h2>Research Brief</h2>${fmtBlock(run.research_brief)}` : ''}
     <h2>Transcript</h2>
@@ -1157,7 +1157,7 @@ function printRunReport(run) {
     .fmt a{color:#0366d6}.fmt code{background:#f0f0f0;padding:0 .25em;border-radius:3px}
     .fmt pre{background:#f5f5f5}</style></head><body>${bodyHtml}</body></html>`);
   w.document.close();
-  // CSP note (G2): the popup must not carry an inline <script> — under a
+  // CSP note (G2): the popup must not carry an inline <script>  -- under a
   // strict script-src 'self' policy it would be blocked. Same-origin opener
   // may call print() on it directly.
   setTimeout(() => { try { w.focus(); w.print(); } catch (_) {} }, 350);
@@ -1227,7 +1227,7 @@ async function fetchCheckpoints() {
   list.innerHTML = '';
   cps.forEach(cp => {
     const row = el('div', 'flex items-center justify-between');
-    row.appendChild(el('span', 'text-xs text-slate-300', `${cp.idea} — phase: ${cp.phase}`));
+    row.appendChild(el('span', 'text-xs text-slate-300', `${cp.idea}  -- phase: ${cp.phase}`));
     const resumeBtn = el('button', 'px-2 py-1 text-[11px] rounded bg-amber-600 hover:bg-amber-500 text-white', 'Resume');
     resumeBtn.onclick = async () => {
       await fetch(`/api/checkpoints/${cp.run_id}/resume`, {method:'POST'});
@@ -1238,7 +1238,7 @@ async function fetchCheckpoints() {
   });
 }
 
-// ── Self-improvement console (M3) ─────────────────────────────────────
+// -- Self-improvement console (M3) -------------------------------------
 async function fetchMemories() {
   const res = await fetch('/api/memories');
   if (res.status === 401) return;
@@ -1267,7 +1267,7 @@ async function doDreamReview() {
   fetchMemories();
 }
 
-// ── Boot (A6): gate the app on /api/auth/me ──────────────────────────
+// -- Boot (A6): gate the app on /api/auth/me --------------------------
 window.onload = async function() {
   try {
     const res = await fetch('/api/auth/me');
@@ -1277,17 +1277,23 @@ window.onload = async function() {
       return;
     }
   } catch (_) { /* fall through to login */ }
-  // Not authenticated → show the Google login screen.
+  // Not authenticated  -> show the Google login screen.
   document.getElementById('login-screen').classList.remove('hidden');
   const err = new URLSearchParams(location.search).get('login_error');
   if (err) {
     const el = document.getElementById('login-error');
     el.textContent = 'Login failed: ' + err;
     el.classList.remove('hidden');
+    // Keep the error visible indefinitely  -- don't auto-hide
+    // Clean up the URL so refresh doesn't show it again
+    if (window.history && window.history.replaceState) {
+      const clean = location.pathname;
+      window.history.replaceState({}, '', clean);
+    }
   }
 };
 
-// ── Event wiring (CSP-safe) ──────────────────────────────────────────
+// -- Event wiring (CSP-safe) ------------------------------------------
 // G2/G3: inline onclick/onchange/oninput attributes are blocked under a
 // strict script-src CSP. All handlers live here, attached by id or via the
 // data-action delegation below.
@@ -1327,6 +1333,48 @@ window.onload = async function() {
       case 'close-idea-modal': closeIdeaModal(); break;
     }
   });
+
+  // -- BYOK: verify and store user-provided API key -----------------
+  const byokKey = () => document.getElementById('byok-input').value.trim();
+  const byokStatus = (msg, ok) => {
+    const el = document.getElementById('byok-status');
+    el.textContent = msg;
+    el.className = ok ? 'text-emerald-400' : 'text-red-400';
+  };
+  document.getElementById('byok-verify').addEventListener('click', async () => {
+    const key = byokKey();
+    if (!key) { byokStatus('Enter a key first.', false); return; }
+    byokStatus('Verifying...', false);
+    try {
+      const res = await fetch('/api/byok/verify', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key}),
+      });
+      const d = await res.json();
+      if (d.valid) {
+        localStorage.setItem('vb_byok_key', key);
+        byokStatus('Key valid (' + d.provider + ', ' + d.models + ' models)', true);
+      } else {
+        byokStatus('Invalid: ' + d.error, false);
+      }
+    } catch (e) {
+      byokStatus('Network error: ' + e.message, false);
+    }
+  });
+  document.getElementById('byok-clear').addEventListener('click', () => {
+    localStorage.removeItem('vb_byok_key');
+    document.getElementById('byok-input').value = '';
+    byokStatus('', false);
+  });
+  (() => {
+    const saved = localStorage.getItem('vb_byok_key');
+    if (saved) {
+      document.getElementById('byok-input').value = saved;
+      byokStatus('Key loaded. Click Verify to re-check.', false);
+    }
+  })();
+
 })();
 setInterval(fetchState, 3000);
 setInterval(fetchMemories, 10000);

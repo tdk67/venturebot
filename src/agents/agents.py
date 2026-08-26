@@ -21,10 +21,10 @@ _SEARCH_GCC = types.GenerateContentConfig(
     tool_config=types.ToolConfig(include_server_side_tool_invocations=True)
 )
 
-# The Creative head runs hot — a dedicated higher-temperature GenerateContentConfig.
+# The Creative head runs hot  -- a dedicated higher-temperature GenerateContentConfig.
 _CREATIVE_GCC = types.GenerateContentConfig(temperature=config.CREATIVE_TEMPERATURE)
 
-# ── Researcher (has google_search + clarify HITL) ─────────────────────
+# -- Researcher (has google_search + clarify HITL) ---------------------
 researcher_agent = LlmAgent(
     name="researcher",
     model=Gemini(model=config.MODEL_RESEARCHER),
@@ -36,17 +36,17 @@ researcher_agent = LlmAgent(
     description="Researches a vague idea into a structured brief (web search + clarification).",
 )
 
-# ── Advocate (NO tools — blind separation from Critic) ────────────────
+# -- Advocate (NO tools  -- blind separation from Critic) ----------------
 advocate_agent = LlmAgent(
     name="advocate",
     model=Gemini(model=config.MODEL_ADVOCATE),
     instruction=prompts.ADVOCATE_PROMPT,
-    tools=[],  # intentionally empty — blind debate
+    tools=[],  # intentionally empty  -- blind debate
     output_key="advocate_argument",
     description="Argues FOR the idea, using only the research brief (no web search).",
 )
 
-# ── Critic (HAS google_search — the asymmetry) ────────────────────────
+# -- Critic (HAS google_search  -- the asymmetry) ------------------------
 critic_agent = LlmAgent(
     name="critic",
     model=Gemini(model=config.MODEL_CRITIC),
@@ -57,7 +57,7 @@ critic_agent = LlmAgent(
     description="Red-team challenges every Advocate claim, with web-sourced counter-evidence.",
 )
 
-# ── Judge (structured verdict) ────────────────────────────────────────
+# -- Judge (structured verdict) ----------------------------------------
 judge_agent = LlmAgent(
     name="judge",
     model=Gemini(model=config.MODEL_JUDGE),
@@ -68,7 +68,7 @@ judge_agent = LlmAgent(
     description="Weighs both sides and produces a structured PROCEED/PARK/PRUNE verdict.",
 )
 
-# ── PRD Writer (synthesizes everything into a PRD) ────────────────────
+# -- PRD Writer (synthesizes everything into a PRD) --------------------
 prd_writer_agent = LlmAgent(
     name="prd_writer",
     model=Gemini(model=config.MODEL_PRD_WRITER),
@@ -78,7 +78,7 @@ prd_writer_agent = LlmAgent(
     description="Writes a detailed, implementable PRD from research + debate + verdict.",
 )
 
-# ── Security Auditor (S10 — proof-reads the PRD before approval) ──────
+# -- Security Auditor (S10  -- proof-reads the PRD before approval) ------
 auditor_agent = LlmAgent(
     name="auditor",
     model=Gemini(model=config.MODEL_AUDITOR),
@@ -89,7 +89,7 @@ auditor_agent = LlmAgent(
     description="Proof-reads the PRD for hallucinated claims, injection residue, and missing NFRs.",
 )
 
-# ── Creative Ideator (divergent head — higher temperature) ─────────────
+# -- Creative Ideator (divergent head  -- higher temperature) -------------
 # Blind like the Advocate (no search): it imagines, the Critic verifies.
 creative_agent = LlmAgent(
     name="creative",

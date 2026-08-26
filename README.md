@@ -294,7 +294,7 @@ terraform apply   # deploy everything
 
 Terraform creates: APIs, service accounts, IAM roles, Artifact Registry,
 Secret Manager secrets, GCS bucket, WIF pool + provider, and the Cloud Run
-service — all in one command. Idempotent. Run `terraform destroy` to tear down.
+service  -- all in one command. Idempotent. Run `terraform destroy` to tear down.
 
 ### Cost model
 
@@ -321,70 +321,91 @@ calls when exceeded. Raise it in-app via the UI.
 
 - `max-instances=1` (for state consistency until Phase B)
 - `containerConcurrency=80` (80 concurrent requests per instance)
-- `min-instances=0` (scales to zero when idle — no cost)
+- `min-instances=0` (scales to zero when idle  -- no cost)
 - Scale-to-zero cold start: ~2–5 seconds
 
 There is no built-in Cloud Run rate limiting. For public launch, the app-level
 queue/rate-limit model is designed in `notes/PUBLIC_DEPLOYMENT_DESIGN.md`
 (not yet implemented).
 
-### Custom domain
+### Custom domain (Firebase Hosting  -> Cloud Run)
 
-You can map a custom domain to the Cloud Run service. For example,
-`venturebot.taskmind-ai.com`:
+Cloud Run's built-in `domain-mappings` are **not supported in `europe-west3`**,
+so we front the service with **Firebase Hosting**  -- a free, GA, Google-native
+CDN that rewrites the custom domain to the Cloud Run service. Frankfurt
+(`europe-west3`) is on Firebase's supported Cloud Run rewrite region list.
 
-**1. Add domain mapping in Cloud Run:**
+Example domain: `venture-bot.taskmind-ai.com`.
+
+**1. Create the Firebase site (owner, one-time, ~2 min):**
 
 ```bash
-# Verify domain ownership first (Cloud Run will give you a TXT record)
-gcloud run domain-mappings create \
-  --service=venturebot \
-  --domain=venturebot.taskmind-ai.com \
-  --region=europe-west3
+# In the Firebase console: https://console.firebase.google.com
+#   Add project  -> select "venturebot-506408"  -> skip Analytics  -> Create
+# Then enable Hosting:
+#   Build  -> Hosting  -> Get started  -> create a Site (ID: venturebot)
 ```
 
-Or via the console: `https://console.cloud.google.com/run/domains?project=venturebot-506408`
-→ **ADD MAPPING** → enter the domain → follow the verification flow.
+**2. Point DNS at Firebase (Hostinger / your provider):**
 
-**2. Add DNS record:**
-
-In your DNS provider for `taskmind-ai.com`, add:
+Remove the old `CNAME ghs.googlehosted.com` and add Firebase's A records:
 
 ```
-Type:   CNAME
-Name:   venturebot
-Value:  ghs.googlehosted.com
+Type:  A
+Name:  venture-bot
+Value: 199.36.158.100
+
+Type:  A
+Name:  venture-bot
+Value: 199.36.158.101
 ```
 
-(Cloud Run will tell you the exact records during verification.)
+(Use the exact records the Firebase console shows after you click
+"Add custom domain"  -- the console will issue a TXT ownership record too.)
 
-**3. Update env vars & OAuth:**
+**3. Deploy the hosting rewrite:**
+
+```bash
+firebase login          # your owner Google account
+cd venturebot
+firebase deploy --only hosting
+```
+
+`firebase.json` rewrites `**`  -> Cloud Run `venturebot` in `europe-west3`.
+
+**4. Update env vars & OAuth:**
 
 ```bash
 gcloud run services update venturebot --region=europe-west3 \
-  --update-env-vars="VENTUREBOT_PUBLIC_BASE_URL=https://venturebot.taskmind-ai.com"
+  --update-env-vars="VENTUREBOT_PUBLIC_BASE_URL=https://venture-bot.taskmind-ai.com,GOOGLE_CLIENT_ID=<your-client-id>"
 ```
 
-Add `https://venturebot.taskmind-ai.com/api/auth/callback` to your Google
+Add `https://venture-bot.taskmind-ai.com/api/auth/callback` to your Google
 OAuth client's authorized redirect URIs.
 
-**4. Update GitHub Actions:**
+**5. Update GitHub Actions:**
 
 Set the `PUBLIC_BASE_URL` and `GOOGLE_CLIENT_ID` variables in the repo:
-`https://github.com/tdk67/venturebot/settings/variables/actions` →
-`PUBLIC_BASE_URL=https://venturebot.taskmind-ai.com`
+`https://github.com/tdk67/venturebot/settings/variables/actions`  -> 
+`PUBLIC_BASE_URL=https://venture-bot.taskmind-ai.com`
+
+> **SSE note:** Firebase rewrites stream `text/event-stream` responses without
+> buffering (verified in `firebase-tools` `cloudRunProxy`), and the app sends a
+> `ping` keepalive every 15 s  -- so the live debate feed works through Hosting.
+> The only Hosting limit to be aware of is a 60 s request timeout, which does
+> not apply to the EventSource stream (long-lived, keepalive-padded).
 
 ---
 
-### Going public (from test → production)
+### Going public (from test  -> production)
 
-Currently the app is in **test mode** — only emails in `VENTUREBOT_ALLOWED_EMAILS`
+Currently the app is in **test mode**  -- only emails in `VENTUREBOT_ALLOWED_EMAILS`
 can log in. To open it to the public:
 
 **1. Publish the OAuth consent screen:**
 
 Go to `https://console.cloud.google.com/apis/credentials/consent?project=venturebot-506408`
-→ click **PUBLISH APP** (or "Go to verification" if Google requires it).
+ -> click **PUBLISH APP** (or "Go to verification" if Google requires it).
 
 **Note:** Google may require app verification for the `email` and `profile`
 scopes. This takes 1–3 days. For a hackathon: you can skip verification and
@@ -405,7 +426,7 @@ gcloud run services update venturebot --region=europe-west3 \
 **3. Consider rate limiting before public launch:**
 
 The app currently has no per-user rate limiting or queue. The design is
-in `notes/PUBLIC_DEPLOYMENT_DESIGN.md` — implement at least the queue cap
+in `notes/PUBLIC_DEPLOYMENT_DESIGN.md`  -- implement at least the queue cap
 and per-user budget before opening to the public to prevent one user from
 burning the entire daily LLM budget.
 
