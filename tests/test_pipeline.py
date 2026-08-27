@@ -44,7 +44,7 @@ def test_overall_average_none():
 
 
 def test_agents_have_correct_tool_separation():
-    from src.agents.agents import ALL_AGENTS
+    from src.agents.agents import ALL_AGENTS, create_agents
     assert len(ALL_AGENTS["advocate"].tools) == 0  # blind
     assert len(ALL_AGENTS["critic"].tools) == 1  # has search
     assert len(ALL_AGENTS["researcher"].tools) == 2  # search + clarify

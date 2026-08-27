@@ -31,13 +31,13 @@ from google.adk.models import Gemini
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
-from .. import config, run_manager, store
-from ..events import agent_turn, emit
-from ..memory.auto_capture import capture_turn
-from ..memory.review_fork import analyze_turn
-from ..memory.sqlite_store import get_store
-from ..steering import SteeringInbox
-from .agents import ALL_AGENTS
+from . import prompts, schemas
+from .clarify import clarify_question
+from .. import config, store
+from ..events import emit
+
+# Import the factory function for BYOK support
+from .agents import ALL_AGENTS, create_agents
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ _THROTTLE: dict[str, dict] = {}
 
 # -- Orchestrator system prompt ------------------------------------------
 
-_ORCHESTRATOR_PROMPT = """You are VentureBot's Orchestrator. Your job is to evaluate a startup idea
+_ORCHESTRATOR_PROMPT = """You are IdeaLint's Orchestrator. Your job is to evaluate a startup idea
 through a rigorous multi-agent engineering process. You don't debate yourself  -- 
 you delegate to specialized sub-agents, each with a different perspective
 and (where appropriate) different information access.
@@ -60,7 +60,7 @@ Follow this engineering process. You may loop back at any point if you discover
 gaps or the human provides new information.
 
 ### 1. LOAD PAST LESSONS
-Before anything else, call load_memories(). This returns lessons VentureBot
+Before anything else, call load_memories(). This returns lessons IdeaLint
 learned from previous runs. APPLY ALL OF THESE. If a lesson says "always run
 security audit before presenting", you MUST run the audit. If a lesson says
 "verify market size claims with search", you MUST do that.
@@ -461,6 +461,7 @@ class OrchestratorTools:
         user_id: str,
         inbox: SteeringInbox,
         run_id: str,
+        agents: dict[str, LlmAgent] | None = None,
     ):
         self.result = result
         self.session_service = session_service
@@ -468,6 +469,7 @@ class OrchestratorTools:
         self.user_id = user_id
         self.inbox = inbox
         self.run_id = run_id
+        self.agents = agents if agents is not None else ALL_AGENTS
 
     async def load_memories(self) -> str:
         """Load past lessons and techniques from VentureBot's memory store.
@@ -518,7 +520,7 @@ class OrchestratorTools:
         msg += steering_block
 
         brief = await _run_sub_agent(
-            ALL_AGENTS["researcher"], msg, self.result, "Researcher",
+            self.agents["researcher"], msg, self.result, "Researcher",
             self.session_service, self.sid, self.user_id,
         )
         self.result.research_brief = brief
@@ -533,7 +535,7 @@ class OrchestratorTools:
 
         brief = self.result.research_brief or "(no research brief available)"
         argument = await _run_sub_agent(
-            ALL_AGENTS["advocate"],
+            self.agents["advocate"],
             f"Research Brief:\n\n{brief}\n\nArgue FOR this idea.",
             self.result, "Advocate",
             self.session_service, self.sid, self.user_id,
@@ -551,7 +553,7 @@ class OrchestratorTools:
         brief = self.result.research_brief or "(no brief)"
         argument = self.result.advocate_argument or "(no argument)"
         rebuttal = await _run_sub_agent(
-            ALL_AGENTS["critic"],
+            self.agents["critic"],
             f"Research Brief:\n\n{brief}\n\nAdvocate's Argument:\n\n{argument}\n\nChallenge every claim.",
             self.result, "Critic",
             self.session_service, self.sid, self.user_id,
@@ -569,7 +571,7 @@ class OrchestratorTools:
         argument = self.result.advocate_argument or "(no argument)"
         rebuttal = self.result.critic_rebuttal or "(no rebuttal)"
         angles = await _run_sub_agent(
-            ALL_AGENTS["creative"],
+            self.agents["creative"],
             f"Research Brief:\n\n{brief}\n\nAdvocate:\n\n{argument}\n\nCritic's challenges:\n\n{rebuttal}\n\nFind the niche, pivots, unfair advantages and wild ideas.",
             self.result, "Creative",
             self.session_service, self.sid, self.user_id,
@@ -589,7 +591,7 @@ class OrchestratorTools:
         angles = self.result.creative_angles or "(no creative angles)"
 
         verdict_text = await _run_sub_agent(
-            ALL_AGENTS["judge"],
+            self.agents["judge"],
             f"Research Brief:\n\n{brief}\n\nAdvocate:\n\n{argument}\n\nCritic:\n\n{rebuttal}\n\nCreative angles:\n\n{angles}\n\nProduce your structured verdict.",
             self.result, "Judge",
             self.session_service, self.sid, self.user_id,
@@ -623,7 +625,7 @@ class OrchestratorTools:
             msg += f"\n\nREVISION INSTRUCTIONS:\n{instructions}\n\nRe-read the existing PRD and apply these changes."
 
         prd = await _run_sub_agent(
-            ALL_AGENTS["prd_writer"], msg, self.result, "PRD Writer",
+            self.agents["prd_writer"], msg, self.result, "PRD Writer",
             self.session_service, self.sid, self.user_id,
         )
         self.result.prd = prd
@@ -643,7 +645,7 @@ class OrchestratorTools:
         scan = scan_artifact(prd, kind="text")
 
         audit_text = await _run_sub_agent(
-            ALL_AGENTS["auditor"],
+            self.agents["auditor"],
             f"Proof-read this PRD.\n\nRESEARCH BRIEF:\n{brief}\n\nPRD:\n{prd}\n\nReturn your structured verdict.",
             self.result, "Security Auditor",
             self.session_service, self.sid, self.user_id,
@@ -776,6 +778,7 @@ async def run_orchestrator(
     resume_comment: str | None = None,
     paused_state: dict | None = None,
     clarify_answer: str | None = None,
+    api_key: str | None = None,
 ) -> OrchestratorResult:
     """Run the autonomous orchestrator loop for one idea.
 
@@ -867,7 +870,10 @@ async def run_orchestrator(
         return result
 
     # Build the orchestrator agent
-    tools_obj = OrchestratorTools(result, InMemorySessionService(), "", "user", inbox, run_id)
+    # Create agents with custom API key if provided (BYOK), otherwise use defaults
+    agents = create_agents(api_key) if api_key else ALL_AGENTS
+    
+    tools_obj = OrchestratorTools(result, InMemorySessionService(), "", "user", inbox, run_id, agents)
     session_service = InMemorySessionService()
     sid = session_id or (await session_service.create_session(app_name="venturebot", user_id="user")).id
     tools_obj.session_service = session_service
@@ -882,7 +888,7 @@ async def run_orchestrator(
 
     orchestrator_agent = LlmAgent(
         name="orchestrator",
-        model=Gemini(model=config.MODEL_ORCHESTRATOR),
+        model=Gemini(model=config.MODEL_ORCHESTRATOR, api_key=api_key) if api_key else Gemini(model=config.MODEL_ORCHESTRATOR),
         instruction=_orchestrator_instruction(),
         tools=[
             FunctionTool(tools_obj.load_memories),
@@ -899,7 +905,7 @@ async def run_orchestrator(
             FunctionTool(tools_obj.save_artifact),
             FunctionTool(tools_obj.clarify),
         ],
-        description="VentureBot Orchestrator  -- researches, debates, and produces PRDs autonomously.",
+        description="Idea Lint Orchestrator  -- researches, debates, and produces PRDs autonomously.",
     )
 
     # Drive loop

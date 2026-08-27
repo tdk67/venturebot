@@ -24,89 +24,94 @@ _SEARCH_GCC = types.GenerateContentConfig(
 # The Creative head runs hot  -- a dedicated higher-temperature GenerateContentConfig.
 _CREATIVE_GCC = types.GenerateContentConfig(temperature=config.CREATIVE_TEMPERATURE)
 
-# -- Researcher (has google_search + clarify HITL) ---------------------
-researcher_agent = LlmAgent(
-    name="researcher",
-    model=Gemini(model=config.MODEL_RESEARCHER),
-    instruction=prompts.RESEARCHER_PROMPT,
-    tools=[google_search, LongRunningFunctionTool(clarify_question)],
-    generate_content_config=_SEARCH_GCC,
-    output_schema=schemas.ResearchBrief,
-    output_key="research_brief",
-    description="Researches a vague idea into a structured brief (web search + clarification).",
-)
+# Factory function to create agents with optional custom API key (for BYOK)
+def create_agents(api_key: str | None = None) -> dict[str, LlmAgent]:
+    """Create all Phase 1 agents with an optional custom API key.
+    
+    If api_key is provided, all agents will use it instead of the default
+    GOOGLE_API_KEY from environment. This enables Bring Your Own Key (BYOK).
+    """
+    model_kwargs = {'api_key': api_key} if api_key else {}
+    
+    researcher = LlmAgent(
+        name="researcher",
+        model=Gemini(model=config.MODEL_RESEARCHER, **model_kwargs),
+        instruction=prompts.RESEARCHER_PROMPT,
+        tools=[google_search, LongRunningFunctionTool(clarify_question)],
+        generate_content_config=_SEARCH_GCC,
+        output_schema=schemas.ResearchBrief,
+        output_key="research_brief",
+        description="Researches a vague idea into a structured brief (web search + clarification).",
+    )
+    
+    advocate = LlmAgent(
+        name="advocate",
+        model=Gemini(model=config.MODEL_ADVOCATE, **model_kwargs),
+        instruction=prompts.ADVOCATE_PROMPT,
+        tools=[],
+        output_key="advocate_argument",
+        description="Argues FOR the idea, using only the research brief (no web search).",
+    )
+    
+    critic = LlmAgent(
+        name="critic",
+        model=Gemini(model=config.MODEL_CRITIC, **model_kwargs),
+        instruction=prompts.CRITIC_PROMPT,
+        tools=[google_search],
+        generate_content_config=_SEARCH_GCC,
+        output_key="critic_rebuttal",
+        description="Red-team challenges every Advocate claim, with web-sourced counter-evidence.",
+    )
+    
+    judge = LlmAgent(
+        name="judge",
+        model=Gemini(model=config.MODEL_JUDGE, **model_kwargs),
+        instruction=prompts.JUDGE_PROMPT,
+        tools=[],
+        output_schema=schemas.JudgeVerdict,
+        output_key="verdict",
+        description="Weighs both sides and produces a structured PROCEED/PARK/PRUNE verdict.",
+    )
+    
+    prd_writer = LlmAgent(
+        name="prd_writer",
+        model=Gemini(model=config.MODEL_PRD_WRITER, **model_kwargs),
+        instruction=prompts.PRD_WRITER_PROMPT,
+        tools=[],
+        output_key="prd",
+        description="Writes a detailed, implementable PRD from research + debate + verdict.",
+    )
+    
+    auditor = LlmAgent(
+        name="auditor",
+        model=Gemini(model=config.MODEL_AUDITOR, **model_kwargs),
+        instruction=prompts.AUDITOR_PROMPT,
+        tools=[],
+        output_schema=schemas.SecurityAudit,
+        output_key="security_audit",
+        description="Security auditor that proof-reads the PRD for hallucinations and gaps.",
+    )
+    
+    creative = LlmAgent(
+        name="creative",
+        model=Gemini(model=config.MODEL_CREATIVE, **model_kwargs),
+        instruction=prompts.CREATIVE_PROMPT,
+        tools=[],
+        generate_content_config=_CREATIVE_GCC,
+        output_key="creative_angles",
+        description="Generates creative pivots, niches, and unfair advantages.",
+    )
+    
+    return {
+        "researcher": researcher,
+        "advocate": advocate,
+        "critic": critic,
+        "judge": judge,
+        "prd_writer": prd_writer,
+        "auditor": auditor,
+        "creative": creative,
+    }
 
-# -- Advocate (NO tools  -- blind separation from Critic) ----------------
-advocate_agent = LlmAgent(
-    name="advocate",
-    model=Gemini(model=config.MODEL_ADVOCATE),
-    instruction=prompts.ADVOCATE_PROMPT,
-    tools=[],  # intentionally empty  -- blind debate
-    output_key="advocate_argument",
-    description="Argues FOR the idea, using only the research brief (no web search).",
-)
 
-# -- Critic (HAS google_search  -- the asymmetry) ------------------------
-critic_agent = LlmAgent(
-    name="critic",
-    model=Gemini(model=config.MODEL_CRITIC),
-    instruction=prompts.CRITIC_PROMPT,
-    tools=[google_search],
-    generate_content_config=_SEARCH_GCC,
-    output_key="critic_rebuttal",
-    description="Red-team challenges every Advocate claim, with web-sourced counter-evidence.",
-)
-
-# -- Judge (structured verdict) ----------------------------------------
-judge_agent = LlmAgent(
-    name="judge",
-    model=Gemini(model=config.MODEL_JUDGE),
-    instruction=prompts.JUDGE_PROMPT,
-    tools=[],
-    output_schema=schemas.JudgeVerdict,
-    output_key="verdict",
-    description="Weighs both sides and produces a structured PROCEED/PARK/PRUNE verdict.",
-)
-
-# -- PRD Writer (synthesizes everything into a PRD) --------------------
-prd_writer_agent = LlmAgent(
-    name="prd_writer",
-    model=Gemini(model=config.MODEL_PRD_WRITER),
-    instruction=prompts.PRD_WRITER_PROMPT,
-    tools=[],
-    output_key="prd",
-    description="Writes a detailed, implementable PRD from research + debate + verdict.",
-)
-
-# -- Security Auditor (S10  -- proof-reads the PRD before approval) ------
-auditor_agent = LlmAgent(
-    name="auditor",
-    model=Gemini(model=config.MODEL_AUDITOR),
-    instruction=prompts.AUDITOR_PROMPT,
-    tools=[],
-    output_schema=schemas.SecurityAudit,
-    output_key="security_audit",
-    description="Proof-reads the PRD for hallucinated claims, injection residue, and missing NFRs.",
-)
-
-# -- Creative Ideator (divergent head  -- higher temperature) -------------
-# Blind like the Advocate (no search): it imagines, the Critic verifies.
-creative_agent = LlmAgent(
-    name="creative",
-    model=Gemini(model=config.MODEL_CREATIVE),
-    instruction=prompts.CREATIVE_PROMPT,
-    tools=[],
-    generate_content_config=_CREATIVE_GCC,
-    output_key="creative_angles",
-    description="Divergent thinker: hunts niches, pivots, unfair advantages and wild ideas.",
-)
-
-ALL_AGENTS = {
-    "researcher": researcher_agent,
-    "advocate": advocate_agent,
-    "critic": critic_agent,
-    "judge": judge_agent,
-    "prd_writer": prd_writer_agent,
-    "auditor": auditor_agent,
-    "creative": creative_agent,
-}
+# Default agents (using GOOGLE_API_KEY from environment)
+ALL_AGENTS = create_agents()

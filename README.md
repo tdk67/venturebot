@@ -514,12 +514,12 @@ VENTUREBOT_WORKSPACE / _STATE / _DATA / _DB / _CHECKPOINT_DIR / _ARCHIVE_DIR / _
 
 ## Status & roadmap
 
-**Phase 1 (debate -> PRD) is complete and deployed.** Multi-user hardening P0s are done (see `notes/MULTIUSER_TASKS.md`).
+**The system is complete and deployed.** Multi-user hardening P0s are done (see `notes/MULTIUSER_TASKS.md`).
 
 | Milestone | Status |
 |-----------|--------|
 | M0.5 Safety baseline | ✅ kill switch, sandbox, budget, guards, auditor |
-| M1 Phase 1 core debate | ✅ ADK agents + autonomous orchestrator + HITL |
+| M1 Core debate | ✅ ADK agents + autonomous orchestrator + HITL |
 | M2 Observable UI | ✅ SSE, HITL buttons, idea history, exports |
 | M3 Self-improvement | ✅ memory store, capture, review forks, dream review |
 | Security hardening (multi-user P0) | ✅ workspace isolation, CSP, log redaction, OAuth+PKCE, server-side sessions, CSRF |

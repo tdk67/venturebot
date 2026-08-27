@@ -71,6 +71,7 @@ def test_tools_object_uses_run_scope(tmp_path, monkeypatch):
         user_id="user",
         inbox=None,
         run_id="tools-run",
+        agents=None,
     )
     import asyncio
 

@@ -121,9 +121,10 @@ async function doRun() {
   btn.textContent = '⏳ Starting…';
   let res;
   try {
+    const byokKey = localStorage.getItem('vb_byok_key') || null;
     res = await fetch('/api/run-phase1', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ idea, urls }),
+      body: JSON.stringify({ idea, urls, api_key: byokKey }),
     });
   } finally {
     // Re-enable after a short lockout; the SSE 'run_started' event drives the

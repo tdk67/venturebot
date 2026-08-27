@@ -64,7 +64,7 @@ def test_clarify_tool_raises_paused_and_persists(tmp_path, monkeypatch):
 
     result = _sample_result()
     emitted = {}
-    monkeypatch.setattr(orch, "emit", lambda ev, payload=None: emitted.update(ev=ev))
+    monkeypatch.setattr("src.agents.orchestrator.emit", lambda ev, payload=None: emitted.update(ev=ev))
 
     class FakeStore:
         def log(self, *a, **k):

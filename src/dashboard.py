@@ -227,18 +227,6 @@ async def auth_me(request: Request):
         return {"authenticated": False, "email": None}
 
 
-@app.post("/api/auth/logout")
-async def auth_logout(request: Request):
-    # A5/W8: revoke the server-side session row  -- a stolen cookie value becomes
-    # worthless after logout (stateless cookies could not do this).
-    token = request.cookies.get("vb_session")
-    if token:
-        auth.revoke_session(token)
-    resp = JSONResponse({"authenticated": False})
-    resp.delete_cookie("vb_session")
-    return resp
-
-
 # -- State + control ----------------------------------------------------
 @app.get("/api/state")
 async def api_state(request: Request):
@@ -355,7 +343,10 @@ async def api_run_phase1(request: Request):
     if urls:
         _inbox.add_urls(urls)
 
-    asyncio.create_task(_run_phase1_loop(idea))
+    # BYOK: user-provided API key (optional)
+    api_key = data.get("api_key", "").strip() or None
+
+    asyncio.create_task(_run_phase1_loop(idea, api_key=api_key))
     return {"status": "started"}
 
 
@@ -404,13 +395,14 @@ async def api_byok_verify(request: Request):
 
 
 async def _run_phase1_loop(idea: str, resume_idea_id: str | None = None,
-                           resume_comment: str | None = None):
+                           resume_comment: str | None = None,
+                           api_key: str | None = None):
     from . import budget
     started = time.time()
     spent_at_start = budget.get_spent()
     await _broadcast("run_started", {"idea": idea})
     result = await run_orchestrator(idea, inbox=_inbox, resume_idea_id=resume_idea_id,
-                                    resume_comment=resume_comment)
+                                    resume_comment=resume_comment, api_key=api_key)
     if result.status == "needs_clarification":
         # Debate durably paused on a question  -- the orchestrator already
         # emitted run_paused; do NOT signal finished.
@@ -1148,9 +1140,15 @@ async def api_events(request: Request):
 
 # -- Dashboard ----------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
+async def landing_page(request: Request):
+    """Public landing page - no auth required."""
+    html = (Path(__file__).parent.parent / "templates" / "landing.html").read_text()
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=300"})
+
+
+@app.get("/app", response_class=HTMLResponse)
 async def dashboard(request: Request):
     # Serve the SPA; auth is enforced client-side via /api/auth/me
-    from pathlib import Path
     html = (Path(__file__).parent.parent / "templates" / "index.html").read_text()
     # The SPA shell changes with every deploy  -- never let browsers cache it.
     return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idea Lint - AI-Powered Startup Idea Validator</title>
+<meta name="description" content="Validate your startup ideas with AI-powered debate. Multiple AI agents research, argue, and critique your ideas to produce actionable PRDs.">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<script src="/static/vendor/tailwind-3.4.16.min.js"></script>
+<style>
+  .gradient-text {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .feature-card {
+    transition: transform 0.2s, box-shadow 0.2s;
+  }
+  .feature-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+  }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-100">
+
+<!-- Hero Section -->
+<div class="min-h-screen flex flex-col">
+  <header class="border-b border-slate-800">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <img src="/static/logo.svg" alt="Idea Lint" class="w-8 h-8">
+        <span class="text-xl font-black">Idea Lint</span>
+      </div>
+      <nav class="flex items-center gap-6">
+        <a href="#features" class="text-slate-300 hover:text-white text-sm">Features</a>
+        <a href="#how-it-works" class="text-slate-300 hover:text-white text-sm">How It Works</a>
+        <a href="#pricing" class="text-slate-300 hover:text-white text-sm">Pricing</a>
+        <a href="/api/auth/login" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg">Sign In</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="flex-1">
+    <!-- Hero -->
+    <section class="max-w-7xl mx-auto px-6 py-20 text-center">
+      <h1 class="text-5xl md:text-6xl font-black mb-6">
+        Stop Guessing.<br>
+        <span class="gradient-text">Start Validating.</span>
+      </h1>
+      <p class="text-xl text-slate-400 mb-8 max-w-2xl mx-auto">
+        Idea Lint uses multi-agent AI debate to rigorously test your startup ideas. 
+        Get honest feedback, market research, and actionable PRDs in minutes, not weeks.
+      </p>
+      <div class="flex gap-4 justify-center mb-12">
+        <a href="/api/auth/login" class="px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-lg">
+          Try It Free
+        </a>
+        <a href="#how-it-works" class="px-8 py-4 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-lg text-lg">
+          See How It Works
+        </a>
+      </div>
+      
+      <!-- Stats -->
+      <div class="grid grid-cols-3 gap-8 max-w-3xl mx-auto">
+        <div>
+          <div class="text-4xl font-black text-blue-400">5 min</div>
+          <div class="text-slate-400 text-sm">Average debate time</div>
+        </div>
+        <div>
+          <div class="text-4xl font-black text-purple-400">6 AI Agents</div>
+          <div class="text-slate-400 text-sm">Research, advocate, critique</div>
+        </div>
+        <div>
+          <div class="text-4xl font-black text-emerald-400">100%</div>
+          <div class="text-slate-400 text-sm">Honest feedback</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" class="max-w-7xl mx-auto px-6 py-20">
+      <h2 class="text-4xl font-black text-center mb-12">Why Idea Lint?</h2>
+      <div class="grid md:grid-cols-3 gap-8">
+        <div class="feature-card bg-slate-900 p-8 rounded-xl border border-slate-800">
+          <div class="text-3xl mb-4">🔍</div>
+          <h3 class="text-xl font-bold mb-3">Real Research</h3>
+          <p class="text-slate-400">
+            Our Research Agent uses Google Search to find market data, competitors, 
+            and technical landscape. No hallucinations, just facts.
+          </p>
+        </div>
+        <div class="feature-card bg-slate-900 p-8 rounded-xl border border-slate-800">
+          <div class="text-3xl mb-4">⚖️</div>
+          <h3 class="text-xl font-bold mb-3">Adversarial Debate</h3>
+          <p class="text-slate-400">
+            An Advocate argues FOR your idea while a Critic argues AGAINST it. 
+            A Judge weighs both sides and gives you an honest verdict.
+          </p>
+        </div>
+        <div class="feature-card bg-slate-900 p-8 rounded-xl border border-slate-800">
+          <div class="text-3xl mb-4">📋</div>
+          <h3 class="text-xl font-bold mb-3">Actionable PRDs</h3>
+          <p class="text-slate-400">
+            Get a complete Product Requirements Document with technical architecture, 
+            milestones, and acceptance criteria. Ready to build.
+          </p>
+        </div>
+        <div class="feature-card bg-slate-900 p-8 rounded-xl border border-slate-800">
+          <div class="text-3xl mb-4">🛡️</div>
+          <h3 class="text-xl font-bold mb-3">Security Audit</h3>
+          <p class="text-slate-400">
+            Every PRD is reviewed by a Security Auditor agent that checks for 
+            missing requirements, security gaps, and unrealistic assumptions.
+          </p>
+        </div>
+        <div class="feature-card bg-slate-900 p-8 rounded-xl border border-slate-800">
+          <div class="text-3xl mb-4">🧠</div>
+          <h3 class="text-xl font-bold mb-3">Self-Improving</h3>
+          <p class="text-slate-400">
+            Idea Lint learns from every debate. It captures lessons, techniques, 
+            and patterns to give you better feedback over time.
+          </p>
+        </div>
+        <div class="feature-card bg-slate-900 p-8 rounded-xl border border-slate-800">
+          <div class="text-3xl mb-4">👤</div>
+          <h3 class="text-xl font-bold mb-3">Human in the Loop</h3>
+          <p class="text-slate-400">
+            You're in control. Approve, reject, or request changes at every stage. 
+            Steer the debate with your own insights and feedback.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- How It Works -->
+    <section id="how-it-works" class="max-w-7xl mx-auto px-6 py-20 bg-slate-900/50">
+      <h2 class="text-4xl font-black text-center mb-12">How It Works</h2>
+      <div class="max-w-4xl mx-auto space-y-8">
+        <div class="flex gap-6 items-start">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">1</div>
+          <div>
+            <h3 class="text-xl font-bold mb-2">Submit Your Idea</h3>
+            <p class="text-slate-400">
+              Describe your startup idea in plain English. Optionally add URLs to articles, 
+              competitor sites, or research you've already found.
+            </p>
+          </div>
+        </div>
+        <div class="flex gap-6 items-start">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">2</div>
+          <div>
+            <h3 class="text-xl font-bold mb-2">AI Research</h3>
+            <p class="text-slate-400">
+              Our Research Agent searches the web for market data, competitors, technical 
+              solutions, and relevant resources. You get a structured research brief.
+            </p>
+          </div>
+        </div>
+        <div class="flex gap-6 items-start">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">3</div>
+          <div>
+            <h3 class="text-xl font-bold mb-2">Adversarial Debate</h3>
+            <p class="text-slate-400">
+              The Advocate argues why your idea will succeed. The Critic finds flaws and 
+              challenges assumptions. A Creative Agent suggests pivots and niches.
+            </p>
+          </div>
+        </div>
+        <div class="flex gap-6 items-start">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">4</div>
+          <div>
+            <h3 class="text-xl font-bold mb-2">Judge's Verdict</h3>
+            <p class="text-slate-400">
+              The Judge weighs all arguments and gives you a scored verdict: 
+              PROCEED (build it), PARK (revisit later), or PRUNE (move on).
+            </p>
+          </div>
+        </div>
+        <div class="flex gap-6 items-start">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">5</div>
+          <div>
+            <h3 class="text-xl font-bold mb-2">Your Decision</h3>
+            <p class="text-slate-400">
+              Review the verdict and debate transcript. Approve to generate a PRD, 
+              rebut with counter-arguments, or abort and try a different idea.
+            </p>
+          </div>
+        </div>
+        <div class="flex gap-6 items-start">
+          <div class="flex-shrink-0 w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center font-bold text-xl">6</div>
+          <div>
+            <h3 class="text-xl font-bold mb-2">Complete PRD</h3>
+            <p class="text-slate-400">
+              Get a comprehensive Product Requirements Document with functional requirements, 
+              technical architecture, milestones, and acceptance criteria.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section id="pricing" class="max-w-7xl mx-auto px-6 py-20">
+      <h2 class="text-4xl font-black text-center mb-12">Simple Pricing</h2>
+      <div class="max-w-md mx-auto">
+        <div class="bg-slate-900 p-8 rounded-xl border-2 border-blue-600">
+          <h3 class="text-2xl font-bold mb-4">Free During Beta</h3>
+          <p class="text-slate-400 mb-6">
+            Idea Lint is currently in beta. Use it for free while we refine the experience.
+          </p>
+          <ul class="space-y-3 mb-8">
+            <li class="flex items-center gap-2">
+              <span class="text-emerald-400">✓</span>
+              <span>Unlimited debates</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-emerald-400">✓</span>
+              <span>All 6 AI agents</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-emerald-400">✓</span>
+              <span>Complete PRDs</span>
+            </li>
+            <li class="flex items-center gap-2">
+              <span class="text-emerald-400">✓</span>
+              <span>Idea history & export</span>
+            </li>
+          </ul>
+          <a href="/api/auth/login" class="block w-full px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-center">
+            Get Started Free
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- CTA -->
+    <section class="max-w-7xl mx-auto px-6 py-20 text-center">
+      <h2 class="text-4xl font-black mb-6">Ready to Validate Your Idea?</h2>
+      <p class="text-xl text-slate-400 mb-8">
+        Stop wasting time on ideas that won't work. Get honest feedback in minutes.
+      </p>
+      <a href="/api/auth/login" class="inline-block px-8 py-4 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-lg">
+        Start Your First Debate
+      </a>
+    </section>
+  </main>
+
+  <footer class="border-t border-slate-800 mt-20">
+    <div class="max-w-7xl mx-auto px-6 py-8 flex justify-between items-center">
+      <div class="flex items-center gap-3">
+        <img src="/static/logo.svg" alt="Idea Lint" class="w-6 h-6">
+        <span class="text-sm text-slate-400">© 2025 Idea Lint. Built for the Google ADK Hackathon.</span>
+      </div>
+      <div class="flex gap-6">
+        <a href="/impressum" class="text-sm text-slate-400 hover:text-white">Impressum</a>
+        <a href="https://github.com/tdk67/venturebot" class="text-sm text-slate-400 hover:text-white" target="_blank">GitHub</a>
+      </div>
+    </div>
+  </footer>
+</div>
+
+</body>
+</html>
