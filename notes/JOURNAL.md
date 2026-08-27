@@ -75,3 +75,18 @@ Coordinator-level decisions are journaled by the coordinator.
 - Lesson learned: pre-commit hooks can false-positive on test fixtures using realistic-looking
   key patterns (e.g., `AIza...`); use obviously-fake values like `FAKE-SERVER-KEY-GOOGLE` instead.
 - Commit: 3aa4c1b.
+
+## 2026-08-27 — T4 done (Rate limits & caps: per-IP concurrency, hourly anti-flood, body size, SSE cap)
+- What changed: `src/rate_limit.py` (new) — in-memory per-IP rate limiter with
+  `MAX_ACTIVE_RUNS_PER_IP=1`, `MAX_RUNS_PER_HOUR_PER_IP=20`, `MAX_BODY_BYTES=32KB`,
+  `MAX_SSE_PER_IP=3`. Injectable clock for deterministic tests. `clear_all()` for
+  test isolation. `src/dashboard.py` gained `_read_body_limited` (413 on oversized
+  body), rate-limit checks in `api_create_debate` (429 on concurrent or hourly limit),
+  and SSE token acquire/release in `api_debate_events` (429 on 4th conn). Concurrency
+  model: create route *checks* `has_active_run` (non-consuming); executor seam
+  `begin_concurrent`/`end_concurrent` (T5) takes/frees the executing slot.
+- Evidence: notes/evidence/T4-worker.md + notes/evidence/T4-qa.md.
+- Tests: tests/test_rate_limits.py (8) + full suite `185 passed`.
+- Lesson learned: concurrency cap at create time breaks queued-run skeletons;
+  enforce at executor seam instead, check at create.
+- Commit: 58aac99.
