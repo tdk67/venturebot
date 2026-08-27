@@ -4,7 +4,15 @@
 **Rule:** EVERY task has a verification point. NO code is written for a task
 before its verification point exists in this document. A task is DONE only
 when its verification passes. Supersedes all `*.md.keep` plans.
-**Status of design decisions:** D1–D6 are PROPOSED — confirm/change before Phase 1 starts.
+**Status of design decisions:** D1, D4 LOCKED by user 2026-08-27; D2, D3, D5,
+D6 PROPOSED — confirm/change before Phase 1 starts.
+
+**Execution model:** tasks run via the detached agent workflow in
+`~/pi-workflow/` (NOT part of this repo — generic infra): coordinator starts
+`run_task.sh ~/venturebot Tn` (worker, fresh context, no commit) then
+`run_qa.sh ~/venturebot Tn` (adversarial verifier; only QA commits/pushes on
+PASS and writes the JOURNAL entry). Status: `notes/TASKBOARD.md`, monitor:
+`~/pi-workflow/board.sh ~/venturebot`.
 
 ---
 
@@ -50,10 +58,10 @@ in the README (decided).
 
 | # | Decision | PROPOSED answer | Verification (how we know it's locked) |
 |---|----------|-----------------|----------------------------------------|
-| D1 | Where do LLM calls execute? | **Backend** proxies them with the user's BYOK key (ADK is Python; google_search tool needs server-side; browser CORS to Gemini unproven). | One-line decision + rationale recorded here, confirmed by user. |
+| D1 | Where do LLM calls execute? | **LOCKED (2026-08-27):** Backend proxies them with the user's BYOK key. **No stored server key, no fallback anywhere** — server Gemini key removed from VPS; verified nothing else needs it (duplicate-check is local token-overlap, no LLM; memory/dream-review parked per D5). | Decision recorded here; GCP Secret Manager entry to drop at T12. |
 | D2 | What does the server persist? | Only run records: `{run_id, status, event log, result}` until ACK/TTL. No idea table, no users, no lessons. | State-contract paragraph in this doc confirmed. |
 | D3 | Disconnect behavior | Result held server-side until client ACK (Part A / S7). Mid-flight resume: OUT for v1. | S7 test exists and passes. |
-| D4 | Event scoping | Per-run SSE channel `/api/debates/{id}/events`; global broadcast deleted. | S4 test exists and passes. |
+| D4 | Event scoping | **LOCKED (2026-08-27):** global broadcast breaks privacy — deleted. Events per-run: `GET /api/debates/{id}/events`. | S4 test exists and passes. |
 | D5 | Self-improvement memory (lessons/dream review) | **PARK for hackathon.** Server-side lessons contradict the no-auth/no-data model. Revisit post-hackathon (client-side lessons). | PARKED_IDEAS.md updated with this entry. |
 | D6 | Frontend stack | Plain TypeScript, no framework, esbuild bundle to `static/` (keeps CSP `'self'` trivially). | One-line decision recorded here. |
 
@@ -67,7 +75,7 @@ in the README (decided).
 |---|------|----------------------------------------|
 | T1 | **API contract skeleton.** Routes: `POST /api/debates` (body: idea, api_key, urls? → 201 `{run_id}`), `GET /api/debates/{id}` (status), `GET /api/debates/{id}/events` (SSE), `GET /api/debates/{id}/result` (200 result / 202 not-ready / 410 gone), `POST /api/debates/{id}/result/ack`, `POST /api/debates/{id}/clarify`, `POST /api/byok/verify`, `GET /api/health`. DELETE all legacy admin/ideas/auth routes. | `tests/test_api_contract.py`: every route above exercised for happy path + unknown-ID 404 + legacy routes (`/api/reset`, `/api/stop`, `/api/budget/raise`, `/scheduler/*`, `/api/ideas`, `/api/auth/*`) → 404. OpenAPI snapshot committed; diff must be reviewed on change. |
 | T2 | **Orchestrator hardening.** Wrap the loop so no exception can kill a run silently; emit `agent_started`/`agent_finished` (agent name, model, duration) for every sub-agent and `run_failed` with reason on error. | `tests/test_orchestrator_errors.py`: (a) monkeypatch a sub-agent to raise → run ends `failed`, SSE yields `run_failed` with reason, process alive; (b) happy path emits start+finish event for each of the 7 sub-agents in order. |
-| T3 | **BYOK plumbing.** Key per-request → memory only → passed to LLM client → discarded at run end. Redact from all logging. Server-key fallback exists only if env `VB_ALLOW_SERVER_KEY=1` (off in prod). | `tests/test_key_canary.py` (S2) + `tests/test_api_contract.py`: no key & fallback off → 400. |
+| T3 | **BYOK plumbing.** Key per-request → memory only → passed to LLM client → discarded at run end. Redact from all logging. **No server-key fallback exists in any form (D1).** | `tests/test_key_canary.py` (S2) + `tests/test_api_contract.py`: create-run without key → 400, always. |
 | T4 | **Rate limits & caps** (S1, S10). | `tests/test_rate_limits.py` as specified in S1/S10. |
 | T5 | **Ephemeral store + TTL sweeper + ACK** (S6, S7, D2, D3). | `tests/test_ephemeral.py` + `tests/test_result_ack.py` as specified. |
 
@@ -91,7 +99,7 @@ in the README (decided).
 
 | # | Task | Verification |
 |---|------|--------------|
-| T12 | **Cloud Run + Firebase Hosting** for `idea-lint.my`; env: `VB_ALLOW_SERVER_KEY=0`; no OAuth env vars left. | `curl https://idea-lint.my/api/health` → 200; `curl` create-run without key → 400; SSE connection through Firebase stays alive ≥ 60 s (keepalive ping observed). |
+| T12 | **Cloud Run + Firebase Hosting** for `idea-lint.my`; no LLM keys in env/Secret Manager at all (D1); no OAuth env vars left. | `curl https://idea-lint.my/api/health` → 200; `curl` create-run without key → 400; SSE connection through Firebase stays alive ≥ 60 s (keepalive ping observed). |
 | T13 | **Production smoke.** One REAL end-to-end debate with a real BYOK key. | Full debate finishes; PRD downloads; verify in Cloud Run logs that no key material appears (`grep` canary + `sk-or-`/`AIza` patterns → zero). |
 
 ---

@@ -25,3 +25,4 @@ _auth_tests_disabled/
 # The `public/` placeholder is never served (all traffic is rewritten to
 # Cloud Run), but Firebase requires the directory to exist at deploy time.
 public/
+logs/
