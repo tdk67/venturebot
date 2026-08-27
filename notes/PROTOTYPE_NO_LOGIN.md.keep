@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Prototype no-login plan for the old backend; superseded.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Prototype Phase — Login Disabled (Temporary)
 
 **Date:** 2026-08-20

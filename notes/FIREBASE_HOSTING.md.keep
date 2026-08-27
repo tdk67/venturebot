@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** One-time Firebase setup, mostly done; it targets venture-bot.taskmind-ai.com which is NOT the hackathon domain (hackathon = idea-lint.my).
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Firebase Hosting → Cloud Run custom domain (venture-bot)
 
 Cloud Run's built-in `domain-mappings` are **not supported in `europe-west3`**.

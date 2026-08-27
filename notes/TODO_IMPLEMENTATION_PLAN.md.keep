@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Backlog for the old architecture; statuses were stale even before the rewrite pivot.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # VentureBot — Implementation TODO & Requirements
 
 **Date:** 2026-08-20

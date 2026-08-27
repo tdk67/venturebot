@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Review of the superseded MULTI_USER_DESIGN; findings apply to the old architecture only.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Security Review — Multi-User Support Plan
 
 **Date:** 2026-08-23

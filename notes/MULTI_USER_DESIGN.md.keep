@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Local-first/ephemeral-BE design for the old backend, superseded by the rewrite decision.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Multi-User VentureBot — End-to-End Design (Local-First Hybrid)
 
 **Date:** 2026-08-23

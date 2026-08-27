@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Multi-user phase plan for the old Python-OAuth backend, superseded by the rewrite decision.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Multi-User Implementation — Task List
 
 **Date:** 2026-08-23

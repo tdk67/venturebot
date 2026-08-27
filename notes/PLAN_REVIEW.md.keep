@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Review of the original IMPLEMENTATION_PLAN; historical.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Implementation Plan — Strict Review
 
 **Reviewer:** pi (coding agent)

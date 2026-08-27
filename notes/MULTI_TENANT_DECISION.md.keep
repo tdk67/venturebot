@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Decision for the old backend; tenancy model changes with the rewrite (client-stored ideas).
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Multi-Tenant vs. Browser-Only: Architecture Decision
 
 **Date:** 2026-08-20  

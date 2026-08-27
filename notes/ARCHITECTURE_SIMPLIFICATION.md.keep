@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Brainstorm that triggered the rewrite; its options 1-5 are moot now that the whole app is being rewritten.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Architecture Simplification Brainstorm — 2026-08-26
 
 ## The Problem

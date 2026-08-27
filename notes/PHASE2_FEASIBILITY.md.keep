@@ -1,3 +1,10 @@
+**OBSOLETE — 2026-08-27.** Phase-2 coding plan for the old architecture; superseded by rewrite.
+The project pivoted to a full rewrite (near-stateless backend + BYOK TypeScript
+frontend, client-side idea storage). See `notes/CURRENT_STATUS.md`.
+This file is kept for reference only — do not implement from it.
+
+---
+
 # Phase 2 Feasibility & Reuse Strategy
 
 **Date:** 2026-08-19  
