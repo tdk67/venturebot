@@ -90,3 +90,23 @@ Coordinator-level decisions are journaled by the coordinator.
 - Lesson learned: concurrency cap at create time breaks queued-run skeletons;
   enforce at executor seam instead, check at create.
 - Commit: 58aac99.
+
+## 2026-08-27 — T5 done (Ephemeral store + TTL sweeper + ACK lifecycle)
+- What changed: `src/ephemeral_store.py` (new) — `EphemeralStore` class with TTL-based
+  lifecycle (24h default), ACK tracking, tombstone for 410 Gone responses. Per-IP
+  concurrency tracking via `_active_runs` dict. `sweep_expired()` removes old records
+  and workspaces. `src/inflight_sweeper.py` (new) — `sweep_run_workspace()` wipes a
+  run's workspace dir (path-traversal guarded: only `runs/{run_id}/` under WORKSPACE_DIR),
+  `sweep_workspaces()` batch helper. `src/dashboard.py` gained module-level `STORE`
+  singleton, `_sweep_once()` (sweeps store + workspaces), ASGI lifespan context manager
+  (60s sweep interval, production only), `_emit_plugin()` for sweep notifications.
+  `api_create_debate` registers in STORE, `_lookup()` returns 410 Gone for tombstoned
+  runs, `api_get_result` checks STORE, `api_ack_result` calls `STORE.ack()` and sweeps
+  workspace. Old `_RUNS` dict retained as SSE replay cache.
+- Evidence: notes/evidence/T5-worker.md + notes/evidence/T5-qa.md.
+- Tests: tests/test_ephemeral.py (8) + tests/test_result_ack.py (7) + full suite `200 passed`.
+- Lesson learned: ASGI lifespan context (`@asynccontextmanager` on `app.router.lifespan_context`)
+  runs in production but not in `TestClient()` without explicit lifespan support — tests
+  must inject a fake clock (`STORE.tick`) and call `_sweep_once()` directly to avoid
+  non-deterministic timing.
+- Commit: 2f9e013.
