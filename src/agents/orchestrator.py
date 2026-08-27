@@ -299,10 +299,18 @@ def pop_pause(run_id: str) -> dict | None:
 
 async def _run_sub_agent(
     agent: LlmAgent, message: str, result: OrchestratorResult, label: str,
-    session_service, session_id, user_id,
+    session_service, session_id, user_id, run_id: str | None = None,
 ) -> str:
-    """Run one sub-agent turn. Returns the final (non-partial) text output."""
+    """Run one sub-agent turn. Emits agent_started/agent_finished around the call.
+
+    Returns the final (non-partial) text output. Propagates exceptions loudly
+    so the orchestrator's try/except can emit run_failed.
+    """
     run_manager.manager.check()
+    model_name = getattr(getattr(agent, "model", None), "model", "?")
+    t0 = time.time()
+    run_id = run_id or run_manager.manager.run_id
+    emit("agent_started", {"agent": label, "model": model_name, "run_id": run_id})
     runner = Runner(agent=agent, session_service=session_service, app_name="venturebot")
     content = types.Content(role="user", parts=[types.Part(text=message)])
     events: list = []
@@ -312,13 +320,15 @@ async def _run_sub_agent(
         t = _text_from_event(ev)
         if t and not ev.partial:
             result.events.append({"agent": label, "text": t})
-            store.log(label, getattr(agent.model, "model", "?"), t[:200])
-            agent_turn(label, t, run_manager.manager.run_id)
+            store.log(label, model_name, t[:200])
+            agent_turn(label, t, run_id)
             capture_turn(session_id, label, "agent_message", t,
-                         _THROTTLE.setdefault(session_id, {}))
+                        _THROTTLE.setdefault(session_id, {}))
     final = _final_text_of(events)
     if final:
         asyncio.create_task(_spawn_review_fork(session_id, final))
+    duration = time.time() - t0
+    emit("agent_finished", {"agent": label, "model": model_name, "duration": round(duration, 3), "run_id": run_id})
     return final
 
 
@@ -527,7 +537,7 @@ class OrchestratorTools:
 
         brief = await _run_sub_agent(
             self.agents["researcher"], msg, self.result, "Researcher",
-            self.session_service, self.sid, self.user_id,
+            self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.research_brief = brief
         store.update_task("t1", "done")
@@ -544,7 +554,7 @@ class OrchestratorTools:
             self.agents["advocate"],
             f"Research Brief:\n\n{brief}\n\nArgue FOR this idea.",
             self.result, "Advocate",
-            self.session_service, self.sid, self.user_id,
+            self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.advocate_argument = argument
         store.update_task("t2", "done")
@@ -562,7 +572,7 @@ class OrchestratorTools:
             self.agents["critic"],
             f"Research Brief:\n\n{brief}\n\nAdvocate's Argument:\n\n{argument}\n\nChallenge every claim.",
             self.result, "Critic",
-            self.session_service, self.sid, self.user_id,
+            self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.critic_rebuttal = rebuttal
         store.update_task("t3", "done")
@@ -580,7 +590,7 @@ class OrchestratorTools:
             self.agents["creative"],
             f"Research Brief:\n\n{brief}\n\nAdvocate:\n\n{argument}\n\nCritic's challenges:\n\n{rebuttal}\n\nFind the niche, pivots, unfair advantages and wild ideas.",
             self.result, "Creative",
-            self.session_service, self.sid, self.user_id,
+            self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.creative_angles = angles
         emit("phase_done", {"phase": "creative", "run_id": self.run_id})
@@ -600,7 +610,7 @@ class OrchestratorTools:
             self.agents["judge"],
             f"Research Brief:\n\n{brief}\n\nAdvocate:\n\n{argument}\n\nCritic:\n\n{rebuttal}\n\nCreative angles:\n\n{angles}\n\nProduce your structured verdict.",
             self.result, "Judge",
-            self.session_service, self.sid, self.user_id,
+            self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.verdict_text = verdict_text
         self.result.verdict = _parse_verdict(verdict_text)
@@ -632,7 +642,7 @@ class OrchestratorTools:
 
         prd = await _run_sub_agent(
             self.agents["prd_writer"], msg, self.result, "PRD Writer",
-            self.session_service, self.sid, self.user_id,
+            self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.prd = prd
         _write_workspace_file("PRD.md", prd, run_id=self.run_id)
@@ -654,7 +664,7 @@ class OrchestratorTools:
             self.agents["auditor"],
             f"Proof-read this PRD.\n\nRESEARCH BRIEF:\n{brief}\n\nPRD:\n{prd}\n\nReturn your structured verdict.",
             self.result, "Security Auditor",
-            self.session_service, self.sid, self.user_id,
+            self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         audit = _parse_audit(audit_text)
         self.result.security_audit = proof_read_gate(
@@ -785,6 +795,7 @@ async def run_orchestrator(
     paused_state: dict | None = None,
     clarify_answer: str | None = None,
     api_key: str | None = None,
+    external_run_id: str | None = None,
 ) -> OrchestratorResult:
     """Run the autonomous orchestrator loop for one idea.
 
@@ -830,7 +841,7 @@ async def run_orchestrator(
         result.clarification_answer = clarify_answer
         result.clarification_question = paused_state.get("question")
 
-    run_id = store.start_run()["run_id"]
+    run_id = external_run_id or store.start_run()["run_id"]
     run_manager.manager.start(run_id)
 
     # Record or resume the idea in the idea tree
@@ -1063,6 +1074,8 @@ async def run_orchestrator(
         result.error = f"{type(e).__name__}: {e}"
         store.set_status("failed")
         store.log("System", "core", f"Orchestrator failed: {result.error}")
+        # Loud failure (T2): the UI must get an explicit run_failed with a reason.
+        emit("run_failed", {"reason": result.error, "run_id": run_id})
         _archive_result(result, run_id)
 
     _RUNS.pop(run_id, None)

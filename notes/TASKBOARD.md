@@ -23,7 +23,7 @@ Monitor: `~/pi-workflow/board.sh ~/venturebot`. One worker and one QA at a time.
 | # | Task (see REWRITE_PLAN.md Part C) | Status | Evidence / QA |
 |---|-----------------------------------|--------|---------------|
 | T1 | API contract skeleton + delete legacy/admin routes | done | f1325a9 (notes/evidence/T1-worker.md, T1-qa.md) |
-| T2 | Orchestrator hardening (loud failures, per-agent events) | pending | |
+| T2 | Orchestrator hardening (loud failures, per-agent events) | qa-pending | notes/evidence/T2-worker.md (agent_started/agent_finished ×7 + run_failed; 171 tests green) |
 | T3 | BYOK plumbing (memory-only keys, redaction) | pending | |
 | T4 | Rate limits & caps | pending | |
 | T5 | Ephemeral store + TTL sweeper + ACK | pending | |

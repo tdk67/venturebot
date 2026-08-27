@@ -1,0 +1,17 @@
+{
+  "jobs": [
+    {
+      "id": "BWyibuCgCZ",
+      "name": "venturebot-pipeline-driver",
+      "schedule": "15m",
+      "prompt": "You are the VentureBot pipeline driver. Working repo /root/venturebot, workflow harness /root/pi-workflow.\n\nCheck state: run `~/pi-workflow/board.sh /root/venturebot` and inspect /root/venturebot/logs/tasks/*.worker-done and *.qa-done markers.\n\nRules: one worker AND one QA at a time (never both for the same task, never two workers in parallel). Advance strictly in order T1→T2→T3→T4→T5→(T6,T7,T8,T9)→T10→T11→T12→T13.\n\nAct based on markers:\n- If a task's *.qa-done is present and the next task has neither worker-done nor qa-done and no worker/qa is currently running: launch the next task's worker with `bash /root/pi-workflow/run_task.sh /root/venturebot T<n>` (absolute path), then report.\n- If a task's *.worker-done is present and its *.qa-done is NOT yet present and no QA is currently running for it: launch QA with `bash /root/pi-workflow/run_qa.sh /root/venturebot T<n>`, then report.\n- Otherwise just summarize current status briefly.\n\nThe launched agents are detached (setsid nohup) and survive session death — do NOT worry about this session dying. Do not edit any source code. Verbosity 1: give a 3-5 line status summary.",
+      "enabled": true,
+      "type": "interval",
+      "intervalMs": 900000,
+      "createdAt": "2026-08-27T13:06:07.510Z",
+      "runCount": 0,
+      "session": "01a04351-174b-7d6b-9017-e84448c28e10"
+    }
+  ],
+  "version": 1
+}
