@@ -13,16 +13,16 @@ Monitor: `~/pi-workflow/board.sh ~/venturebot`. One worker and one QA at a time.
 |---|----------|--------|
 | D1 | LLM calls execute on backend with BYOK key; **no stored server key, no fallback anywhere** | LOCKED (2026-08-27, user) |
 | D4 | Events per-run (`/api/debates/{id}/events`); global broadcast deleted — privacy requirement | LOCKED (2026-08-27, user) |
-| D2 | Server persists only run records until ACK/TTL | proposed — confirm |
-| D3 | Result held server-side until client ACK; no mid-flight resume in v1 | proposed — confirm |
-| D5 | Self-improvement memory PARKED for hackathon | proposed — confirm |
-| D6 | Frontend: plain TypeScript, no framework | proposed — confirm |
+| D2 | Server persists only run records until ACK/TTL | LOCKED (2026-08-27, user: proceed) |
+| D3 | Result held server-side until client ACK; no mid-flight resume in v1 | LOCKED (2026-08-27, user: proceed) |
+| D5 | Self-improvement memory PARKED for hackathon | LOCKED (2026-08-27, user: proceed) |
+| D6 | Frontend: plain TypeScript, no framework | LOCKED (2026-08-27, user: proceed) |
 
 ## Tasks
 
 | # | Task (see REWRITE_PLAN.md Part C) | Status | Evidence / QA |
 |---|-----------------------------------|--------|---------------|
-| T1 | API contract skeleton + delete legacy/admin routes | pending | |
+| T1 | API contract skeleton + delete legacy/admin routes | qa-pending | notes/evidence/T1-worker.md |
 | T2 | Orchestrator hardening (loud failures, per-agent events) | pending | |
 | T3 | BYOK plumbing (memory-only keys, redaction) | pending | |
 | T4 | Rate limits & caps | pending | |

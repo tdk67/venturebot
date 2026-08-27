@@ -8,6 +8,22 @@ cancelled real runs via the shared run manager.
 import os
 import tempfile
 
+import pytest
+
+
+def pytest_addoption(parser):
+    parser.addoption(
+        "--regenerate-openapi",
+        action="store_true",
+        default=False,
+        help="rewrite tests/openapi_snapshot.json from the current app schema",
+    )
+
+
+@pytest.fixture
+def regenerate_openapi(request):
+    return request.config.getoption("--regenerate-openapi")
+
 _TMP = tempfile.mkdtemp(prefix="venturebot-tests-")
 
 _ISOLATION = {
@@ -25,3 +41,18 @@ _ISOLATION = {
 
 for _key, _val in _ISOLATION.items():
     os.environ[_key] = _val
+
+
+@pytest.fixture(autouse=True)
+def _regenerate_openapi_on_request(regenerate_openapi):
+    """Regenerate the committed OpenAPI snapshot when explicitly requested."""
+    if regenerate_openapi:
+        import json
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+        from src.dashboard import app
+
+        snap = json.dumps(app.openapi(), sort_keys=True, indent=2)
+        (Path(__file__).resolve().parent / "openapi_snapshot.json").write_text(snap + "\n")

@@ -17,3 +17,20 @@ Coordinator-level decisions are journaled by the coordinator.
   from the generic harness in **`~/pi-workflow/`** (run_task.sh / run_qa.sh /
   board.sh — intentionally NOT stored under this repo); coordinator session
   only starts/monitors. QA gates every commit+push and journals here.
+
+## 2026-08-27 — Coordinator intervention (T1 unblock)
+- T1 worker (first two launches) wrote the API skeleton + contract test but wrote
+  `test_events_endpoint_serves_sse` using `TestClient.stream()` on an infinite
+  SSE generator -> deadlock (proven: single-test run EXIT=124 under `timeout 30`).
+  pi's `bash` tool has no default timeout, so the worker looped re-running the
+  hung full suite without diagnosing it.
+- Coordinator fixes (harness is generic infra in ~/pi-workflow, not repo code):
+  run_task.sh + run_qa.sh now instruct agents to wrap any possibly-hanging
+  command in `timeout` and treat a hang as a failure to fix.
+- Coordinator also fixed two bugs IN THE TASK'S OWN TEST (not product code):
+  (a) SSE test now drives the endpoint generator directly with a fake
+  disconnect request (asserts hello frame + clean termination);
+  (b) `test_no_list_endpoint` used `list - set` -> now `set - set`.
+- Result: contract tests green; full suite now shows ONLY the 15 legacy failures
+  that REWRITE_PLAN.md "Test reuse decision" says to DROP (auth/ideas store).
+  Deleting those legacy test files remains T1 scope -> handed back to worker.
