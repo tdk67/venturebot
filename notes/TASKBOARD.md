@@ -26,7 +26,7 @@ Monitor: `~/pi-workflow/board.sh ~/venturebot`. One worker and one QA at a time.
 | T2 | Orchestrator hardening (loud failures, per-agent events) | done | eb7ba4b (notes/evidence/T2-worker.md, T2-qa.md) |
 | T3 | BYOK plumbing (memory-only keys, redaction) | done | 3aa4c1b (notes/evidence/T3-worker.md, T3-qa.md) |
 | T4 | Rate limits & caps | done | 58aac99 (notes/evidence/T4-worker.md, T4-qa.md) |
-| T5 | Ephemeral store + TTL sweeper + ACK | pending | |
+| T5 | Ephemeral store + TTL sweeper + ACK | qa-pending | notes/evidence/T5-worker.md — TTL store, ACK (410 gone), workspace/disk sweep (S6); full suite 200 passed |
 | T6 | Frontend shell + IndexedDB ideas + export/import | pending | |
 | T7 | Live debate view + explicit errors | pending | |
 | T8 | BYOK key UX | pending | |

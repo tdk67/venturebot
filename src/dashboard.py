@@ -23,6 +23,7 @@ ephemeral TTL/ACK store (T5) plug in behind the same contracts in later tasks.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import re
 import time
@@ -43,6 +44,8 @@ from .rate_limit import (
     sse_acquire,
     sse_release,
 )
+from .ephemeral_store import EphemeralStore
+from .inflight_sweeper import sweep_workspaces
 
 # -- Security headers (G1-G3) ----------------------------------------------
 # Strict CSP: all scripts same-origin; no third-party scripts, no eval.
@@ -60,6 +63,61 @@ _CSP = (
 
 app = FastAPI(title="VentureBot API", version="0.2.0")
 
+# T5 — periodic TTL / workspace sweeper. Every SWEEP_INTERVAL seconds we drop
+# expired runs from the ephemeral store and wipe their workspaces, so idea
+# text, research and PRD content never linger on disk past the TTL (S6/D2).
+# The store's sweep_ttl() is the tested primitive; this loop just drives it.
+# Run only under the ASGI lifespan (uvicorn / TestClient-with-context); a plain
+# TestClient() never starts it, which is why the TTL tests are deterministic.
+SWEEP_INTERVAL_SECONDS = 60
+
+try:
+    from contextlib import asynccontextmanager
+
+
+    @asynccontextmanager
+    async def lifespan(_app):
+        async def _tick():
+            while True:
+                await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
+                try:
+                    _sweep_once()
+                except Exception:
+                    pass
+
+        task = asyncio.create_task(_tick())
+        try:
+            yield
+        finally:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    app.router.lifespan_context = lifespan
+except Exception:
+    # A plain TestClient() with no lifespan support is fine for tests.
+    pass
+
+
+def _sweep_once() -> list[str]:
+    """Tick the store + workspace sweepers once. Returns the run_ids swept.
+    Deterministic and synchronous, so tests call it directly; the lifespan loop
+    calls this repeatedly on its own interval.
+
+    Order matters: `STORE.sweep_ttl()` first fires the `expired` watcher for
+    each dropped run (so any still-open SSE sees it), and only then do we drop
+    the run's remaining in-memory `_RUNS` record and its workspace, so the
+    server holds nothing after expiry (S6/D2).
+    """
+    swept = STORE.sweep_ttl()
+    for run_id in swept:
+        _RUNS.pop(run_id, None)
+        try:
+            sweep_workspaces({run_id})
+        except Exception:
+            pass
+    return swept
+
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
@@ -71,7 +129,7 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-# -- Run registry (in-memory; T5 replaces this with the TTL store) ---------
+# -- Run registry (in-memory; live in the ephemeral TTL+ACK store) ---------
 
 _VALID_STATUSES = {"queued", "running", "failed", "done"}
 
@@ -110,6 +168,28 @@ class RunRecord:
 
 _RUNS: dict[str, RunRecord] = {}
 
+# T5: ephemeral TTL + ACK store (D2/D3/S7). `_RUNS` above remains as a legacy
+# alias for the raw map only where the SSE route still needs the full record
+# for replay; new result/ack routes read from the store so lifecycle (TTL,
+# ACK -> 410 gone) is enforced in one place. `_emit_plugin(run_id, event, data)`
+# is a fire-and-forget notification the store fires when a run is dropped by TTL.
+
+
+def _emit_plugin(run_id: str, event: str, data: dict) -> None:
+    """Called by the ephemeral store when a run is dropped by TTL. Best-effort:
+    appends an `expired` transient event to the run's record if it still exists
+    (so any open SSE stream sees it) and nudges the workspace sweeper."""
+    rec = _RUNS.get(run_id)
+    if rec is not None:
+        try:
+            rec.events.append({"event": event, "data": data, "ts": time.time()})
+        except Exception:
+            pass
+
+
+# Module-level store all routes share. Tests swap this for a fresh store.
+STORE = EphemeralStore(watch_plugin=_emit_plugin)
+
 
 def _emit(run: RunRecord, event: str, data: dict) -> None:
     """Append a per-run event. Payload is JSON-safe; api_key is never included."""
@@ -124,9 +204,12 @@ async def _read_body_limited(request: Request):
 
 
 def _lookup(run_id: str) -> RunRecord:
-    rec = _RUNS.get(run_id)
+    # T5: read from the ephemeral store. Gone (acked/expired) -> 410, unknown
+    # -> 404 (S3).
+    rec = STORE.get(run_id)
     if rec is None:
-        # S3: unknown run ids are indistinguishable from nonexistent → 404
+        if STORE.is_gone(run_id):
+            raise HTTPException(410, "result gone")
         raise HTTPException(404, "not found")
     return rec
 
@@ -278,6 +361,9 @@ async def api_create_debate(request: Request):
     rec = RunRecord(run_id=run_id, idea=idea, api_key=api_key)
     _emit(rec, "run_created", {"idea_len": len(idea), "urls": len(urls)})
     _RUNS[run_id] = rec
+    # T5: register in the ephemeral TTL + ACK store (D2/D3) so the result
+    # lifecycle (ACK -> 410 gone, TTL sweeper) is enforced.
+    STORE.register(rec)
 
     # T1 is the API SKELETON: no live execution is launched here. The real
     # orchestrator wiring + per-run key discard happen behind `_run_debate`
@@ -336,8 +422,6 @@ def _sse(event: str, data: dict) -> str:
 @app.get("/api/debates/{run_id}/result")
 async def api_get_result(run_id: str):
     rec = _lookup(run_id)
-    if rec.acked or (rec.status == "done" and rec.result is None and rec.acked):
-        raise HTTPException(410, "result gone")  # S7: after ACK, gone
     if rec.result is None:
         raise HTTPException(202, "not ready")  # S7: not ready yet
     return {"run_id": rec.run_id, "result": rec.result}
@@ -345,11 +429,24 @@ async def api_get_result(run_id: str):
 
 @app.post("/api/debates/{run_id}/result/ack")
 async def api_ack_result(run_id: str):
-    rec = _lookup(run_id)
+    # T5: ack through the store so the record is wiped + 410-tombstoned. If the
+    # run doesn't have a result yet (still in flight / never finished), ACK is
+    # rejected (409) and the record is left untouched.
+    rec = STORE.get(run_id)
+    if rec is None:
+        if STORE.is_gone(run_id):
+            # already gone -> treat as idempotent ack
+            return {"status": "acked", "run_id": run_id}
+        raise HTTPException(404, "not found")
     if rec.result is None:
         raise HTTPException(409, "result not ready")
-    rec.acked = True
-    _emit(rec, "result_acked", {"run_id": run_id})
+    STORE.ack(run_id)
+    # also drop the per-run workspace so no idea text lingers on disk (S6)
+    try:
+        sweep_workspaces({run_id})
+    except Exception:
+        pass
+    _RUNS.pop(run_id, None)
     return {"status": "acked", "run_id": run_id}
 
 
