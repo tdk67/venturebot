@@ -28,7 +28,7 @@ Monitor: `~/pi-workflow/board.sh ~/venturebot`. One worker and one QA at a time.
 | T4 | Rate limits & caps | done | 58aac99 (notes/evidence/T4-worker.md, T4-qa.md) |
 | T5 | Ephemeral store + TTL sweeper + ACK | done | 2f9e013 (notes/evidence/T5-worker.md, T5-qa.md) |
 | T6 | Frontend shell + IndexedDB ideas + export/import | done | eb3aace (notes/evidence/T6-worker.md, T6-qa.md) |
-| T7 | Live debate view + explicit errors | pending | |
+| T7 | Live debate view + explicit errors | done | per-agent chips + error banner + elapsed + stop (evidence: T7-worker.md, T7-qa.md) |
 | T8 | BYOK key UX | pending | |
 | T9 | Disconnect recovery | pending | |
 | T10 | Reuse gates (port scanners/guards tests) | pending | |

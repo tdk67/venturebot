@@ -50,6 +50,23 @@
   <div id="ideas-list" class="space-y-2"></div>
   <p id="ideas-empty" class="text-xs text-slate-500">No ideas yet — add one above.</p>
 
+  <!-- Live debate view (T7) -->
+  <section id="debate-run" class="card mt-6 hidden">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-lg font-bold text-slate-200">Live debate</h2>
+      <div class="flex items-center gap-2">
+        <button id="btn-stop" class="px-3 py-1.5 rounded-lg bg-red-800 hover:bg-red-700 text-white text-xs font-bold hidden">■ Stop</button>
+      </div>
+    </div>
+    <p id="debate-state" class="text-xs text-slate-400 mb-3" data-label="idle">idle · 0:00</p>
+    <div id="debate-agents" class="flex flex-wrap gap-2 mb-4"></div>
+    <div id="debate-error" class="hidden mb-4 p-3 rounded-lg bg-red-900/60 border border-red-700 text-sm text-red-100 font-semibold"></div>
+    <div id="debate-done" class="hidden mb-4 p-4 rounded-lg bg-emerald-900/40 border border-emerald-700">
+      <p id="debate-done-title" class="text-sm font-bold text-emerald-100"></p>
+      <a id="debate-prd-link" href="#" class="text-xs text-emerald-300 underline"></a>
+    </div>
+  </section>
+
   <p id="status-line" class="status mt-6"></p>
 </main>
 

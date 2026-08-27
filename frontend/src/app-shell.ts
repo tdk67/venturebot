@@ -14,6 +14,14 @@ import * as store from './store';
 import type { Idea } from './idb';
 import { byId, dom } from './dom';
 
+/**
+ * init() accepts an { onRun } option (T7): a hook called with the idea when
+ * the user clicks its "▶ Run" button. T6 callers may omit it (no debate).
+ */
+export interface ShellOptions {
+  onRun?: (idea: Idea) => void;
+}
+
 const IDEA_INPUT = 'idea-input';
 const IDEA_LIST = 'ideas-list';
 const IDEA_COUNT = 'idea-count';
@@ -26,19 +34,32 @@ const DUPLICATE_HINT = 'duplicate-hint';
 const SUBMIT_BTN = 'btn-add';
 
 let ideas: Idea[] = [];
+let onRun: ((idea: Idea) => void) | null = null;
+
+function renderRow(idea: Idea): HTMLElement {
+  const row = dom('div', 'idea-row flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/60');
+  const text = dom('span', 'flex-1 text-sm text-slate-100', idea.title);
+  row.appendChild(text);
+
+  if (onRun) {
+    const run = dom('button', 'px-2 py-1 text-xs rounded bg-emerald-700 hover:bg-emerald-600 text-white', '▶ Run');
+    run.setAttribute('data-run-id', idea.id);
+    run.addEventListener('click', () => onRun?.(idea));
+    row.appendChild(run);
+  }
+
+  const del = dom('button', 'px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-white', '✕');
+  del.setAttribute('data-id', idea.id);
+  del.addEventListener('click', () => void removeIdea(idea.id));
+  row.appendChild(del);
+  return row;
+}
 
 function renderList(): void {
   const list = byId<HTMLDivElement>(IDEA_LIST);
   list.innerHTML = '';
   for (const idea of ideas) {
-    const row = dom('div', 'idea-row flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 border border-slate-700/60');
-    const text = dom('span', 'flex-1 text-sm text-slate-100', idea.title);
-    const del = dom('button', 'px-2 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-white', '✕');
-    del.setAttribute('data-id', idea.id);
-    del.addEventListener('click', () => void removeIdea(idea.id));
-    row.appendChild(text);
-    row.appendChild(del);
-    list.appendChild(row);
+    list.appendChild(renderRow(idea));
   }
   byId(IDEA_COUNT).textContent = `${ideas.length} idea${ideas.length === 1 ? '' : 's'}`;
   const empty = byId('ideas-empty');
@@ -139,7 +160,8 @@ async function maybeDuplicateHint(): Promise<void> {
   }
 }
 
-export function init(): void {
+export function init(options?: ShellOptions): void {
+  onRun = options?.onRun ?? null;
   wire();
   void refresh();
 }

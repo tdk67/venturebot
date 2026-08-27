@@ -117,3 +117,9 @@ Coordinator-level decisions are journaled by the coordinator.
 - Tests: Full suite 200 passed, security headers 4/4 passed, TypeScript strict compile clean, E2E checklist 3/3 pass criteria (reload persistence, duplicate warning, import restore).
 - Lesson learned: agent-browser requires explicit `--executable-path` when default browser directory is missing; `sessionMode=fresh` needed for clean-profile E2E tests to avoid IndexedDB contamination from prior sessions.
 - Commit: eb3aace.
+
+## 2026-08-27 — T7 done: Live debate view (per-agent progress chips + loud errors)
+- What changed: `frontend/src/debate.ts` (new) — live debate view with 7 per-agent chips (Researcher, Advocate, Critic, Creative, Judge, PRD Writer, Security Auditor), explicit red error banner on `run_failed`/`expired`, elapsed timer (500ms interval), stop button (aborts SSE). `frontend/src/api.ts` gained `createDebate`, `fetchResult`, `ackResult`, `parseSse`. `frontend/src/app-shell.ts` gained `onRun` hook. `frontend/src/app.ts` wires shell + debate. `src/stub_server.py` rebuilt for T7 (success: 7 agents finish in order; fail: `run_failed` within ~0.4s). `templates/index.html` gained `#debate-run` section. E2E spec at `tests/e2e/debate.spec.md`.
+- Evidence: notes/evidence/T7-worker.md + notes/evidence/T7-qa.md
+- Tests: Full suite 200 passed, TypeScript strict compile clean, stub server verified (success: 7 agent_started + 7 agent_finished + 1 run_finished; fail: 1 agent_started + 1 run_failed within 0.4s).
+- Lesson learned: `EventSource` is the correct SSE client for browser (native, CSP-safe, auto-reconnect); custom `parseSse` helper exported for testing but not needed in production code.
