@@ -54,13 +54,15 @@ produced no code on disk (verified: clean tree, no TS files).
 | **idea-lint.my** | GCP Cloud Run (`venturebot-506408`) via Firebase Hosting rewrites | **The hackathon target.** Firebase hosting deployed & reachable; login at this domain was broken (drove the rewrite). |
 | **venturebot.taskmind-ai.com** | **This VPS** (systemd `venturebot.service` + nginx, A record 187.124.171.89) | Legacy deployment of the broken app. **May stay running, but is NOT needed for the hackathon. Do NOT add it to the README.** Kept in memory/this file only. |
 
-⚠️ VPS config drift: `.env` on this VPS currently has `VENTUREBOT_NO_AUTH=0`
-with `VENTUREBOT_PUBLIC_BASE_URL=https://idea-lint.my` — i.e. OAuth enabled
-with the WRONG base URL for the VPS host, so VPS login redirects are broken.
-For the VPS to be usable at all until the rewrite lands, set `NO_AUTH=1` (or
-correct the base URL). Auth has been toggled on/off repeatedly (8/20 GIS,
-8/23 sessions+OAuth code flow A5/A6, 8/26 NO_AUTH=1 deploy, 8/27 dead end) —
-**stop iterating on auth of the old app**; the rewrite decides auth.
+✅ **VPS auth decided and flipped (2026-08-27): `VENTUREBOT_NO_AUTH=1`.**
+Login never worked reliably; the new approach needs no authentication
+(BYOK + client-stored data). VPS verified open, HTTPS 200.
+Auth history (closed chapter): 8/20 GIS → 8/23 sessions+OAuth code flow
+A5/A6 → 8/26 NO_AUTH → 8/27 dead end. **No more auth work on the old app.**
+
+⚠️ Known live exposure on the VPS while it stays up: under NO_AUTH the old
+app exposes `/api/budget/raise` and server-key compute to anyone (details:
+REWRITE_PLAN.md §A2, mitigation proposal R1 pending user OK).
 
 ## 4. Docs inventory
 
@@ -77,10 +79,9 @@ correct the base URL). Auth has been toggled on/off repeatedly (8/20 GIS,
 
 ## 5. Next actions (in order)
 
-1. Brainstorm-finish the rewrite architecture (open point: debate survival on
-   client disconnect / result-download guarantee).
-2. Write the implementation plan **with verification points per task**; test
-   reuse decision included; freeze the verification plan before coding.
+1. **Lock D1–D6 in `notes/REWRITE_PLAN.md`** (proposed answers inside).
+2. Follow REWRITE_PLAN.md strictly: contract tests written FIRST, then code.
 3. Implement rewrite; UI must show per-agent progress and explicit errors.
-4. Deploy to GCP behind idea-lint.my.
-5. Revisit privacy claims (CLAIMS_VS_REALITY) — prio #1 after it works.
+4. Deploy to GCP behind idea-lint.my (T12-T13).
+5. Pass the 5-scenario global acceptance gate (REWRITE_PLAN Part D).
+6. Revisit privacy claims (CLAIMS_VS_REALITY) — prio #1, covered by T11.
