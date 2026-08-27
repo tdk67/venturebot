@@ -1,0 +1,13 @@
+{
+  "name": "venturebot-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VentureBot rewrite frontend — plain TypeScript, no framework (decision D6). Bundled with esbuild to static/app.js (keeps CSP script-src 'self').",
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/app.ts --bundle --minify --target=es2020 --outfile=../static/app.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
+}

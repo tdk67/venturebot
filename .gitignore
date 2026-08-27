@@ -18,6 +18,11 @@ venv/
 .venv/
 backups/
 
+# ── Frontend build (plain TS via esbuild, D6) ─────────────
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
 # local-only disabled tests
 _auth_tests_disabled/
 

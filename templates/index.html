@@ -3,301 +3,56 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Idea Lint - Startup Idea Validator</title>
+<title>Idea Lint — Startup Idea Validator</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
-<script src="/static/vendor/tailwind-3.4.16.min.js"></script>
-<script src="/static/vendor/marked-12.0.2.min.js"></script>
-<script src="/static/vendor/purify-3.2.4.min.js"></script>
 <style>
-  #debate-feed .msg { word-break: break-word; }
-  .md-body { white-space: normal; }
-  .md-body h1, .md-body h2, .md-body h3 { font-weight: 700; margin: .6em 0 .3em; color: #fff; }
-  .md-body h1 { font-size: 1.05rem; } .md-body h2 { font-size: 1rem; } .md-body h3 { font-size: .925rem; }
-  .md-body p { margin: .35em 0; }
-  .md-body ul, .md-body ol { margin: .35em 0; padding-left: 1.4em; list-style: disc; }
-  .md-body ol { list-style: decimal; }
-  .md-body li { margin: .15em 0; }
-  .md-body code { background: rgba(255,255,255,.1); padding: 0 .3em; border-radius: .25em; }
-  .md-body pre { background: rgba(0,0,0,.4); padding: .6em; border-radius: .4em; overflow-x: auto; margin: .5em 0; }
-  .md-body pre code { background: none; padding: 0; }
-  .md-body a { color: #7dd3fc; text-decoration: underline; }
-  .md-body table { border-collapse: collapse; margin: .5em 0; }
-  .md-body th, .md-body td { border: 1px solid rgba(255,255,255,.2); padding: .25em .5em; }
-  .md-body blockquote { border-left: 3px solid rgba(255,255,255,.3); padding-left: .8em; color: #cbd5e1; margin: .4em 0; }
-  .md-body hr { border-color: rgba(255,255,255,.15); margin: .6em 0; }
+  body { background: #0f172a; color: #e2e8f0; }
+  .card { background: #020617; border: 1px solid #1e293b; border-radius: 1rem; padding: 1.5rem; }
+  .btn-primary { background: #059669; }
+  .btn-primary:hover { background: #047857; }
+  .input { background: #0f172a; border: 1px solid #334155; border-radius: .5rem; padding: .6rem .9rem; color: #e2e8f0; outline: none; }
+  .input:focus { border-color: #3b82f6; }
+  .hint { color: #f59e0b; font-size: .75rem; }
+  .status { font-size: .8rem; color: #94a3b8; }
 </style>
 </head>
-<body class="bg-slate-900 text-slate-100 min-h-screen">
-
-<!-- Login gate (A6): shown until /api/auth/me reports an authenticated user -->
-<div id="login-screen" class="hidden min-h-screen flex items-center justify-center">
-  <div class="bg-slate-950 p-10 rounded-2xl border border-slate-800 text-center max-w-md">
-    <h1 class="text-2xl font-black text-white mb-2">Idea Lint <span class="text-blue-500">Command Center</span></h1>
-    <p class="text-slate-400 text-sm mb-8">Sign in with your Google account to continue.</p>
-    <a href="/api/auth/login"
-       class="inline-flex items-center gap-3 px-6 py-3 bg-white text-slate-900 font-bold rounded-lg hover:bg-slate-200 transition">
-      <svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.7-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.6 39.6 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C36.9 39.2 44 34 44 24c0-1.3-.1-2.7-.4-3.9z"/></svg>
-      Sign in with Google
-    </a>
-    <p id="login-error" class="hidden text-red-400 text-xs mt-6"></p>
-  </div>
-</div>
-
-<!-- Main app -->
-<div id="app" class="hidden max-w-7xl mx-auto p-8">
-  <header class="mb-8 flex justify-between items-center border-b border-slate-800 pb-4">
-    <div>
-      <div class="flex items-center gap-3 mb-2">
-        <img src="/static/logo.svg" alt="Idea Lint" class="h-10" onerror="this.style.display='none'">
-        <div>
-          <h1 class="text-3xl font-black text-white">Venture<span class="text-blue-500">Bot</span></h1>
-        </div>
-      </div>
-      <div class="flex items-center gap-3 mt-2">
-        <span id="status-badge" class="px-3 py-1 text-xs font-bold rounded-full border bg-slate-600">IDLE</span>
-        <span id="budget-badge" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400">budget:  -- </span>
-        <button id="usage-toggle" data-action="toggle-usage" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400 hover:text-white">usage:  -- </button>
-        <span id="user-badge" class="text-xs text-slate-500"></span>
-        <button id="btn-logout" title="Sign out" class="px-3 py-1 text-xs rounded-full border bg-slate-800 text-slate-400 hover:text-white">sign out</button>
-      </div>
-      <!-- BYOK settings panel -->
-      <div id="byok-panel" class="hidden mt-3 bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs">
-        <div class="flex items-center gap-2 mb-2">
-          <span class="text-slate-300 font-bold">Your API key:</span>
-          <input id="byok-input" type="password" placeholder="sk-or-v1-... or AIza..."
-                 class="flex-1 bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-slate-200 focus:outline-none focus:border-blue-500 font-mono">
-          <button id="byok-verify" class="px-3 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold">Verify</button>
-          <button id="byok-clear" class="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600 text-white">Clear</button>
-        </div>
-        <div id="byok-status" class="text-slate-400"></div>
-      </div>
-      <!-- Usage panel (UI_UX_NOTES #6) -->
-      <div id="usage-panel" class="hidden mt-3 bg-slate-900 border border-slate-700 rounded-lg p-3 text-xs">
-        <div class="flex gap-2 mb-2">
-          <button data-action="usage-period" data-period="today" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">Today</button>
-          <button data-action="usage-period" data-period="week" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">7 days</button>
-          <button data-action="usage-period" data-period="month" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">30 days</button>
-        </div>
-        <div id="usage-body" class="text-slate-300"></div>
-      </div>
-      </div>
-    </div>
+<body class="min-h-screen">
+<main class="max-w-3xl mx-auto p-6">
+  <header class="mb-6 flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <button id="btn-stop" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold rounded-lg">⏹ Stop</button>
+      <img src="/static/logo.svg" alt="" class="h-9" onerror="this.style.display='none'">
+      <h1 class="text-2xl font-black text-white">Venture<span class="text-blue-500">Bot</span></h1>
     </div>
+    <span class="text-xs text-slate-500">Idea Lint — your ideas stay in this browser</span>
   </header>
 
-  <!-- Idea input -->
-  <div class="mb-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
-    <label class="block text-sm font-bold text-slate-300 mb-2">Pitch an idea to the debate</label>
+  <section class="card mb-6">
+    <label for="idea-input" class="block text-sm font-bold text-slate-300 mb-2">Add an idea to your list</label>
     <div class="flex gap-3">
       <input id="idea-input" type="text" placeholder="e.g. An app that helps gardeners track watering schedules"
-             class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
-      <button id="btn-run" class="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg">▶ Debate</button>
+             class="input flex-1" autocomplete="off">
+      <button id="btn-add" class="btn-primary px-5 py-2 rounded-lg font-bold text-white">+ Add</button>
     </div>
-    <div class="flex gap-3 mt-2">
-      <input id="url-input" type="text" placeholder="Optional: comma-separated research URLs you already found"
-             class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-xs focus:outline-none focus:border-blue-500">
+    <p id="duplicate-hint" class="hint hidden mt-2"></p>
+  </section>
+
+  <div class="flex items-center justify-between mb-3">
+    <h2 class="text-lg font-bold text-slate-200">Your ideas</h2>
+    <div class="flex items-center gap-2">
+      <button id="btn-export" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold">⬇ Export JSON</button>
+      <button id="btn-import" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold">⬆ Import</button>
+      <input id="import-file" type="file" accept="application/json,.json" class="hidden">
+      <button id="btn-clear" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-bold">Clear all</button>
     </div>
   </div>
+  <p id="idea-count" class="text-xs text-slate-500 mb-3">0 ideas</p>
 
-  <!-- Steering inbox (checkpoint-ingested, never interrupts the loop) -->
-  <div class="mb-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
-    <label class="block text-sm font-bold text-slate-300 mb-2">Steer the running loop (ingested at next checkpoint  -- won't disrupt it)</label>
-    <div class="flex gap-3">
-      <input id="steering-input" type="text" placeholder="e.g. Focus on the EU market; ignore competitor X"
-             class="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
-      <button id="btn-steering" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg">Send</button>
-    </div>
-    <p id="steering-status" class="text-xs text-slate-500 mt-2"></p>
-  </div>
+  <div id="ideas-list" class="space-y-2"></div>
+  <p id="ideas-empty" class="text-xs text-slate-500">No ideas yet — add one above.</p>
 
-  <!-- Verdict gate (hidden until verdict) -->
-  <div id="verdict-card" class="hidden mb-8 bg-slate-950 p-6 rounded-2xl border border-amber-500/40">
-    <h2 class="text-xl font-bold text-amber-400 mb-3">Verdict  -- human decision required</h2>
-    <div id="verdict-scores" class="mb-4 grid grid-cols-3 gap-4"></div>
-    <p id="verdict-rationale" class="text-slate-300 text-sm mb-4"></p>
-    <div id="verdict-key-risks" class="text-xs text-slate-400 mb-4"></div>
-    <div class="flex gap-3">
-      <button data-action="verdict" data-verdict="proceed" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg">PROCEED ANYWAY</button>
-      <button data-action="verdict" data-verdict="rebut" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg">↻ REBUT</button>
-      <button data-action="verdict" data-verdict="abort" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg">ABORT</button>
-    </div>
-    <div id="rebut-box" class="hidden mt-4">
-      <label class="block text-xs font-bold text-slate-300 mb-2">What did the debate miss? (steering re-injected at Advocate)</label>
-      <textarea id="rebut-text" rows="3" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500" placeholder="e.g. You missed competitor X at url.com; the real niche is Y…"></textarea>
-      <button id="btn-rebut" class="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-lg">Send rebuttal</button>
-    </div>
-  </div>
-
-  <!-- PRD approval (hidden until PRD) -->
-  <div id="prd-card" class="hidden mb-8 bg-slate-950 p-6 rounded-2xl border border-emerald-500/40">
-    <h2 class="text-xl font-bold text-emerald-400 mb-3">PRD  -- approve?</h2>
-    <div id="audit-badge" class="mb-3"></div>
-    <div id="audit-findings" class="mb-3"></div>
-    <pre id="prd-text" class="text-slate-200 text-sm whitespace-pre-wrap bg-slate-900 p-4 rounded-lg max-h-96 overflow-y-auto"></pre>
-    <div class="flex gap-3 mt-4">
-      <button data-action="prd" data-prd="approve" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-lg">APPROVE</button>
-      <button data-action="prd" data-prd="reject" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-bold rounded-lg">REJECT</button>
-    </div>
-  </div>
-
-  <!-- Two-panel: sidebar (facets) + main (debate feed / ideas) -->
-  <div class="flex flex-col lg:flex-row gap-6">
-    <!-- Sidebar: idea history facets -->
-    <aside class="lg:w-64 shrink-0">
-      <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
-        <h2 class="text-lg font-bold text-slate-300 mb-3">🗂 My Ideas</h2>
-        <div class="space-y-4 text-xs">
-          <div>
-            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">Status</h3>
-            <div id="facet-statuses" class="space-y-1"></div>
-          </div>
-          <div>
-            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">Categories</h3>
-            <div id="facet-tags" class="space-y-1"></div>
-          </div>
-          <div>
-            <h3 class="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">Dates</h3>
-            <div id="facet-dates" class="space-y-1"></div>
-          </div>
-        </div>
-      </div>
-    </aside>
-
-    <!-- Main column -->
-    <div class="flex-1 min-w-0">
-      <!-- Past ideas + checkpoints (idea history) -->
-      <div class="bg-slate-950 p-6 rounded-2xl border border-slate-800">
-        <div class="flex items-center justify-between mb-3">
-          <h2 class="text-xl font-bold text-slate-300">Past Ideas</h2>
-          <div class="flex gap-2">
-            <input id="ideas-search" type="text" placeholder="Search ideas…"
-                   class="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-">
-            <input id="ideas-import-file" type="file" accept="application/json,.json" class="hidden" >
-            <button id="btn-import-ideas" title="Import ideas from JSON export"
-                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">⬆ Import</button>
-            <button id="btn-export-json" title="Export ALL ideas + full history as JSON backup"
-                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">⬇ JSON</button>
-            <button id="btn-export-csv" title="Export CSV"
-                    class="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">⬇ CSV</button>
-          </div>
-        </div>
-        <div id="active-filters" class="hidden mb-3 text-xs text-slate-400"></div>
-        <div id="in-progress-box" class="hidden mb-3 p-3 rounded-lg border border-amber-500/40 bg-amber-500/5">
-          <p class="text-xs text-amber-300 font-bold mb-2">⚠ In-progress debates (crash-safe, resumable):</p>
-          <div id="checkpoint-list" class="space-y-2"></div>
-        </div>
-        <div id="ideas-list" class="space-y-2"></div>
-        <p id="ideas-empty" class="text-xs text-slate-500 hidden">No past ideas yet  -- pitch one above and it will appear here.</p>
-        <div id="ideas-pager" class="flex items-center gap-3 mt-4 text-xs text-slate-400"></div>
-      </div>
-
-      <!-- Debate feed -->
-      <div class="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
-        <h2 class="text-xl font-bold mb-4 text-slate-300">Live Debate</h2>
-        <!-- Debate economics line -->
-        <div id="debate-econ" class="hidden mb-3 flex items-center gap-4 text-xs">
-          <span id="econ-cost" class="font-mono text-emerald-400">💰 $0.0000</span>
-          <span id="econ-elapsed" class="font-mono text-slate-400">⏱ 0:00</span>
-          <span id="econ-turns" class="font-mono text-slate-500"></span>
-        </div>
-        <!-- Participants strip: one chip per debate participant -->
-        <div id="participants" class="hidden mb-4">
-          <div id="participant-chips" class="flex flex-wrap gap-2"></div>
-        </div>
-        <div id="debate-feed" class="space-y-3 max-h-[600px] overflow-y-auto"></div>
-        <!-- Clarify box: shown when the orchestrator pauses to ask the human -->
-        <div id="clarify-box" class="hidden mt-3 p-3 rounded-lg bg-amber-900/40 border border-amber-600/50">
-          <div class="text-xs font-bold text-amber-300 mb-2">🎛 Orchestrator needs your input:</div>
-          <div id="clarify-question" class="text-xs text-slate-100 mb-2 whitespace-pre-wrap"></div>
-          <div class="flex gap-2">
-            <input id="clarify-answer" type="text" placeholder="Your answer…"
-                   class="flex-1 px-3 py-1.5 text-xs rounded-lg bg-slate-800 border border-slate-600 text-slate-100 focus:outline-none focus:border-amber-500">
-            <button id="clarify-send" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-amber-600 hover:bg-amber-500 text-white">Answer</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Self-improvement console (M3) -->
-  <div class="mt-8 bg-slate-950 p-6 rounded-2xl border border-slate-800">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="text-xl font-bold text-slate-300">🧠 Self-Improvement Console</h2>
-      <button id="btn-dream-review" class="px-3 py-1 bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold rounded-lg">Run Dream Review</button>
-    </div>
-    <div class="grid grid-cols-2 gap-4">
-      <div>
-        <h3 class="text-xs uppercase text-slate-500 font-bold mb-2">Techniques</h3>
-        <ul id="techniques-list" class="text-xs text-slate-300 space-y-1"></ul>
-      </div>
-      <div>
-        <h3 class="text-xs uppercase text-slate-500 font-bold mb-2">Lessons</h3>
-        <ul id="lessons-list" class="text-xs text-slate-300 space-y-1"></ul>
-      </div>
-    </div>
-    <div class="mt-4">
-      <h3 class="text-xs uppercase text-slate-500 font-bold mb-2">Idea Tree</h3>
-      <ul id="idea-tree-list" class="text-xs text-slate-300 space-y-1"></ul>
-    </div>
-  </div>
-</div>
-
-  <!-- Idea workspace: FULL-SCREEN view  -- past debates, replay by participant, resume -->
-  <div id="idea-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950">
-    <div class="sticky top-0 z-10 bg-slate-950/95 border-b border-slate-800 px-6 py-3 flex items-center justify-between">
-      <button data-action="close-idea-modal" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-bold">← All ideas</button>
-      <span class="text-xs text-slate-500">Idea Workspace</span>
-    </div>
-    <div class="max-w-6xl mx-auto p-6">
-      <!-- Header -->
-      <div class="flex items-start justify-between gap-4 mb-4">
-        <div class="min-w-0 flex-1">
-          <div id="idea-modal-title-wrap"></div>
-          <div id="idea-modal-meta" class="text-xs text-slate-400 mt-1"></div>
-          <div id="idea-modal-pitch" class="mt-3"></div>
-        </div>
-        <button data-action="close-idea-modal" title="Close"
-                class="shrink-0 px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-lg">×</button>
-      </div>
-
-      <!-- Run history -->
-      <h3 class="text-xs uppercase tracking-wider text-slate-500 font-bold mb-2">Debate history</h3>
-      <div id="idea-modal-runs" class="space-y-2 mb-5"></div>
-
-      <!-- Replay area: participants as tabs  -> wide detail pane -->
-      <div id="idea-modal-replay" class="hidden">
-        <div class="flex items-center justify-between mb-2 flex-wrap gap-2">
-          <h3 id="idea-modal-replay-title" class="text-base font-bold text-blue-400"></h3>
-          <div class="flex gap-2">
-            <button id="idea-run-md-btn" class="hidden px-2 py-1 text-[11px] rounded bg-emerald-700 hover:bg-emerald-600 text-white font-bold">⬇ .md report</button>
-            <button id="idea-run-pdf-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">🖨 PDF</button>
-            <button id="idea-modal-prd-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">View PRD</button>
-            <button id="idea-modal-brief-btn" class="hidden px-2 py-1 text-[11px] rounded bg-slate-700 hover:bg-slate-600 text-white">Research brief</button>
-          </div>
-        </div>
-        <!-- Participant tabs -->
-        <div id="run-tabs" class="flex flex-wrap gap-1 mb-3 border-b border-slate-800 pb-2"></div>
-        <div id="idea-modal-doc" class="hidden text-xs text-slate-200 bg-slate-900 p-3 rounded-lg max-h-72 overflow-y-auto mb-3"></div>
-        <div id="idea-modal-feed" class="space-y-3 max-h-none"></div>
-      </div>
-
-      <!-- Resume with a new comment -->
-      <div class="mt-5 pt-4 border-t border-slate-800 mb-10">
-        <label for="idea-resume-comment" class="text-xs uppercase tracking-wider text-slate-500 font-bold">Continue this idea  -- what's new?</label>
-        <textarea id="idea-resume-comment" rows="2"
-                  placeholder="e.g. A competitor just shut down; also I now think the niche is B2B only  -- re-run the debate with this in mind…"
-                  class="mt-2 w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"></textarea>
-        <div id="idea-modal-footer" class="flex flex-wrap gap-2 mt-2"></div>
-      </div>
-    </div>
-  </div>
+  <p id="status-line" class="status mt-6"></p>
+</main>
 
 <script src="/static/app.js" defer></script>
-<footer class="max-w-7xl mx-auto px-8 pb-6 text-center">
-  <a href="/impressum" class="text-xs text-slate-600 hover:text-slate-400">Impressum</a>
-</footer>
 </body>
 </html>
