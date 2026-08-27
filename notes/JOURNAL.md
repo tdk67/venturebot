@@ -110,3 +110,10 @@ Coordinator-level decisions are journaled by the coordinator.
   must inject a fake clock (`STORE.tick`) and call `_sweep_once()` directly to avoid
   non-deterministic timing.
 - Commit: 2f9e013.
+
+## 2026-08-27 — T6 done: App shell + IndexedDB idea store
+- What changed: Added TypeScript frontend (frontend/src/) with 6 modules (idb.ts, store.ts, app-shell.ts, app.ts, dom.ts, api.ts). IndexedDB CRUD for ideas, JSON export/import, client-side duplicate check. Replaced legacy 300-line template with 56-line T6 app shell. Replaced legacy 1384-line app.js with 5kb esbuild bundle. E2E spec at tests/e2e/ideas.spec.md.
+- Evidence: notes/evidence/T6-worker.md + notes/evidence/T6-qa.md
+- Tests: Full suite 200 passed, security headers 4/4 passed, TypeScript strict compile clean, E2E checklist 3/3 pass criteria (reload persistence, duplicate warning, import restore).
+- Lesson learned: agent-browser requires explicit `--executable-path` when default browser directory is missing; `sessionMode=fresh` needed for clean-profile E2E tests to avoid IndexedDB contamination from prior sessions.
+- Commit: eb3aace.
