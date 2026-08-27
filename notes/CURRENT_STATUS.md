@@ -3,6 +3,26 @@
 **Written:** 2026-08-27 (after memory review + code/doc audit)
 **Read this first before touching anything in this repo.**
 
+## 0. NEXT SESSION PICKUP (handoff 2026-08-27)
+
+The detached worker/QA workflow is BUILT and SMOKE-TESTED (`pi -p` unattended
+verified 2026-08-27; harness lives in `~/pi-workflow/`, own git repo).
+As the new session: read `AGENTS.md` rules, then:
+
+1. The next action is **task T1** (board: pending, all blocking items cleared
+   except the confirmations below).
+2. Open decisions D2/D3/D5/D6: ask the user to confirm ONCE. If the user says
+   "proceed" without changes, adopt the proposed answers recorded in
+   REWRITE_PLAN.md Part B and mark them LOCKED in TASKBOARD.md.
+3. Then execute strictly via the harness: `~/pi-workflow/run_task.sh
+   ~/venturebot T1` → wait for `logs/tasks/T1.worker-done` →
+   `~/pi-workflow/run_qa.sh ~/venturebot T1` → `board.sh`. Repeat per task.
+4. Everything else (statuses, evidence, memory) is maintained by the agents in
+   TASKBOARD.md / notes/evidence/ / JOURNAL.md — keep this file updated only
+   for coordinator-level changes.
+
+---
+
 ---
 
 ## 1. Where the code stands
