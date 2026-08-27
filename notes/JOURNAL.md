@@ -47,3 +47,19 @@ Coordinator-level decisions are journaled by the coordinator.
 - Lesson learned: `TestClient.stream()` deadlocks on an infinite SSE generator;
   drive the endpoint generator directly with a fake disconnect request instead.
 - Commit: f1325a9.
+
+## 2026-08-27 — T2 done (Orchestrator hardening: per-agent lifecycle events + loud run_failed)
+- What changed: `src/agents/orchestrator.py` now emits `agent_started`/`agent_finished`
+  (agent name, model, duration, run_id) around every sub-agent call in `_run_sub_agent`;
+  `run_orchestrator`'s `except Exception` block emits `run_failed` with reason before
+  archiving. `_run_sub_agent` gained a `run_id` kwarg; all `OrchestratorTools` call sites
+  pass `run_id=self.run_id`. `run_orchestrator` gained `external_run_id` for deterministic
+  testing (additive, no breaking change). `src/events.py` gained a per-run sink registry
+  (`register_run_sink`/`unregister_run_sink`) so typed events route by run_id (D4: no
+  cross-run broadcast).
+- Evidence: notes/evidence/T2-worker.md + notes/evidence/T2-qa.md.
+- Tests: tests/test_orchestrator_errors.py (3) + full suite `171 passed`.
+- Lesson learned: sync callbacks in async event buses fire synchronously as part of the
+  `cb(event, payload)` call before `loop.create_task(None)` raises — the event bus is
+  fire-and-forget, so callback failures don't break the debate.
+- Commit: eb7ba4b.
