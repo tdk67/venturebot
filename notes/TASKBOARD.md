@@ -24,7 +24,7 @@ Monitor: `~/pi-workflow/board.sh ~/venturebot`. One worker and one QA at a time.
 |---|-----------------------------------|--------|---------------|
 | T1 | API contract skeleton + delete legacy/admin routes | done | f1325a9 (notes/evidence/T1-worker.md, T1-qa.md) |
 | T2 | Orchestrator hardening (loud failures, per-agent events) | done | eb7ba4b (notes/evidence/T2-worker.md, T2-qa.md) |
-| T3 | BYOK plumbing (memory-only keys, redaction) | qa-pending | notes/evidence/T3-worker.md — 6 canary tests + 400-always (D1), full suite 177 passed |
+| T3 | BYOK plumbing (memory-only keys, redaction) | done | 3aa4c1b (notes/evidence/T3-worker.md, T3-qa.md) |
 | T4 | Rate limits & caps | pending | |
 | T5 | Ephemeral store + TTL sweeper + ACK | pending | |
 | T6 | Frontend shell + IndexedDB ideas + export/import | pending | |

@@ -63,3 +63,15 @@ Coordinator-level decisions are journaled by the coordinator.
   `cb(event, payload)` call before `loop.create_task(None)` raises — the event bus is
   fire-and-forget, so callback failures don't break the debate.
 - Commit: eb7ba4b.
+
+## 2026-08-27 — T3 done (BYOK plumbing: memory-only keys, redaction, no server-key fallback)
+- What changed: `src/dashboard.py` gained `_redact`, `_redact_dict`, `_scrub_key_from_run`,
+  `_orchestrator`, and `_run_debate` — the full BYOK plumbing. User keys arrive per-request,
+  held in memory only, passed to the orchestrator's factory, and discarded in `finally`.
+  All error/event text is redacted before storage. No server-key fallback exists (D1).
+  `_run_debate` is the per-run executor (not yet wired into the route — that's a later task).
+- Evidence: notes/evidence/T3-worker.md + notes/evidence/T3-qa.md.
+- Tests: tests/test_key_canary.py (6) + full suite `177 passed`.
+- Lesson learned: pre-commit hooks can false-positive on test fixtures using realistic-looking
+  key patterns (e.g., `AIza...`); use obviously-fake values like `FAKE-SERVER-KEY-GOOGLE` instead.
+- Commit: 3aa4c1b.
