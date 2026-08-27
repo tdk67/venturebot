@@ -34,3 +34,16 @@ Coordinator-level decisions are journaled by the coordinator.
 - Result: contract tests green; full suite now shows ONLY the 15 legacy failures
   that REWRITE_PLAN.md "Test reuse decision" says to DROP (auth/ideas store).
   Deleting those legacy test files remains T1 scope -> handed back to worker.
+
+## 2026-08-27 — T1 done (API contract skeleton + delete legacy/admin routes)
+- What changed: `src/dashboard.py` rewritten as near-stateless T1 skeleton
+  (in-memory run registry, 8-route contract: create/status/events/result/ack/
+  clarify/byok-verify/health); legacy admin/auth/ideas routes deleted (S5);
+  strict CSP + security headers kept (S9). OpenAPI snapshot committed and
+  asserted reproducible on change (`--regenerate-openapi`).
+- Dropped tests: `test_auth_flow.py`, `test_idea_runs.py` (deleted routes).
+- Evidence: notes/evidence/T1-worker.md + notes/evidence/T1-qa.md.
+- Tests: tests/test_api_contract.py (40) + full suite `168 passed`.
+- Lesson learned: `TestClient.stream()` deadlocks on an infinite SSE generator;
+  drive the endpoint generator directly with a fake disconnect request instead.
+- Commit: f1325a9.
