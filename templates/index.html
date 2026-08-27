@@ -26,6 +26,26 @@
     <span class="text-xs text-slate-500">Idea Lint — your ideas stay in this browser</span>
   </header>
 
+  <!-- BYOK key UX (T8): enter + verify the user's own key. The stored key is
+       never rendered back; the field only accepts NEW input. -->
+  <section id="key-card" class="card mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="text-sm font-bold text-slate-300">Your model API key</h2>
+      <span class="text-xs text-slate-500">stays in this browser</span>
+    </div>
+    <p id="key-status" class="text-xs mb-2" data-state="unknown">No key set yet. Open the form to add one.</p>
+    <div id="key-form" class="hidden">
+      <div class="flex gap-3">
+        <input id="key-input" type="password" placeholder="sk-or-v1-… / AIza…"
+               class="input flex-1" autocomplete="off" spellcheck="false">
+        <button id="btn-key-verify" class="btn-primary px-4 py-2 rounded-lg font-bold text-white">Verify & save</button>
+      </div>
+      <p id="key-hint" class="hint hidden mt-2"></p>
+    </div>
+    <button id="btn-key-open" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold mt-2">＋ Set API key</button>
+    <button id="btn-key-clear" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold mt-2">⌫ Remove key</button>
+  </section>
+
   <section class="card mb-6">
     <label for="idea-input" class="block text-sm font-bold text-slate-300 mb-2">Add an idea to your list</label>
     <div class="flex gap-3">

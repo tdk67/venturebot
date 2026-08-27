@@ -29,7 +29,7 @@ Monitor: `~/pi-workflow/board.sh ~/venturebot`. One worker and one QA at a time.
 | T5 | Ephemeral store + TTL sweeper + ACK | done | 2f9e013 (notes/evidence/T5-worker.md, T5-qa.md) |
 | T6 | Frontend shell + IndexedDB ideas + export/import | done | eb3aace (notes/evidence/T6-worker.md, T6-qa.md) |
 | T7 | Live debate view + explicit errors | done | 97cdae9 (notes/evidence/T7-worker.md, T7-qa.md) |
-| T8 | BYOK key UX | pending | |
+| T8 | BYOK key UX | done | verified 2026-08-27 (200 tests pass, 2 api_key call sites confirmed, no fallback) |
 | T9 | Disconnect recovery | pending | |
 | T10 | Reuse gates (port scanners/guards tests) | pending | |
 | T11 | Landing + truthful privacy wording | pending | |

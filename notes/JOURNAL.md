@@ -123,3 +123,10 @@ Coordinator-level decisions are journaled by the coordinator.
 - Evidence: notes/evidence/T7-worker.md + notes/evidence/T7-qa.md
 - Tests: Full suite 200 passed, TypeScript strict compile clean, stub server verified (success: 7 agent_started + 7 agent_finished + 1 run_finished; fail: 1 agent_started + 1 run_failed within 0.4s).
 - Lesson learned: `EventSource` is the correct SSE client for browser (native, CSP-safe, auto-reconnect); custom `parseSse` helper exported for testing but not needed in production code.
+- Commit: 97cdae9.
+
+## 2026-08-27 — T8 done: BYOK Key UX (browser-side key management + verification)
+- What changed: `frontend/src/byok.ts` (new) — BYOK module with `loadKey`, `saveKey`, `clearKey`, `verifyKey` functions. Key stored in localStorage under `vb-api-key`; `validated` flag intentionally NOT persisted (security: must re-verify each session). `frontend/src/api.ts` gained `verifyByokKey` (POST to `/api/byok/verify`). `frontend/src/app.ts` refactored to import and use BYOK module; removed `sk-or-v1-demo-placeholder` fallback (D1 compliance: no hardcoded keys). `templates/index.html` gained `#key-card` section with password input, verify button, and status display. `tests/e2e/byok.spec.md` documents E2E flow (key input → verify → stored → used in create-run). Static bundle rebuilt (12.6kb).
+- Evidence: notes/evidence/T8-worker.md + notes/evidence/T8-qa.md
+- Tests: Full suite 200 passed, TypeScript strict compile clean, `grep -o "api_key" static/app.js | wc -l` = 2 (verify + create, no extras), key never rendered back to DOM (verified via grep + manual inspection).
+- Lesson learned: Intentionally NOT persisting the `validated` flag forces re-verification each session — stronger security (prevents stale validated state if key is revoked server-side) at the cost of one extra API call per session. Trade-off documented in byok.ts comments.

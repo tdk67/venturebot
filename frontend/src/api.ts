@@ -78,6 +78,12 @@ async function _post(path: string, body: unknown): Promise<unknown> {
   }
 }
 
+/** Verify a user-supplied BYOK key against `/api/byok/verify` (T8). */
+export async function verifyByokKey(apiKey: string): Promise<ByokVerifyResponse> {
+  const data = (await _post(API.byokVerify, { api_key: apiKey })) as ByokVerifyResponse;
+  return data;
+}
+
 /** Create a debate run. Returns the run_id. */
 export async function createDebate(idea: string, apiKey: string): Promise<string> {
   const data = (await _post(API.createDebate, { idea, api_key: apiKey })) as CreateDebateResponse;
