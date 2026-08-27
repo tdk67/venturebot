@@ -34,6 +34,16 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from .rate_limit import (
+    MAX_BODY_BYTES,
+    accept_run_created,
+    check_hourly,
+    client_ip,
+    has_active_run,
+    sse_acquire,
+    sse_release,
+)
+
 # -- Security headers (G1-G3) ----------------------------------------------
 # Strict CSP: all scripts same-origin; no third-party scripts, no eval.
 _CSP = (
@@ -104,6 +114,13 @@ _RUNS: dict[str, RunRecord] = {}
 def _emit(run: RunRecord, event: str, data: dict) -> None:
     """Append a per-run event. Payload is JSON-safe; api_key is never included."""
     run.events.append({"event": event, "data": data, "ts": time.time()})
+
+
+async def _read_body_limited(request: Request):
+    body = await request.body()
+    if len(body) > MAX_BODY_BYTES:
+        raise HTTPException(413, "request too large")
+    return body
 
 
 def _lookup(run_id: str) -> RunRecord:
@@ -236,7 +253,8 @@ async def api_health():
 
 @app.post("/api/debates", status_code=201)
 async def api_create_debate(request: Request):
-    body = await request.json()
+    raw = await _read_body_limited(request)
+    body = json.loads(raw or b"{}")
     idea = (body.get("idea") or "").strip()
     if not idea:
         raise HTTPException(400, "idea is required")
@@ -244,6 +262,19 @@ async def api_create_debate(request: Request):
     urls = body.get("urls") or []
 
     run_id = str(uuid.uuid4())  # 122-bit unguessable (S3)
+
+    # T4 — S1: per-IP limits BEFORE a run is created.
+    #   * hourly anti-flood credit is consumed at creation
+    #   * concurrency: a 2nd run while this IP already EXECUTES one is rejected
+    #     (the executing slot itself is taken by the executor, seam `begin_*`)
+    ip = client_ip(request)
+    if has_active_run(ip):
+        raise HTTPException(429, "rate limit: too_many_concurrent")
+    ok, reason = check_hourly(ip)
+    if not ok:
+        raise HTTPException(429, f"rate limit: {reason}")
+    accept_run_created(ip)
+
     rec = RunRecord(run_id=run_id, idea=idea, api_key=api_key)
     _emit(rec, "run_created", {"idea_len": len(idea), "urls": len(urls)})
     _RUNS[run_id] = rec
@@ -270,21 +301,30 @@ async def api_debate_events(run_id: str, request: Request):
     # Validate existence first: unknown ids → 404 (never an open stream).
     rec = _lookup(run_id)
 
+    # T4 — S10: cap concurrent SSE connections per IP.
+    ip = client_ip(request)
+    tok = sse_acquire(ip)
+    if tok is None:
+        raise HTTPException(429, "rate limit: too many connections")
+
     async def gen():
-        # hello frame + replay of already-emitted events (D3: reload re-polls)
-        yield _sse("hello", {"run_id": run_id, "status": rec.status})
-        seen = 0
-        while True:
-            if await request.is_disconnected():
-                break
-            # replay newly appended events since last check (queued runs never
-            # emit after run_created, so a queued run yields hello then pings)
-            fresh = rec.events[seen:]
-            seen = len(rec.events)
-            for ev in fresh:
-                yield _sse(ev["event"], ev["data"])
-            yield _sse("ping", {"t": int(time.time())})
-            await asyncio.sleep(1.0)
+        try:
+            # hello frame + replay of already-emitted events (D3: reload re-polls)
+            yield _sse("hello", {"run_id": run_id, "status": rec.status})
+            seen = 0
+            while True:
+                if await request.is_disconnected():
+                    break
+                # replay newly appended events since last check (queued runs never
+                # emit after run_created, so a queued run yields hello then pings)
+                fresh = rec.events[seen:]
+                seen = len(rec.events)
+                for ev in fresh:
+                    yield _sse(ev["event"], ev["data"])
+                yield _sse("ping", {"t": int(time.time())})
+                await asyncio.sleep(1.0)
+        finally:
+            sse_release(ip, tok)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
