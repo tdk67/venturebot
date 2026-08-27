@@ -105,6 +105,35 @@ CREATE INDEX IF NOT EXISTS idx_idea_runs_idea ON idea_runs(idea_id, run_number);
 
 _VALID_IDEA_STATUSES = {"ACTIVE", "PARK", "PRUNED"}
 
+# Noise words excluded from the duplicate-check token overlap (UI_UX_NOTES #4).
+# Without this, two totally unrelated ideas sharing a common English word
+# ("the", "for", "about", "into", ...) were flagged as duplicates.
+_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "for", "nor", "so", "yet",
+    "about", "into", "that", "this", "these", "those", "with", "from",
+    "your", "you", "how", "what", "why", "when", "where", "which", "who",
+    "can", "could", "would", "should", "will", "shall", "may", "might",
+    "must", "not", "are", "was", "were", "been", "being", "have", "has",
+    "had", "does", "did", "its", "his", "her", "their", "them", "then",
+    "than", "too", "very", "just", "all", "any", "each", "few", "more",
+    "most", "other", "some", "such", "there", "here", "off", "out", "over",
+    "under", "again", "further", "once", "same", "also", "own", "idea",
+    "is", "it", "of", "on", "in", "to", "as", "at", "by", "up", "be",
+    "we", "they", "i", "me", "my", "he", "she", "us", "our", "do",
+}
+
+# A new idea is only considered a candidate duplicate if it shares at least
+# this many *meaningful* (non-stopword) words with an existing idea.
+_DUP_MIN_OVERLAP = 2
+
+
+def _meaningful_words(text: str) -> set[str]:
+    """Lowercase, non-stopword, len>2 words from a title. Empty if none."""
+    return {
+        w for w in (text or "").lower().split()
+        if len(w) > 2 and w not in _STOPWORDS
+    }
+
 
 class MemoryStore:
     """Thread-safe SQLite store for the self-improvement layer."""
@@ -429,17 +458,21 @@ class MemoryStore:
     def find_similar_ideas(self, title: str, limit: int = 3) -> list[dict]:
         """Cheap duplicate check (UI_UX_NOTES #4): token-overlap on the title
         against existing ideas, ranked by shared-word count. Deterministic,
-        zero LLM cost. Returns the top matches (empty if none overlap)."""
-        words = {w for w in title.lower().split() if len(w) > 2}
+        zero LLM cost. Returns the top matches (empty if none overlap).
+
+        Stopwords are ignored and a minimum of _DUP_MIN_OVERLAP meaningful
+        words must be shared, so unrelated ideas that merely reuse common
+        English words are no longer flagged as duplicates."""
+        words = _meaningful_words(title)
         if not words:
             return []
         scored = []
         for idea in self.get_idea_tree():
             if (idea.get("status") or "").upper() == "DELETED":
                 continue
-            other = {w for w in (idea.get("title") or "").lower().split() if len(w) > 2}
+            other = _meaningful_words(idea.get("title") or "")
             overlap = words & other
-            if overlap:
+            if len(overlap) >= _DUP_MIN_OVERLAP:
                 scored.append((len(overlap), idea))
         scored.sort(key=lambda kv: -kv[0])
         return [idea for _, idea in scored[:limit]]

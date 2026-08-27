@@ -167,7 +167,7 @@ def _do_callback(client, monkeypatch, email="user@example.com", sub="sub-123"):
 def test_callback_mints_session_cookie(client, monkeypatch):
     resp = _do_callback(client, monkeypatch)
     assert resp.status_code == 302
-    assert resp.headers["location"] == "/"
+    assert resp.headers["location"] == "/app"
     set_cookie = resp.headers["set-cookie"]
     assert "vb_session=" in set_cookie
     assert "httponly" in set_cookie.lower()

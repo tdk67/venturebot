@@ -163,7 +163,7 @@ def _set_session_cookie(resp: Response, token: str) -> None:
 async def auth_login(request: Request):
     """Start Google OAuth (code flow + PKCE). 302 to accounts.google.com."""
     if config.NO_AUTH:
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse("/app", status_code=302)
     url = oauth.begin_login(_base_url(request))
     return RedirectResponse(url, status_code=302)
 
@@ -177,7 +177,7 @@ async def auth_callback(request: Request):
     from .sessions import session_store
 
     if config.NO_AUTH:
-        return RedirectResponse("/", status_code=302)
+        return RedirectResponse("/app", status_code=302)
     base = _base_url(request)
     params = dict(request.query_params)
     if params.get("error"):
@@ -198,7 +198,7 @@ async def auth_callback(request: Request):
 
     user = stored["user"]
     token = auth.create_session_token(user["email"], user["name"], user["picture"])
-    resp = RedirectResponse("/", status_code=302)
+    resp = RedirectResponse("/app", status_code=302)
     _set_session_cookie(resp, token)
     return resp
 @app.get("/api/auth/client-id")

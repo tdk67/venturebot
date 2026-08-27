@@ -92,3 +92,36 @@ def test_extract_tags_case_insensitive():
 def test_extract_tags_no_false_positives():
     tags = extract_tags("a recipe manager")
     assert tags == []
+
+
+# -- duplicate / similar idea check -------------------------------------
+
+def test_find_similar_ideas_no_false_positive_on_stopwords(store):
+    """Regression: unrelated ideas sharing only common English words must not
+    be flagged as duplicates (UI_UX_NOTES #4)."""
+    store.create_idea("The idea is about an annoying language trainer")
+    store.create_idea("A CLI tool that summarizes git diffs into plain English")
+
+    assert store.find_similar_ideas("The ultimate todo list app") == []
+    assert store.find_similar_ideas("A recipe app for the whole family") == []
+    assert store.find_similar_ideas("An app that tracks the weather") == []
+
+
+def test_find_similar_ideas_matches_real_overlap(store):
+    """Genuinely similar ideas must still be caught."""
+    store.create_idea("A CLI tool that summarizes git diffs into plain English")
+    store.create_idea("The idea is about an annoying language trainer")
+
+    matches = store.find_similar_ideas("a cli tool for summarizing git diffs")
+    assert len(matches) >= 1
+    assert "git diffs" in matches[0]["title"].lower()
+
+    matches = store.find_similar_ideas("annoying language trainer for germans")
+    assert len(matches) >= 1
+    assert "language trainer" in matches[0]["title"].lower()
+
+
+def test_find_similar_ideas_ignores_deleted(store):
+    iid = store.create_idea("A CLI tool that summarizes git diffs")
+    store.delete_idea(iid)
+    assert store.find_similar_ideas("A CLI tool that summarizes git diffs") == []
