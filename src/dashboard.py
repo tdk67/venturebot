@@ -74,11 +74,22 @@ _KEY_PATTERNS = [
 ]
 
 
+def _redact(text: str, api_key: str) -> str:
+    """S2/OPSEC: strip a user-provided API key from any text (errors, events).
+
+    Returns the text unchanged when the key is empty or absent, otherwise with
+    every occurrence replaced by the literal `[REDACTED]`.
+    """
+    if not text or not api_key:
+        return text
+    return text.replace(api_key, "[REDACTED]")
+
+
 @dataclass
 class RunRecord:
     run_id: str
     idea: str
-    api_key: str  # held in memory only for this run's lifetime (D1/S2)
+    api_key: str = ""  # held in memory ONLY for this run's lifetime (D1/S2)
     status: str = "queued"
     created_at: float = field(default_factory=time.time)
     events: list[dict] = field(default_factory=list)
@@ -111,6 +122,111 @@ def _require_api_key(body: dict) -> str:
     return key
 
 
+# -- BYOK plumbing (T3) -----------------------------------------------------
+# D1: keys are per-request, live ONLY in memory for that run's lifetime, and
+# are passed through to the orchestrator's factory. There is no stored server
+# key and no fallback. The key is scrubbed from the in-memory record as soon as
+# the debate ends (finally), and every surfaced string (error, events) is
+# redacted.
+
+
+def _orchestrator(idea: str, *, api_key: str | None, external_run_id: str | None, urls: list[str] | None = None, **kwargs):
+    """Thin wrapper so tests can monkeypatch the module-level symbol."""
+    from .agents.orchestrator import run_orchestrator
+    from .steering import SteeringInbox
+
+    inbox = SteeringInbox()
+    if urls:
+        inbox.add_urls(urls)
+    return run_orchestrator(
+        idea,
+        api_key=api_key,
+        external_run_id=external_run_id,
+        inbox=inbox,
+        **kwargs,
+    )
+
+
+async def _run_debate(rec: RunRecord, api_key: str, *, idea: str | None = None, urls: list[str] | None = None) -> None:
+    """Drive ONE debate for a created run (T3).
+
+    Responsibilities:
+      * status running
+      * pass idea+per-run key to the orchestrator (BYOK, memory only)
+      * store the result for the /result + ack contract (S7)
+      * emit run_finished / run_failed (loud failures, T2)
+      * DISCARD the key in `finally` so it is never reused or retained
+      * redact the key from any error/event text
+    """
+    try:
+        rec.status = "running"
+        _emit(rec, "run_started", {"run_id": rec.run_id})
+        result = await _orchestrator(
+            rec.idea if idea is None else idea,
+            api_key=api_key,
+            external_run_id=rec.run_id,
+            urls=urls,
+        )
+        rec.result = {
+            "run_id": rec.run_id,
+            "status": getattr(result, "status", "done"),
+            "verdict": getattr(result, "verdict", None),
+            "prd": getattr(result, "prd", None),
+            "transcript": getattr(result, "events", []),
+        }
+        rec.status = getattr(result, "status", "done")
+        if getattr(result, "error", None):
+            rec.error = _redact(str(result.error), api_key)
+        _emit(rec, "run_finished", {"run_id": rec.run_id, "status": rec.status})
+    except asyncio.CancelledError:
+        rec.status = "failed"
+        rec.error = "run cancelled"
+        _emit(rec, "run_failed", {"reason": "run cancelled", "run_id": rec.run_id})
+    except Exception as e:
+        # Loud failure (S2/T2): surface an explicit reason, key redacted.
+        rec.status = "failed"
+        rec.error = _redact(f"{type(e).__name__}: {e}", api_key)
+        _emit(rec, "run_failed", {"reason": rec.error, "run_id": rec.run_id})
+    finally:
+        # D1/S2: the key never outlives its run. Stored/event/error text that
+        # might have captured it is scrubbed too, and the record is cleared.
+        _scrub_key_from_run(rec, api_key)
+        rec.api_key = ""
+
+
+def _scrub_key_from_run(rec: RunRecord, api_key: str) -> None:
+    """Remove the key from any stored/event/error text in the run record."""
+    if not api_key:
+        return
+    if rec.error:
+        rec.error = _redact(rec.error, api_key)
+    if rec.result:
+        rec.result = _redact_dict(rec.result, api_key)
+    for ev in rec.events:
+        d = ev.get("data", {})
+        for k, v in list(d.items()):
+            if isinstance(v, str):
+                d[k] = _redact(v, api_key)
+
+
+def _redact_dict(d: dict, api_key: str) -> dict:
+    out = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            out[k] = _redact_dict(v, api_key)
+        elif isinstance(v, list):
+            out[k] = [
+                _redact_dict(i, api_key) if isinstance(i, dict)
+                else (_redact(i, api_key) if isinstance(i, str) else i)
+                for i in v
+            ]
+        elif isinstance(v, str):
+            out[k] = _redact(v, api_key)
+        else:
+            out[k] = v
+    return out
+
+
 # -- New API surface -------------------------------------------------------
 
 @app.get("/api/health")
@@ -132,7 +248,9 @@ async def api_create_debate(request: Request):
     _emit(rec, "run_created", {"idea_len": len(idea), "urls": len(urls)})
     _RUNS[run_id] = rec
 
-    # T2 wires the real orchestrator here (async task per run).
+    # T1 is the API SKELETON: no live execution is launched here. The real
+    # orchestrator wiring + per-run key discard happen behind `_run_debate`
+    # (a later task launches it); this route only fulfills the API contract.
     return {"run_id": run_id, "status": rec.status}
 
 
