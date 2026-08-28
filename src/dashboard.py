@@ -75,8 +75,9 @@ app = FastAPI(title="VentureBot API", version="0.2.0")
 SWEEP_INTERVAL_SECONDS = 60
 
 
-def sweep_paused_runs(max_age_seconds: float = 7 * 86400) -> list[str]:
+def sweep_paused_runs(max_age_seconds: float | None = None) -> list[str]:
     """Wipe orphaned pause files older than max_age_seconds (GDPR Art. 5(1)(e) storage limitation)."""
+    max_age = max_age_seconds if max_age_seconds is not None else float(getattr(config, "PAUSE_MAX_AGE_SECONDS", 7 * 86400))
     p_dir = config.DATA_DIR / "paused_runs"
     if not p_dir.exists():
         return []
@@ -85,7 +86,7 @@ def sweep_paused_runs(max_age_seconds: float = 7 * 86400) -> list[str]:
     try:
         for p in p_dir.glob("*.json"):
             try:
-                if now - p.stat().st_mtime > max_age_seconds:
+                if now - p.stat().st_mtime > max_age:
                     p.unlink(missing_ok=True)
                     swept.append(p.stem)
             except Exception:
@@ -280,30 +281,56 @@ def _require_api_key(request: Request, body: dict | None = None) -> str:
 def _orchestrator(idea: str, *, api_key: str | None, external_run_id: str | None, urls: list[str] | None = None, **kwargs):
     """Thin wrapper so tests can monkeypatch the module-level symbol."""
     from .agents.orchestrator import run_orchestrator
-    from .steering import SteeringInbox
 
-    inbox = SteeringInbox()
-    if urls:
-        inbox.add_urls(urls)
     return run_orchestrator(
         idea,
         api_key=api_key,
         external_run_id=external_run_id,
-        inbox=inbox,
+        urls=urls,
         **kwargs,
     )
 
 
+_RETRYABLE_KEYWORDS = (
+    "429", "resource exhausted", "rate limit", "quota", "500", "502", "503", "504",
+    "unavailable", "overloaded", "timeout", "timed out", "connect", "connection reset", "econnreset"
+)
+_FATAL_KEYWORDS = (
+    "api key", "401", "403", "permission", "unauthorized", "404", "not found", "400", "invalid argument", "input blocked"
+)
+
+
+def _is_intermittent_error_msg(msg: str) -> bool:
+    msg = msg.lower()
+    if any(k in msg for k in _FATAL_KEYWORDS):
+        return False
+    return any(k in msg for k in _RETRYABLE_KEYWORDS)
+
+
 def _is_intermittent_error(exc: Exception) -> bool:
     """Classify whether an exception is a transient network/server error suitable for retry."""
-    msg = str(exc).lower()
-    # Fatal / Client / Auth errors — never retry
-    if any(k in msg for k in ("api key", "401", "403", "permission", "unauthorized", "404", "not found", "400", "invalid argument", "input blocked")):
-        return False
     if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
         return False
-    # Transient network / rate-limit / server errors — retryable
-    return any(k in msg for k in ("429", "resource exhausted", "rate limit", "quota", "500", "502", "503", "504", "unavailable", "overloaded", "timeout", "timed out", "connect", "connection reset", "econnreset"))
+    return _is_intermittent_error_msg(str(exc))
+
+
+def _build_result_dict(rec: RunRecord, result: object) -> dict:
+    """Extract standard result dictionary from orchestrator result."""
+    return {
+        "run_id": rec.run_id,
+        "status": rec.status,
+        "verdict": getattr(result, "verdict", None),
+        "verdict_text": getattr(result, "verdict_text", None),
+        "prd": getattr(result, "prd", None),
+        "research_brief": getattr(result, "research_brief", None),
+        "advocate_argument": getattr(result, "advocate_argument", None),
+        "critic_rebuttal": getattr(result, "critic_rebuttal", None),
+        "creative_angles": getattr(result, "creative_angles", None),
+        "security_audit": getattr(result, "security_audit", None),
+        "turns_used": getattr(result, "turns_used", 0),
+        "clarification_question": getattr(result, "clarification_question", None),
+        "transcript": getattr(result, "events", []),
+    }
 
 
 async def _run_debate(
@@ -321,7 +348,7 @@ async def _run_debate(
     Responsibilities:
       * status running
       * pass idea+per-run key to the orchestrator (BYOK, memory only)
-      * retry intermittent errors up to 3 times with exponential backoff
+      * retry intermittent errors up to configured retries with exponential backoff
       * store the result for the /result + ack contract (S7)
       * emit run_finished / run_failed (loud failures, T2)
       * DISCARD the key in `finally` so it is never reused or retained
@@ -338,7 +365,7 @@ async def _run_debate(
         _emit(rec, "run_started", {"run_id": rec.run_id})
 
         result = None
-        max_retries = 3
+        max_retries = getattr(config, "RUN_RETRY_ATTEMPTS", 3)
         for attempt in range(1, max_retries + 1):
             try:
                 if attempt > 1:
@@ -357,8 +384,7 @@ async def _run_debate(
                     resume_comment=resume_comment,
                 )
                 if getattr(result, "status", "done") == "failed" and getattr(result, "error", None):
-                    err_str = str(result.error).lower()
-                    if attempt < max_retries and any(kw in err_str for kw in ("429", "resource exhausted", "rate limit", "503", "unavailable", "overloaded", "timeout", "timed out")):
+                    if attempt < max_retries and _is_intermittent_error_msg(str(result.error)):
                         await asyncio.sleep(2 ** (attempt - 1))
                         continue
                 break
@@ -368,49 +394,26 @@ async def _run_debate(
                     continue
                 raise
 
+        if result is None:
+            rec.status = "failed"
+            rec.error = "Debate execution produced no result"
+            _emit(rec, "run_failed", {"reason": rec.error, "run_id": rec.run_id})
+            return
+
         rec.status = getattr(result, "status", "done")
         if rec.status == "needs_clarification":
-            rec.result = {
-                "run_id": rec.run_id,
-                "status": rec.status,
-                "verdict": getattr(result, "verdict", None),
-                "verdict_text": getattr(result, "verdict_text", None),
-                "prd": getattr(result, "prd", None),
-                "research_brief": getattr(result, "research_brief", None),
-                "advocate_argument": getattr(result, "advocate_argument", None),
-                "critic_rebuttal": getattr(result, "critic_rebuttal", None),
-                "creative_angles": getattr(result, "creative_angles", None),
-                "security_audit": getattr(result, "security_audit", None),
-                "turns_used": getattr(result, "turns_used", 0),
-                "clarification_question": getattr(result, "clarification_question", None),
-                "transcript": getattr(result, "events", []),
-            }
+            rec.result = _build_result_dict(rec, result)
             _emit(rec, "clarify_question", {
                 "question": rec.result.get("clarification_question") or getattr(result, "clarification_question", ""),
                 "run_id": rec.run_id,
             })
         elif rec.status not in ("failed", "stopped"):
-            rec.result = {
-                "run_id": rec.run_id,
-                "status": rec.status,
-                "verdict": getattr(result, "verdict", None),
-                "verdict_text": getattr(result, "verdict_text", None),
-                "prd": getattr(result, "prd", None),
-                "research_brief": getattr(result, "research_brief", None),
-                "advocate_argument": getattr(result, "advocate_argument", None),
-                "critic_rebuttal": getattr(result, "critic_rebuttal", None),
-                "creative_angles": getattr(result, "creative_angles", None),
-                "security_audit": getattr(result, "security_audit", None),
-                "turns_used": getattr(result, "turns_used", 0),
-                "clarification_question": getattr(result, "clarification_question", None),
-                "transcript": getattr(result, "events", []),
-            }
+            rec.result = _build_result_dict(rec, result)
             _emit(rec, "run_finished", {"run_id": rec.run_id, "status": rec.status})
         else:
             if getattr(result, "error", None):
                 rec.error = _redact(str(result.error), api_key)
             error_reason = rec.error or "Debate execution failed"
-            _emit(rec, "run_failed", {"reason": error_reason, "run_id": rec.run_id})
     except asyncio.CancelledError:
         rec.status = "failed"
         rec.error = "run cancelled"
@@ -613,22 +616,24 @@ async def api_clarify(run_id: str, request: Request):
     # Resume the paused orchestrator run
     from .agents.orchestrator import get_pause
     paused_state = get_pause(run_id)
-    if paused_state:
-        asyncio.create_task(_run_debate(rec, api_key, paused_state=paused_state, clarify_answer=answer))
+    if not paused_state:
+        raise HTTPException(404, "No paused debate found for this run_id")
+    asyncio.create_task(_run_debate(rec, api_key, paused_state=paused_state, clarify_answer=answer))
 
     return {"status": "resumed", "run_id": run_id}
 
 
-async def verify_google_api_key(api_key: str) -> tuple[bool, str]:
+async def verify_google_api_key(api_key: str, timeout_seconds: float | None = None) -> tuple[bool, str]:
     """Validate Google Gemini API key against Google's metadata models API.
     Zero token cost (metadata query only, no text generation).
     """
+    timeout = timeout_seconds if timeout_seconds is not None else float(getattr(config, "GOOGLE_VERIFY_TIMEOUT_SECONDS", 8.0))
     url = f"https://generativelanguage.googleapis.com/v1beta/models?key={urllib.parse.quote(api_key)}&pageSize=1"
 
     def _call() -> tuple[bool, str]:
         req = urllib.request.Request(url, headers={"User-Agent": "VentureBot/0.2"})
         try:
-            with urllib.request.urlopen(req, timeout=8.0) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 if resp.status == 200:
                     return True, ""
                 return False, f"Google API returned status {resp.status}"

@@ -26,10 +26,7 @@ from __future__ import annotations
 import time
 from typing import Callable
 
-# How long a finished run (and its result) is retrievable before the sweeper
-# removes it. 24h matches REWRITE_PLAN.md S7 / D3 (result held until ACK, but
-# never forever).
-_DEFAULT_TTL = 24 * 3600  # seconds
+from . import config
 
 # Optional callback(run_id, event, data) fired when a run is dropped by TTL.
 # The dashboard uses it to surface an `expired` transient event to any still-open
@@ -50,11 +47,12 @@ class EphemeralStore:
       * `.tick`                              — injectable clock (callable->float)
     """
 
-    def __init__(self, watch_plugin: _Emit = None):
+    def __init__(self, watch_plugin: _Emit = None, ttl_seconds: float | None = None):
         self._records: dict[str, "object"] = {}   # run_id -> RunRecord
         self._created: dict[str, float] = {}       # run_id -> ts
         self._gone: dict[str, bool] = {}           # tombstone run_ids (no content)
         self._watch = watch_plugin
+        self.ttl = ttl_seconds if ttl_seconds is not None else float(getattr(config, "RUN_TTL_SECONDS", 24 * 3600))
         self.tick: Callable[[], float] = time.time  # default; tests override
 
     def _ts(self) -> float:
@@ -92,7 +90,7 @@ class EphemeralStore:
         ts = now if now is not None else self._ts()
         swept: list[str] = []
         for run_id, created in list(self._created.items()):
-            if ts - created >= _DEFAULT_TTL:
+            if ts - created >= self.ttl:
                 self._records.pop(run_id, None)
                 self._created.pop(run_id, None)
                 self._tombstone(run_id)

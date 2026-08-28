@@ -47,8 +47,7 @@ logger = logging.getLogger(__name__)
 # -- Persisted run result (exposed to dashboard) ------------------------
 _RUNS: dict[str, "OrchestratorResult"] = {}
 
-# Throttle state for auto_capture fork
-_THROTTLE: dict[str, dict] = {}
+_SYSTEM_USER_ID = "user"
 
 # -- Orchestrator system prompt ------------------------------------------
 
@@ -192,6 +191,7 @@ class OrchestratorResult:
     # Per-run snapshot bookkeeping (idea_runs row)  -- set by run_orchestrator.
     idea_run_id: str | None = None
     resume_comment: str | None = None
+    _tools: object | None = field(default=None, repr=False)
 
 
 class ClarifyPaused(Exception):
@@ -454,6 +454,7 @@ class OrchestratorTools:
         inbox: object | None,
         run_id: str,
         agents: dict[str, LlmAgent] | None = None,
+        urls: list[str] | None = None,
     ):
         self.result = result
         self.session_service = session_service
@@ -462,6 +463,7 @@ class OrchestratorTools:
         self.inbox = inbox
         self.run_id = run_id
         self.agents = agents if agents is not None else ALL_AGENTS
+        self.urls = list(urls or [])
 
     async def load_memories(self) -> str:
         """Load past lessons and techniques."""
@@ -471,7 +473,9 @@ class OrchestratorTools:
         """Research an idea. Returns a structured research brief."""
         emit("phase_started", {"phase": "research", "agent": "Researcher", "run_id": self.run_id})
 
-        urls = self.inbox.drain_urls() if (self.inbox and hasattr(self.inbox, "drain_urls")) else []
+        urls = list(self.urls)
+        if self.inbox and hasattr(self.inbox, "drain_urls"):
+            urls.extend(self.inbox.drain_urls())
         url_digest = ""
         if urls:
             from ..url_fetch import fetch_urls
@@ -851,6 +855,7 @@ async def run_orchestrator(
     idea: str,
     *,
     inbox: object | None = None,
+    urls: list[str] | None = None,
     session_id: str | None = None,
     resume_idea_id: str | None = None,
     resume_comment: str | None = None,
@@ -936,15 +941,13 @@ async def run_orchestrator(
     # Create agents with custom API key if provided (BYOK), otherwise use defaults
     agents = create_agents(api_key) if api_key else ALL_AGENTS
     
-    tools_obj = OrchestratorTools(result, InMemorySessionService(), "", "user", inbox, run_id, agents)
     session_service = InMemorySessionService()
-    sid = session_id or (await session_service.create_session(app_name="venturebot", user_id="user")).id
-    tools_obj.session_service = session_service
-    tools_obj.sid = sid
+    sid = session_id or (await session_service.create_session(app_name="venturebot", user_id=_SYSTEM_USER_ID)).id
+    tools_obj = OrchestratorTools(result, session_service, sid, _SYSTEM_USER_ID, inbox, run_id, agents, urls=urls)
     _RUNS[run_id] = result
 
     # Store tools_obj on the result so the dashboard can reach clarify
-    result._tools = tools_obj  # type: ignore[attr-defined]
+    result._tools = tools_obj
 
     # Build tools list  -- ADK function tools
     from google.adk.tools import FunctionTool
@@ -1018,7 +1021,7 @@ async def run_orchestrator(
             )
 
             async for event in runner.run_async(
-                user_id="user",
+                user_id=_SYSTEM_USER_ID,
                 session_id=sid,
                 new_message=content,
             ):
@@ -1028,17 +1031,17 @@ async def run_orchestrator(
             if result.clarification_question and not result.clarification_answer:
                 raise ClarifyPaused(result.clarification_question)
 
-            # Check quality gate
-            should_stop, reason = _check_quality_gate(
-                result, turns_used, max_turns, last_prd, stall_count,
-            )
-
             # Update PRD tracking for stall detection
             if result.prd != last_prd:
                 last_prd = result.prd
                 stall_count = 0
             else:
                 stall_count += 1
+
+            # Check quality gate
+            should_stop, reason = _check_quality_gate(
+                result, turns_used, stall_count
+            )
 
             if should_stop:
                 logger.info("Quality gate after turn %d: %s", turns_used, reason)
@@ -1058,7 +1061,8 @@ async def run_orchestrator(
             logger.info("Auto-running security audit before presenting...")
             try:
                 audit_text = await tools_obj.audit()
-            except Exception:
+            except Exception as e:
+                logger.warning("Auto-audit failed: %s", e)
                 pass
 
         # Final status

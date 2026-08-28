@@ -59,17 +59,16 @@ def _env_list(name: str, default: str) -> list[str]:
 # -- Paths --------------------------------------------------------------
 
 WORKSPACE_DIR = Path(_env("VENTUREBOT_WORKSPACE", _cfg.get("workspace_dir", "workspace")))
-STATE_FILE    = Path(_env("VENTUREBOT_STATE", _cfg.get("state_file", "state.json")))
 DATA_DIR      = Path(_env("VENTUREBOT_DATA", _cfg.get("data_dir", "data")))
-CHECKPOINT_DIR = Path(_env("VENTUREBOT_CHECKPOINT_DIR", str(DATA_DIR / "checkpoints")))
-ARCHIVE_DIR    = Path(_env("VENTUREBOT_ARCHIVE_DIR", str(DATA_DIR / "archives")))
 
-# -- Loop budget --------------------------------------------------------
+# -- Loop & Timeout budget ----------------------------------------------
 
-MAX_ITERATIONS       = _env_int("VENTUREBOT_MAX_ITERATIONS", _cfg.get("max_iterations", 5))
-LLM_TIMEOUT          = _env_int("VENTUREBOT_LLM_TIMEOUT", _cfg.get("llm_timeout", 120))
-MAX_TOKENS           = _env_int("VENTUREBOT_MAX_TOKENS", _cfg.get("max_tokens", 4096))
-RUN_DEADLINE_SECONDS = _env_int("VENTUREBOT_RUN_DEADLINE", _cfg.get("run_deadline_seconds", 900))
+RUN_DEADLINE_SECONDS           = _env_int("VENTUREBOT_RUN_DEADLINE", _cfg.get("run_deadline_seconds", 900))
+LLM_TIMEOUT                    = _env_int("VENTUREBOT_LLM_TIMEOUT", _cfg.get("llm_timeout", 120))
+RUN_RETRY_ATTEMPTS             = _env_int("VENTUREBOT_RUN_RETRY_ATTEMPTS", _cfg.get("run_retry_attempts", 3))
+RUN_TTL_SECONDS                = _env_int("VENTUREBOT_RUN_TTL_SECONDS", _cfg.get("run_ttl_seconds", 24 * 3600))
+PAUSE_MAX_AGE_SECONDS          = _env_int("VENTUREBOT_PAUSE_MAX_AGE_SECONDS", _cfg.get("pause_max_age_seconds", 7 * 86400))
+GOOGLE_VERIFY_TIMEOUT_SECONDS  = _env_float("VENTUREBOT_GOOGLE_VERIFY_TIMEOUT", _cfg.get("google_verify_timeout", 8.0))
 
 # -- Orchestrator loop budget --------------------------------------------
 

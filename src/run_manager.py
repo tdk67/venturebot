@@ -23,46 +23,70 @@ class RunCancelled(Exception):
 
 class _Manager:
     def __init__(self):
-        self._event = threading.Event()
         self._lock = threading.Lock()
-        self._run_id: str | None = None
-        self._deadline: float | None = None
+        self._events: dict[str, threading.Event] = {}
+        self._deadlines: dict[str, float] = {}
+        self._last_run_id: str | None = None
 
     def start(self, run_id: str, deadline_seconds: int | None = None) -> None:
         with self._lock:
-            self._event.clear()
-            self._run_id = run_id
-            self._deadline = time.monotonic() + (
+            evt = threading.Event()
+            self._events[run_id] = evt
+            self._deadlines[run_id] = time.monotonic() + (
                 deadline_seconds if deadline_seconds is not None
                 else config.RUN_DEADLINE_SECONDS
             )
+            self._last_run_id = run_id
 
-    def stop(self, reason: str = "user requested stop") -> None:
+    def stop(self, reason: str = "user requested stop", run_id: str | None = None) -> None:
         with self._lock:
-            self._event.set()
+            target_id = run_id or self._last_run_id
+            if target_id and target_id in self._events:
+                self._events[target_id].set()
+            else:
+                for evt in self._events.values():
+                    evt.set()
 
-    def should_stop(self) -> bool:
+    def should_stop(self, run_id: str | None = None) -> bool:
         """True if cancelled OR dead-man ceiling reached. Cheap to poll."""
         with self._lock:
-            if self._event.is_set():
+            target_id = run_id or self._last_run_id
+            if not target_id:
+                return False
+            evt = self._events.get(target_id)
+            if evt and evt.is_set():
                 return True
-            if self._deadline is not None and time.monotonic() >= self._deadline:
-                self._event.set()  # latch: once triggered, stays triggered
+            dl = self._deadlines.get(target_id)
+            if dl is not None and time.monotonic() >= dl:
+                if evt:
+                    evt.set()  # latch
                 return True
             return False
 
-    def check(self) -> None:
+    def check(self, run_id: str | None = None) -> None:
         """Poll point: raise RunCancelled if we should stop."""
-        if self.should_stop():
+        if self.should_stop(run_id):
             raise RunCancelled("run cancelled or deadline reached")
 
-    def deadline_reached(self) -> bool:
+    def deadline_reached(self, run_id: str | None = None) -> bool:
         with self._lock:
-            return self._deadline is not None and time.monotonic() >= self._deadline
+            target_id = run_id or self._last_run_id
+            if not target_id:
+                return False
+            dl = self._deadlines.get(target_id)
+            return dl is not None and time.monotonic() >= dl
+
+    def finish(self, run_id: str) -> None:
+        with self._lock:
+            self._events.pop(run_id, None)
+            self._deadlines.pop(run_id, None)
+            if self._last_run_id == run_id:
+                self._last_run_id = None
 
     @property
     def run_id(self) -> str | None:
-        return self._run_id
+        with self._lock:
+            return self._last_run_id
 
 
 manager = _Manager()
