@@ -26,7 +26,7 @@ from collections import defaultdict, deque
 MAX_ACTIVE_RUNS_PER_IP = 1
 MAX_RUNS_PER_HOUR_PER_IP = 20
 RUN_WINDOW_SECONDS = 3600
-MAX_SSE_PER_IP = 3
+MAX_SSE_PER_IP = 16
 MAX_BODY_BYTES = 32 * 1024  # 32 KiB
 
 # Injectable clock so tests can be deterministic about the rolling hour.

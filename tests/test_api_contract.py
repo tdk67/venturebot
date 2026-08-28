@@ -183,13 +183,24 @@ def test_result_ack_unknown_id_404():
     assert r.status_code == 404
 
 
-# -- clarify ---------------------------------------------------------------
-def test_clarify_unknown_id_404():
-    r = client.post(
-        f"/api/debates/{uuid.uuid4()}/clarify",
-        json={"answer": "focus on solo consultants"},
-    )
+# -- stop ------------------------------------------------------------------
+def test_stop_unknown_id_404():
+    r = client.post(f"/api/debates/{uuid.uuid4()}/stop")
     assert r.status_code == 404
+
+
+def test_stop_known_id_200():
+    created = client.post(
+        "/api/debates",
+        json={"idea": "stop probe", "api_key": "sk-or-v1-test"},
+    ).json()
+    run_id = created["run_id"]
+    r = client.post(f"/api/debates/{run_id}/stop")
+    assert r.status_code == 200
+    assert r.json() == {"status": "stopped", "run_id": run_id}
+    # Verify status changed
+    st = client.get(f"/api/debates/{run_id}").json()
+    assert st["status"] == "stopped"
 
 
 # -- byok verify -----------------------------------------------------------
@@ -222,6 +233,7 @@ def test_no_list_endpoint():
         "/api/debates/{run_id}/result",
         "/api/debates/{run_id}/result/ack",
         "/api/debates/{run_id}/clarify",
+        "/api/debates/{run_id}/stop",
         "/api/byok/verify",
     }
     unexpected = routes - allowed

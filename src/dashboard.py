@@ -46,10 +46,11 @@ from .rate_limit import (
     has_active_run,
     sse_acquire,
     sse_release,
+    end_concurrent,
 )
 from .ephemeral_store import EphemeralStore
 from .inflight_sweeper import sweep_workspaces
-from . import config
+from . import config, run_manager
 
 # -- Security headers (G1-G3) ----------------------------------------------
 # Strict CSP: all scripts same-origin; no third-party scripts, no eval.
@@ -63,6 +64,18 @@ _CSP = (
     "frame-ancestors 'none'; "
     "base-uri 'self'; "
     "form-action 'self'"
+)
+
+# Docs CSP allowing Swagger/ReDoc CDN assets
+_DOCS_CSP = (
+    "default-src 'self' https://cdn.jsdelivr.net; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "img-src 'self' data: https: https://fastapi.tiangolo.com; "
+    "connect-src 'self'; "
+    "font-src 'self' https://cdn.jsdelivr.net; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'"
 )
 
 _PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), usb=(), payment=()"
@@ -146,7 +159,11 @@ def _sweep_once() -> list[str]:
 async def security_headers(request: Request, call_next):
     req_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     response = await call_next(request)
-    response.headers["Content-Security-Policy"] = _CSP
+    path = request.url.path
+    if path.startswith("/docs") or path.startswith("/redoc") or path == "/openapi.json":
+        response.headers["Content-Security-Policy"] = _DOCS_CSP
+    else:
+        response.headers["Content-Security-Policy"] = _CSP
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Frame-Options"] = "DENY"
@@ -300,6 +317,13 @@ _FATAL_KEYWORDS = (
 )
 
 
+def _format_error_msg(err_str: str) -> str:
+    err_lower = err_str.lower()
+    if "429" in err_lower or "resource_exhausted" in err_lower or "quota" in err_lower:
+        return "Gemini API Rate Limit / Quota Exceeded (429). Please check your Gemini API key quota and billing at Google AI Studio."
+    return err_str
+
+
 def _is_intermittent_error_msg(msg: str) -> bool:
     msg = msg.lower()
     if any(k in msg for k in _FATAL_KEYWORDS):
@@ -407,13 +431,16 @@ async def _run_debate(
                 "question": rec.result.get("clarification_question") or getattr(result, "clarification_question", ""),
                 "run_id": rec.run_id,
             })
-        elif rec.status not in ("failed", "stopped"):
+        elif rec.status == "stopped":
+            _emit(rec, "run_stopped", {"reason": "Debate stopped by user", "run_id": rec.run_id})
+        elif rec.status != "failed":
             rec.result = _build_result_dict(rec, result)
             _emit(rec, "run_finished", {"run_id": rec.run_id, "status": rec.status})
         else:
             if getattr(result, "error", None):
-                rec.error = _redact(str(result.error), api_key)
+                rec.error = _format_error_msg(_redact(str(result.error), api_key))
             error_reason = rec.error or "Debate execution failed"
+            _emit(rec, "run_failed", {"reason": error_reason, "run_id": rec.run_id})
     except asyncio.CancelledError:
         rec.status = "failed"
         rec.error = "run cancelled"
@@ -421,7 +448,7 @@ async def _run_debate(
     except Exception as e:
         # Loud failure (S2/T2): surface an explicit reason, key redacted.
         rec.status = "failed"
-        rec.error = _redact(f"{type(e).__name__}: {e}", api_key)
+        rec.error = _format_error_msg(_redact(f"{type(e).__name__}: {e}", api_key))
         _emit(rec, "run_failed", {"reason": rec.error, "run_id": rec.run_id})
     finally:
         if rec.status != "needs_clarification":
@@ -621,6 +648,17 @@ async def api_clarify(run_id: str, request: Request):
     asyncio.create_task(_run_debate(rec, api_key, paused_state=paused_state, clarify_answer=answer))
 
     return {"status": "resumed", "run_id": run_id}
+
+
+@app.post("/api/debates/{run_id}/stop")
+async def api_stop_debate(run_id: str, request: Request):
+    rec = _lookup(run_id)
+    ip = client_ip(request)
+    run_manager.manager.stop(reason="user requested stop", run_id=run_id)
+    rec.status = "stopped"
+    _emit(rec, "run_stopped", {"run_id": run_id, "reason": "user requested stop"})
+    end_concurrent(ip, run_id)
+    return {"status": "stopped", "run_id": run_id}
 
 
 async def verify_google_api_key(api_key: str, timeout_seconds: float | None = None) -> tuple[bool, str]:

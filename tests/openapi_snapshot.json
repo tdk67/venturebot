@@ -297,6 +297,43 @@
         "summary": "Api Ack Result"
       }
     },
+    "/api/debates/{run_id}/stop": {
+      "post": {
+        "operationId": "api_stop_debate_api_debates__run_id__stop_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Stop Debate"
+      }
+    },
     "/api/health": {
       "get": {
         "operationId": "api_health_api_health_get",

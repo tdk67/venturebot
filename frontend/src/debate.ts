@@ -464,10 +464,14 @@ export async function startRun(
 export function stopRun(): void {
   if (view?.controller) view.controller.abort();
   if (view) {
+    const runId = view.runId;
     view.state = 'stopped';
     stopElapsed();
     setStateLabel('stopped');
     appendFeedMessage('System', 'Debate stopped by user.');
+    if (runId) {
+      void api.stopDebate(runId, currentApiKey);
+    }
   }
   document.getElementById('btn-stop')?.classList.add('hidden');
 }
@@ -516,6 +520,7 @@ function stream(runId: string): Promise<void> {
     es.addEventListener('verdict', onEvent('verdict'));
     es.addEventListener('run_finished', onEvent('run_finished'));
     es.addEventListener('run_failed', onEvent('run_failed'));
+    es.addEventListener('run_stopped', onEvent('run_stopped'));
     es.addEventListener('expired', onEvent('expired'));
 
     let probeCount = 0;
@@ -559,6 +564,15 @@ function stream(runId: string): Promise<void> {
       } else if (name === 'run_finished') {
         setStateLabel('done');
         void settle();
+      } else if (name === 'run_stopped') {
+        if (view) {
+          view.state = 'stopped';
+          stopElapsed();
+          setStateLabel('stopped');
+          appendFeedMessage('System', 'Debate stopped on the server.');
+        }
+        es.close();
+        resolve();
       } else if (name === 'run_failed') {
         fail(payload.reason ?? 'Debate execution failed');
         es.close();
@@ -581,13 +595,26 @@ function stream(runId: string): Promise<void> {
             resolve();
             return;
           }
+          if (st.status === 'stopped') {
+            if (view) {
+              view.state = 'stopped';
+              stopElapsed();
+              setStateLabel('stopped');
+              appendFeedMessage('System', 'Debate stopped.');
+            }
+            es.close();
+            resolve();
+            return;
+          }
           if (st.status === 'done') {
             setStateLabel('done');
             void settle();
             return;
           }
           if (st.status === 'running' || st.status === 'queued' || st.status === 'needs_clarification') {
-            // Still in progress — keep EventSource reconnecting
+            if (probeCount >= 3 && es.readyState !== EventSource.OPEN) {
+              appendFeedMessage('System', '⚠️ Live event connection disrupted (SSE rate limited/disconnected). Retrying...');
+            }
             return;
           }
         }
@@ -601,9 +628,9 @@ function stream(runId: string): Promise<void> {
         // ignore network jitter during reconnect
       }
 
-      if (es.readyState === EventSource.CLOSED && probeCount >= 3) {
+      if (probeCount >= 6 || (es.readyState === EventSource.CLOSED && probeCount >= 3)) {
         if (view && view.state === 'running') {
-          fail('Stream disconnected or debate was stopped on the server.');
+          fail('Live event stream disconnected or rate-limited by server (429). Please refresh or check connection.');
           es.close();
           resolve();
         }

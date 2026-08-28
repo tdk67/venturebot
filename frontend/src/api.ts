@@ -138,6 +138,15 @@ export async function ackResult(runId: string): Promise<void> {
   await _post(`/api/debates/${encodeURIComponent(runId)}/result/ack`, {});
 }
 
+/** Stop a running debate. */
+export async function stopDebate(runId: string, apiKey?: string): Promise<void> {
+  try {
+    await _post(`/api/debates/${encodeURIComponent(runId)}/stop`, {}, apiKey);
+  } catch (err) {
+    console.warn('[debate] stopDebate error:', err);
+  }
+}
+
 /** Minimal inline parser for a couple of SSE frames (event + data lines). */
 export interface SseFrame {
   event: string;
