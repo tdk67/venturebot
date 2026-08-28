@@ -1,46 +1,71 @@
-# CD — build & deploy to Cloud Run on every push to main.
-#
-# PREREQUISITES (one-time, ~15 min): see notes/GCP_DEPLOYMENT.md §3 for the
-# exact commands. Summary:
-#   1. GCP project with billing; enable run, artifactregistry, iamcredentials,
-#      secretmanager, storage APIs
-#   2. Artifact Registry repo "venturebot" (docker, region europe-west3)
-#   3. Service account vb-deploy@… with roles/run.admin + roles/iam.serviceAccountUser
-#      (+ roles/storage.objectAdmin for the data bucket)
-#   4. Workload Identity Federation pool/provider for this GitHub repo
-#   5. GitHub repo VARIABLES (Settings → Secrets and variables → Actions → Variables):
-#        GCP_PROJECT           = your-project-id
-#        GCP_REGION            = europe-west3
-#        GCP_WIF_PROVIDER      = projects/<num>/locations/global/workloadIdentityPools/github/providers/github
-#        GCP_DEPLOY_SA         = vb-deploy@<project>.iam.gserviceaccount.com
-#   6. GitHub repo SECRETS (runtime app secrets, passed via --set-secrets):
-#        created in Secret Manager as GOOGLE_API_KEY / GOOGLE_CLIENT_SECRET
-#      (the workflow references them by name; values live only in GCP)
-#
-# The deploy job skips silently (with a notice) until those variables exist,
-# so enabling the workflow before GCP setup does not turn the repo red.
-name: Deploy
+# CI / CD — run tests on every push/PR, and deploy to Cloud Run on push to main if tests pass.
+name: CI / CD
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
-  group: production
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
+  test:
+    name: Run Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build TypeScript frontend
+        run: |
+          cd frontend
+          npm ci || npm install
+          npm run build
+          cd ..
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run pytest
+        run: python -m pytest tests -q
+
   deploy:
-    if: vars.GCP_PROJECT != ''
+    name: Deploy to Cloud Run
+    needs: [test]
+    if: github.ref == 'refs/heads/main' && vars.GCP_PROJECT != ''
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write  # WIF — no service-account keys anywhere
+      id-token: write  # WIF — keyless service-account auth
 
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Build TypeScript frontend
+        run: |
+          cd frontend
+          npm ci || npm install
+          npm run build
+          cd ..
 
       - id: auth
         uses: google-github-actions/auth@v2
@@ -62,20 +87,15 @@ jobs:
           IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT }}/venturebot/venturebot
           SERVICE: venturebot
           REGION: ${{ vars.GCP_REGION }}
-          BUCKET: ${{ vars.GCP_DATA_BUCKET }}
           SA: ${{ vars.GCP_DEPLOY_SA }}
         run: |
           FLAGS=(
             "--image=$IMAGE:${GITHUB_SHA::12}"
             "--region=$REGION"
             "--service-account=$SA"
-            "--max-instances=1"                # state consistency until Phase B (backend amnesia)
             "--min-instances=0"
             "--memory=1Gi"
-            "--allow-unauthenticated"          # app-level auth is enforced by Google login
-            "--set-env-vars=VENTUREBOT_NO_AUTH=1,VENTUREBOT_COOKIE_SECURE=true,GCS_DATA_BUCKET=$BUCKET,VENTUREBOT_PUBLIC_BASE_URL=${{ vars.PUBLIC_BASE_URL }},GOOGLE_CLIENT_ID=${{ vars.GOOGLE_CLIENT_ID }}"
-            "--set-secrets=GOOGLE_API_KEY=GOOGLE_API_KEY:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest"
+            "--allow-unauthenticated"
+            "--set-env-vars=VENTUREBOT_NO_AUTH=1,VENTUREBOT_COOKIE_SECURE=true"
           )
           gcloud run deploy "$SERVICE" "${FLAGS[@]}" --quiet
-        # NOTE: PUBLIC_BASE_URL and GOOGLE_CLIENT_ID are GitHub Actions variables
-        # (set once in repo settings, not per-deploy)
