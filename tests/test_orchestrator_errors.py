@@ -107,13 +107,6 @@ def test_happy_path_emits_start_finish_for_seven_agents(monkeypatch):
     rec = _Recorder()
     monkeypatch.setattr(orch, "emit", rec)
     monkeypatch.setattr(orch, "agent_turn", lambda *a, **k: None)
-    monkeypatch.setattr(orch, "capture_turn", lambda *a, **k: None)
-    monkeypatch.setattr(orch.store, "log", lambda *a, **k: None)
-
-    async def _noop_spawn(session_id, transcript):
-        return None
-
-    monkeypatch.setattr(orch, "_spawn_review_fork", _noop_spawn)
     monkeypatch.setattr(orch, "Runner", _FakeRunner)
 
     run_manager.manager.start("happy-run", deadline_seconds=60)
@@ -174,8 +167,6 @@ def test_sub_agent_exception_propagates_from_runner(monkeypatch):
     rec = _Recorder()
     monkeypatch.setattr(orch, "emit", rec)
     monkeypatch.setattr(orch, "agent_turn", lambda *a, **k: None)
-    monkeypatch.setattr(orch, "capture_turn", lambda *a, **k: None)
-    monkeypatch.setattr(orch.store, "log", lambda *a, **k: None)
     monkeypatch.setattr(orch, "Runner", lambda *a, **k: _FakeRunner(raise_exc=Boom("nope")))
 
     run_manager.manager.start("boom-run", deadline_seconds=60)

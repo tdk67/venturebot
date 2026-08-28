@@ -61,8 +61,6 @@ def _env_list(name: str, default: str) -> list[str]:
 WORKSPACE_DIR = Path(_env("VENTUREBOT_WORKSPACE", _cfg.get("workspace_dir", "workspace")))
 STATE_FILE    = Path(_env("VENTUREBOT_STATE", _cfg.get("state_file", "state.json")))
 DATA_DIR      = Path(_env("VENTUREBOT_DATA", _cfg.get("data_dir", "data")))
-DB_PATH       = Path(_env("VENTUREBOT_DB", str(DATA_DIR / "venturebot.db")))
-SANDBOX_DIR   = Path(_env("VENTUREBOT_SANDBOX", _cfg.get("sandbox_dir", str(BASE_DIR / "sandbox"))))
 CHECKPOINT_DIR = Path(_env("VENTUREBOT_CHECKPOINT_DIR", str(DATA_DIR / "checkpoints")))
 ARCHIVE_DIR    = Path(_env("VENTUREBOT_ARCHIVE_DIR", str(DATA_DIR / "archives")))
 
@@ -102,11 +100,6 @@ CREATIVE_TEMPERATURE = _env_float("VENTUREBOT_CREATIVE_TEMPERATURE", _cfg.get("c
 COOKIE_SECURE        = _env_bool("VENTUREBOT_COOKIE_SECURE", _cfg.get("cookie_secure", False))
 PUBLIC_BASE_URL      = _env("VENTUREBOT_PUBLIC_BASE_URL", _cfg.get("public_base_url", ""))
 NO_AUTH              = True
-
-# -- Scheduler -----------------------------------------------------------
-
-ENABLE_SCHEDULER   = _env_bool("VENTUREBOT_ENABLE_SCHEDULER", _cfg.get("enable_scheduler", False))
-DREAM_REVIEW_HOUR  = _env_int("VENTUREBOT_DREAM_REVIEW_HOUR", _cfg.get("dream_review_hour", 3))
 
 # -- Credential resolution (secrets  -- environment ONLY) -----------------
 

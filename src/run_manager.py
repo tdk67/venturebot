@@ -14,7 +14,7 @@ from __future__ import annotations
 import threading
 import time
 
-from . import config, store
+from . import config
 
 
 class RunCancelled(Exception):
@@ -40,8 +40,6 @@ class _Manager:
     def stop(self, reason: str = "user requested stop") -> None:
         with self._lock:
             self._event.set()
-        store.set_status("stopped")
-        store.log("System", "core", f"Run cancelled: {reason}")
 
     def should_stop(self) -> bool:
         """True if cancelled OR dead-man ceiling reached. Cheap to poll."""

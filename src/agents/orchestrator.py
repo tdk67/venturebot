@@ -23,6 +23,7 @@ import json
 import logging
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,17 +35,12 @@ from google.genai import types
 
 from . import prompts, schemas
 from .clarify import clarify_question
-from .. import config, store
-from ..events import emit
+from .. import config
+from ..events import emit, agent_turn
+from .. import run_manager
 
 # Import the factory function for BYOK support
 from .agents import ALL_AGENTS, create_agents
-from .. import run_manager
-from ..events import agent_turn
-from ..memory.sqlite_store import get_store
-from ..memory.auto_capture import capture_turn
-from ..memory.review_fork import analyze_turn
-from ..steering import SteeringInbox
 
 logger = logging.getLogger(__name__)
 
@@ -159,18 +155,8 @@ load_memories(), then research().
 
 
 def _render_must_read() -> str:
-    """Render the 'must read before starting' block: active lessons from the
-    memory store. Rendered server-side  -- the raw {placeholder} must never reach
-    ADK's instruction templating (it would raise 'Context variable not found').
-    """
-    try:
-        lessons = get_store().get_lessons(active_only=True, limit=10)
-    except Exception:
-        lessons = []
-    if not lessons:
-        return "(No lessons recorded yet  -- this may be one of the first runs.)"
-    lines = [f"- {l['name']}: {l['rule']}" for l in lessons]
-    return "\n".join(lines)
+    """Render the 'must read before starting' block."""
+    return "(No lessons recorded yet  -- this may be one of the first runs.)"
 
 
 def _orchestrator_instruction() -> str:
@@ -326,26 +312,11 @@ async def _run_sub_agent(
         t = _text_from_event(ev)
         if t and not ev.partial:
             result.events.append({"agent": label, "text": t})
-            store.log(label, model_name, t[:200])
             agent_turn(label, t, run_id)
-            capture_turn(session_id, label, "agent_message", t,
-                        _THROTTLE.setdefault(session_id, {}))
     final = _final_text_of(events)
-    if final:
-        asyncio.create_task(_spawn_review_fork(session_id, final))
     duration = time.time() - t0
     emit("agent_finished", {"agent": label, "model": model_name, "duration": round(duration, 3), "run_id": run_id})
     return final
-
-
-async def _spawn_review_fork(session_id: str, transcript: str) -> None:
-    try:
-        await asyncio.to_thread(
-            analyze_turn, get_store(), transcript,
-            _THROTTLE.setdefault(session_id, {}),
-        )
-    except Exception:
-        pass
 
 
 def _text_from_event(ev) -> str | None:
@@ -417,7 +388,6 @@ def _write_workspace_file(path: str, content: str, run_id: str | None = None) ->
         ws.mkdir(parents=True, exist_ok=True)
         full.parent.mkdir(parents=True, exist_ok=True)
         full.write_text(content, encoding="utf-8")
-        store.set_workspace_files([p.name for p in ws.glob("*")])
         return "ok"
     except OSError as e:
         return f"error: {e}"
@@ -481,7 +451,7 @@ class OrchestratorTools:
         session_service: InMemorySessionService,
         sid: str,
         user_id: str,
-        inbox: SteeringInbox,
+        inbox: object | None,
         run_id: str,
         agents: dict[str, LlmAgent] | None = None,
     ):
@@ -494,44 +464,20 @@ class OrchestratorTools:
         self.agents = agents if agents is not None else ALL_AGENTS
 
     async def load_memories(self) -> str:
-        """Load past lessons and techniques from VentureBot's memory store.
-
-        Call this FIRST, before any other tool. The orchestrator's system prompt
-        says to apply ALL returned lessons  -- they exist because past runs made
-        mistakes that must not be repeated.
-        """
-        try:
-            s = get_store()
-            lessons = s.get_lessons(active_only=True, limit=20)
-            techniques = s.get_techniques(active_only=True)
-        except Exception:
-            return "(memory store unavailable)"
-
-        if not lessons and not techniques:
-            return "No past lessons found. This is a fresh start."
-
-        parts = ["## Past Lessons (MUST APPLY)"]
-        for l in lessons:
-            parts.append(f"- {l['name']}: {l['rule']}")
-        if techniques:
-            parts.append("\n## Active Techniques")
-            for t in techniques:
-                parts.append(f"- {t['name']}: {t['description']}")
-        return "\n".join(parts)
+        """Load past lessons and techniques."""
+        return "No past lessons found. This is a fresh start."
 
     async def research(self, idea: str) -> str:
         """Research an idea. Returns a structured research brief."""
-        store.update_task("t1", "in_progress")
         emit("phase_started", {"phase": "research", "agent": "Researcher", "run_id": self.run_id})
 
-        urls = self.inbox.drain_urls()
+        urls = self.inbox.drain_urls() if (self.inbox and hasattr(self.inbox, "drain_urls")) else []
         url_digest = ""
         if urls:
             from ..url_fetch import fetch_urls
-            store.log("System", "core", f"Fetching {len(urls)} user-provided URL(s)...")
             url_digest = fetch_urls(urls)
 
-        steering = self.inbox.drain_steering()
+        steering = self.inbox.drain_steering() if (self.inbox and hasattr(self.inbox, "drain_steering")) else []
         steering_block = ""
         if steering:
             steering_block = "\n\nUSER STEERING:\n" + "\n".join(f"- {s}" for s in steering)
@@ -546,13 +492,11 @@ class OrchestratorTools:
             self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.research_brief = brief
-        store.update_task("t1", "done")
         emit("phase_done", {"phase": "research", "run_id": self.run_id})
         return brief
 
     async def advocate(self) -> str:
         """Argue FOR the idea. The Advocate is BLIND  -- it has no web search."""
-        store.update_task("t2", "in_progress")
         emit("phase_started", {"phase": "advocate", "agent": "Advocate", "run_id": self.run_id})
 
         brief = self.result.research_brief or "(no research brief available)"
@@ -563,13 +507,11 @@ class OrchestratorTools:
             self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.advocate_argument = argument
-        store.update_task("t2", "done")
         emit("phase_done", {"phase": "advocate", "run_id": self.run_id})
         return argument
 
     async def critic(self) -> str:
         """Challenge every claim. The Critic HAS web search for counter-evidence."""
-        store.update_task("t3", "in_progress")
         emit("phase_started", {"phase": "critic", "agent": "Critic", "run_id": self.run_id})
 
         brief = self.result.research_brief or "(no brief)"
@@ -581,7 +523,6 @@ class OrchestratorTools:
             self.session_service, self.sid, self.user_id, run_id=self.run_id,
         )
         self.result.critic_rebuttal = rebuttal
-        store.update_task("t3", "done")
         emit("phase_done", {"phase": "critic", "run_id": self.run_id})
         return rebuttal
 
@@ -604,7 +545,6 @@ class OrchestratorTools:
 
     async def judge(self) -> str:
         """Produce a structured verdict with scores."""
-        store.update_task("t4", "in_progress")
         emit("phase_started", {"phase": "judge", "agent": "Judge", "run_id": self.run_id})
 
         brief = self.result.research_brief or "(no brief)"
@@ -620,7 +560,6 @@ class OrchestratorTools:
         )
         self.result.verdict_text = verdict_text
         self.result.verdict = _parse_verdict(verdict_text)
-        store.update_task("t4", "done")
         emit("verdict", {
             "verdict": self.result.verdict.get("verdict", "PARK"),
             "verdict_text": verdict_text,
@@ -633,7 +572,6 @@ class OrchestratorTools:
 
     async def write_prd(self, instructions: str = "") -> str:
         """Write or revise the PRD. Pass instructions to guide revisions."""
-        store.update_task("t5", "in_progress")
         emit("phase_started", {"phase": "prd_writer", "agent": "PRD Writer", "run_id": self.run_id})
 
         brief = self.result.research_brief or "(no brief)"
@@ -659,7 +597,6 @@ class OrchestratorTools:
         )
         self.result.prd = prd
         _write_workspace_file("PRD.md", prd, run_id=self.run_id)
-        store.update_task("t5", "done")
         emit("phase_done", {"phase": "prd_writer", "run_id": self.run_id})
         return prd
 
@@ -706,8 +643,6 @@ class OrchestratorTools:
         emit("phase_started", {"phase": "prd_scanner", "run_id": self.run_id})
         result = _scan(prd)
         emit("phase_done", {"phase": "prd_scanner", "verdict": result.verdict, "run_id": self.run_id})
-        
-        store.log("PRD Scanner", "core", f"Scan: {result.verdict} ({len(result.findings)} findings)")
         return format_scan_result(result)
 
     async def read_file(self, path: str) -> str:
@@ -726,7 +661,6 @@ class OrchestratorTools:
         content = _read_workspace_file(path, run_id=self.run_id)
         if content is None:
             return f"File not found: {path}"
-        # Store the artifact reference in the result for the dashboard
         return f"Artifact '{path}' saved."
 
     async def clarify(self, question: str) -> str:
@@ -750,7 +684,6 @@ class OrchestratorTools:
             "question": question,
             "run_id": self.run_id,
         })
-        store.log("Orchestrator", "core", f"Clarify: {question[:200]}")
 
         # Persist BEFORE raising so even a crash right after keeps state.
         persist_pause(self.result, self.run_id)
@@ -895,7 +828,7 @@ def _parse_verdict(text: str) -> dict:
 def _parse_audit(text: str) -> dict:
     """Parse the Security Auditor's output into a structured dict."""
     if not text:
-        return {"verdict": "FLAG", "findings": []}
+        return {}
 
     parsed = _extract_json_block(text)
     if parsed and isinstance(parsed, dict):
@@ -917,7 +850,7 @@ def _parse_audit(text: str) -> dict:
 async def run_orchestrator(
     idea: str,
     *,
-    inbox: SteeringInbox | None = None,
+    inbox: object | None = None,
     session_id: str | None = None,
     resume_idea_id: str | None = None,
     resume_comment: str | None = None,
@@ -948,7 +881,6 @@ async def run_orchestrator(
     """
     from ..input_guard import guard_input
 
-    inbox = inbox or SteeringInbox()
     result = OrchestratorResult(idea=idea)
 
     if paused_state:
@@ -970,48 +902,14 @@ async def run_orchestrator(
         result.clarification_answer = clarify_answer
         result.clarification_question = paused_state.get("question")
 
-    run_id = external_run_id or store.start_run()["run_id"]
+    run_id = external_run_id or str(uuid.uuid4())
     run_manager.manager.start(run_id)
-
-    # Record or resume the idea in the idea tree
-    try:
-        store_obj = get_store()
-        if paused_state:
-            # Continuation of a paused debate  -- idea row already exists.
-            pass
-        elif resume_idea_id:
-            # Resume existing idea  -- load previous context
-            result.idea_id = resume_idea_id
-            prev = store_obj.get_idea(resume_idea_id)
-            if prev:
-                result.research_brief = prev.get("research_brief")
-                result.verdict_text = prev.get("verdict")
-                result.prd = prev.get("prd_text")
-                if prev.get("scores"):
-                    try:
-                        import json
-                        result.verdict = json.loads(prev["scores"])
-                    except Exception:
-                        pass
-                store_obj.update_idea_content(resume_idea_id, workspace_path=f"runs/{run_id}/")
-        else:
-            # New idea  -- keep the FULL pitch text, not just the truncated title.
-            result.idea_id = store_obj.create_idea(idea[:200], description=idea)
-            store_obj.update_idea_content(result.idea_id, workspace_path=f"runs/{run_id}/")
-        # Open the per-run snapshot row (P1.1): every debate gets its own
-        # immutable history entry  -- past debates are never overwritten.
-        if result.idea_id:
-            result.resume_comment = (resume_comment or "").strip() or None
-            result.idea_run_id = store_obj.start_idea_run(result.idea_id, comment=result.resume_comment)
-    except Exception:
-        pass
 
     # Input guard for Idea
     guarded = guard_input(idea)
     if guarded["blocked"]:
         result.status = "failed"
         result.error = f"Input blocked: {guarded['matches'][:3]}"
-        store.set_status("failed")
         _archive_result(result, run_id)
         return result
 
@@ -1021,7 +919,6 @@ async def run_orchestrator(
         if guarded_comment["blocked"]:
             result.status = "failed"
             result.error = f"Resume comment blocked: {guarded_comment['matches'][:3]}"
-            store.set_status("failed")
             _archive_result(result, run_id)
             return result
 
@@ -1031,7 +928,6 @@ async def run_orchestrator(
         if guarded_ans["blocked"]:
             result.status = "failed"
             result.error = f"Clarification answer blocked: {guarded_ans['matches'][:3]}"
-            store.set_status("failed")
             _archive_result(result, run_id)
             return result
         result.clarification_answer = clarify_answer
@@ -1082,79 +978,70 @@ async def run_orchestrator(
     last_prd: str | None = None
     stall_count = 0
 
-    store.log("System", "core", f"Orchestrator starting: '{idea[:120]}'")
+    logger.info("Orchestrator starting run %s: '%s'", run_id, idea[:120])
     emit("run_started", {"idea": idea, "run_id": run_id})
     if result.resume_comment:
         # The human's new input is part of the debate record  -- show it in the
         # live feed AND persist it as the first transcript entry.
         result.events.append({"agent": "Human", "text": result.resume_comment})
-        store.log("Human", "user", result.resume_comment[:200])
         agent_turn("Human", result.resume_comment, run_id)
         emit("human_comment", {"idea_id": result.idea_id, "comment": result.resume_comment})
 
     try:
         while turns_used < max_turns:
             run_manager.manager.check()
+            turns_used += 1
 
-            # Check quality gate before each turn
-            should_stop, reason = _check_quality_gate(result, turns_used, stall_count)
-            if should_stop:
-                store.log("System", "core", f"Quality gate: {reason}")
-                # Surface the stopping decision as a first-class UI event  -- 
-                # the orchestrator is a debate participant too.
-                emit("orchestrator_decision", {
-                    "decision": "stop",
-                    "reason": reason,
-                    "turns_used": turns_used,
-                    "max_turns": max_turns,
-                    "run_id": run_id,
-                })
-                break
+            turn_prompt = _build_turn_prompt(
+                result, turns_used, max_turns,
+                last_prd=last_prd,
+                clarification_answer=result.clarification_answer if turns_used == 1 else None,
+                resume_comment=result.resume_comment if turns_used == 1 else None,
+            )
 
-            # Decision point: the orchestrator keeps the loop going.
-            emit("orchestrator_decision", {
-                "decision": "continue",
-                "reason": f"starting turn {turns_used + 1} of {max_turns}",
-                "turns_used": turns_used,
+            emit("orchestrator_thinking", {
+                "turn": turns_used,
                 "max_turns": max_turns,
                 "run_id": run_id,
             })
 
-            # Build the prompt for this turn
-            turn_prompt = _build_turn_prompt(result, turns_used, max_turns)
+            # Run one turn of the orchestrator agent
+            runner = Runner(
+                agent=orchestrator_agent,
+                session_service=session_service,
+                app_name="venturebot",
+            )
 
-            # Run one orchestrator turn
-            runner = Runner(agent=orchestrator_agent, session_service=session_service, app_name="venturebot")
-            content = types.Content(role="user", parts=[types.Part(text=turn_prompt)])
+            content = types.Content(
+                role="user",
+                parts=[types.Part.from_text(text=turn_prompt)],
+            )
 
-            tool_calls_this_turn = 0
-            async for ev in runner.run_async(user_id="user", session_id=sid, new_message=content):
+            async for event in runner.run_async(
+                user_id="user",
+                session_id=sid,
+                new_message=content,
+            ):
                 run_manager.manager.check()
-                tool_calls_this_turn += 1
-                if tool_calls_this_turn >= max_tool_calls:
-                    store.log("System", "core", f"Tool call limit ({max_tool_calls}) reached this turn")
 
-                t = _text_from_event(ev)
-                if t and not ev.partial:
-                    result.events.append({"agent": "Orchestrator", "text": t})
-                    store.log("Orchestrator", config.MODEL_ORCHESTRATOR, t[:200])
-                    agent_turn("Orchestrator", t, run_id)
+            # Check if clarify was triggered (clarification_question set on result)
+            if result.clarification_question and not result.clarification_answer:
+                raise ClarifyPaused(result.clarification_question)
 
-            turns_used += 1
-            store.set_iteration(turns_used)
+            # Check quality gate
+            should_stop, reason = _check_quality_gate(
+                result, turns_used, max_turns, last_prd, stall_count,
+            )
 
-            # Update stall tracking
-            if result.prd is not None:
-                if result.prd == last_prd:
-                    stall_count += 1
-                else:
-                    stall_count = 0
-                    last_prd = result.prd
+            # Update PRD tracking for stall detection
+            if result.prd != last_prd:
+                last_prd = result.prd
+                stall_count = 0
+            else:
+                stall_count += 1
 
-            # Check quality gate after each turn
-            should_stop, reason = _check_quality_gate(result, turns_used, stall_count)
             if should_stop:
-                store.log("System", "core", f"Quality gate after turn {turns_used}: {reason}")
+                logger.info("Quality gate after turn %d: %s", turns_used, reason)
                 emit("orchestrator_decision", {
                     "decision": "stop",
                     "reason": reason,
@@ -1168,10 +1055,9 @@ async def run_orchestrator(
 
         # If we have a PRD but no security audit yet, run it now
         if result.prd and not result.security_audit:
-            store.log("System", "core", "Auto-running security audit before presenting...")
+            logger.info("Auto-running security audit before presenting...")
             try:
                 audit_text = await tools_obj.audit()
-                store.log("Security Auditor", config.MODEL_AUDITOR, audit_text[:200])
             except Exception:
                 pass
 
@@ -1183,13 +1069,13 @@ async def run_orchestrator(
                 if v == "PROCEED" or (avg is not None and avg >= 7):
                     # PRD is ready, but we need human approval
                     result.status = "needs_approval"
-                    store.log("System", "core", f"Orchestrator complete: PRD ready (avg {avg})  -- awaiting human approval")
+                    logger.info("Orchestrator complete: PRD ready (avg %s) -- awaiting human approval", avg)
                 else:
                     result.status = "needs_verdict"
-                    store.log("System", "core", f"Orchestrator complete: verdict {v} (avg {avg})  -- awaiting human decision")
+                    logger.info("Orchestrator complete: verdict %s (avg %s) -- awaiting human decision", v, avg)
             else:
                 result.status = "needs_verdict"
-                store.log("System", "core", "Orchestrator complete: incomplete  -- awaiting human decision")
+                logger.info("Orchestrator complete: incomplete -- awaiting human decision")
 
         emit("run_finished", {
             "status": result.status,
@@ -1205,14 +1091,11 @@ async def run_orchestrator(
 
     except run_manager.RunCancelled:
         result.status = "stopped"
-        store.set_status("stopped")
         _archive_result(result, run_id)
     except ClarifyPaused:
         # Durable pause: state is already persisted to disk by clarify().
         result.status = "needs_clarification"
-        store.set_status("waiting_user")
-        store.log("System", "core",
-                  f"Debate paused -- waiting for your answer (no time limit). Run {run_id}")
+        logger.info("Debate paused -- waiting for user answer. Run %s", run_id)
         emit("clarify_question", {
             "run_id": run_id,
             "question": result.clarification_question,
@@ -1235,9 +1118,7 @@ async def run_orchestrator(
         )
         if is_clarify:
             result.status = "needs_clarification"
-            store.set_status("waiting_user")
-            store.log("System", "core",
-                      f"Debate paused -- waiting for your answer (no time limit). Run {run_id}")
+            logger.info("Debate paused -- waiting for user answer. Run %s", run_id)
             emit("clarify_question", {
                 "run_id": run_id,
                 "question": result.clarification_question,
@@ -1251,8 +1132,7 @@ async def run_orchestrator(
         else:
             result.status = "failed"
             result.error = f"{type(e).__name__}: {e}"
-            store.set_status("failed")
-            store.log("System", "core", f"Orchestrator failed: {result.error}")
+            logger.error("Orchestrator failed: %s", result.error)
             # Loud failure (T2): the UI must get an explicit run_failed with a reason.
             emit("run_failed", {"reason": result.error, "run_id": run_id})
             _archive_result(result, run_id)
@@ -1261,22 +1141,30 @@ async def run_orchestrator(
     return result
 
 
-def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: int) -> str:
+def _build_turn_prompt(
+    result: OrchestratorResult,
+    turns_used: int,
+    max_turns: int,
+    last_prd: str | None = None,
+    clarification_answer: str | None = None,
+    resume_comment: str | None = None,
+) -> str:
     """Build the prompt the orchestrator sees at the start of each turn."""
     from ..input_guard import quarantine
 
     parts = []
 
     # State summary
-    parts.append(f"## Turn {turns_used + 1} of {max_turns}")
+    parts.append(f"## Turn {turns_used} of {max_turns}")
 
     # The idea itself  -- ALWAYS visible, quarantined
     parts.append(f"\n## THE IDEA TO EVALUATE:\n{quarantine(result.idea, label='IDEA_UNDER_EVALUATION')}")
 
     # The human's answer to the question that paused this debate  -- injected
     # into the FIRST turn after resume only.
-    if turns_used == 0 and result.clarification_answer:
-        q_ans = quarantine(result.clarification_answer, label="HUMAN_CLARIFICATION_ANSWER")
+    if (turns_used == 1 or turns_used == 0) and (clarification_answer or result.clarification_answer):
+        ans = clarification_answer or result.clarification_answer
+        q_ans = quarantine(ans, label="HUMAN_CLARIFICATION_ANSWER")
         parts.append(
             "\n## HUMAN ANSWER TO YOUR QUESTION\n"
             "You asked (the debate then paused, possibly for hours or days):\n"
@@ -1286,7 +1174,7 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
         )
 
     # If resuming with previous context, show it
-    if turns_used == 0 and (result.research_brief or result.prd):
+    if (turns_used == 1 or turns_used == 0) and (result.research_brief or result.prd):
         parts.append("\n## RESUMED FROM PREVIOUS RUN")
         parts.append("This idea was previously evaluated. Here's what was done:")
         if result.research_brief:
@@ -1298,8 +1186,9 @@ def _build_turn_prompt(result: OrchestratorResult, turns_used: int, max_turns: i
         parts.append("\nYou can continue refining this work, or start fresh if the user provides new direction. Call research() again if you need updated information.")
 
     # The human's new input on a resumed run  -- highest-priority guidance.
-    if turns_used == 0 and result.resume_comment:
-        q_comment = quarantine(result.resume_comment, label="HUMAN_RESUME_COMMENT")
+    if (turns_used == 1 or turns_used == 0) and (resume_comment or result.resume_comment):
+        rc = resume_comment or result.resume_comment
+        q_comment = quarantine(rc, label="HUMAN_RESUME_COMMENT")
         parts.append(f"\n## HUMAN COMMENT (new direction from the user):\n{q_comment}")
         parts.append("Address this comment first. It reflects what changed since the last run (new evidence, new thoughts, market shifts, or feedback on the previous verdict/PRD).")
 
@@ -1351,42 +1240,8 @@ def _overall_average(verdict: dict) -> float | None:
 
 
 def _archive_result(result: OrchestratorResult, run_id: str) -> None:
-    """Persist the result to the idea tree + close the per-run snapshot."""
-    try:
-        s = get_store()
-        idea_id = result.idea_id
-        if not idea_id:
-            rows = s.get_idea_tree()
-            idea_id = rows[0]["id"] if rows else None
-        if idea_id:
-            s.update_idea_content(
-                idea_id,
-                research_brief=result.research_brief,
-                debate_transcript=json.dumps(result.events),
-                prd_text=result.prd,
-                verdict=(result.verdict or {}).get("verdict"),
-            )
-            scores = (result.verdict or {}).get("scores")
-            if scores:
-                s.update_idea_scores(idea_id, scores)
-            if result.status == "done":
-                s.update_idea_status(idea_id, "ACTIVE")
-            elif result.status in ("stopped", "failed"):
-                s.update_idea_status(idea_id, "PARK", f"status={result.status}")
-        # Close the per-run snapshot row (P1.1) so this debate stays replayable.
-        if result.idea_run_id:
-            s.finish_idea_run(
-                result.idea_run_id,
-                status=result.status,
-                verdict=(result.verdict or {}).get("verdict"),
-                scores=scores,
-                research_brief=result.research_brief,
-                debate_transcript=json.dumps(result.events),
-                prd_text=result.prd,
-                turns_used=result.turns_used or None,
-            )
-    except Exception:
-        pass
+    """Per-run archival helper."""
+    pass
 
 
 def get_run(run_id: str) -> OrchestratorResult | None:

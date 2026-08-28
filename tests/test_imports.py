@@ -71,7 +71,6 @@ def test_critical_agent_modules_have_no_undefined_names():
     """The debate-driving modules must not reference undefined symbols."""
     critical = {
         "src/agents/orchestrator.py",
-        "src/agents/pipeline.py",
         "src/agents/agents.py",
     }
     root = Path(__file__).resolve().parent.parent
@@ -86,8 +85,3 @@ def test_orchestrator_imports_cleanly():
     from src.agents import orchestrator  # noqa: F401
     assert hasattr(orchestrator, "run_orchestrator")
     assert hasattr(orchestrator, "agent_turn")
-
-
-def test_pipeline_imports_cleanly():
-    from src.agents import pipeline  # noqa: F401
-    assert hasattr(pipeline, "run_debate")

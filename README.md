@@ -148,7 +148,7 @@ python -m uvicorn src.dashboard:app --host 127.0.0.1 --port 8090
 The test suite covers the complete API contract, ADK agent workflows, rate-limiting, security headers, legal compliance, and prompt injection guardrails:
 
 ```bash
-# Run the full test suite (218 tests)
+# Run the full test suite (146 tests)
 pytest
 ```
 

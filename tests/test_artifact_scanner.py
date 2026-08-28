@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import pytest
 
 from src import artifact_scanner as scanner
-from src.agents.pipeline import _parse_audit
+from src.agents.orchestrator import _parse_audit
 
 
 # -- Deterministic artifact scanner --------------------------------------
