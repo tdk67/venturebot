@@ -27,6 +27,9 @@ import contextlib
 import json
 import re
 import time
+import urllib.error
+import urllib.parse
+import urllib.request
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -245,11 +248,24 @@ def _lookup(run_id: str) -> RunRecord:
     return rec
 
 
-def _require_api_key(body: dict) -> str:
-    key = (body.get("api_key") or "").strip()
+def _require_api_key(request: Request, body: dict | None = None) -> str:
+    """Extract BYOK API key from X-API-Key or Authorization header, falling back to body.
+
+    Precedence:
+      1. X-API-Key header
+      2. Authorization: Bearer <key> header
+      3. body["api_key"] (backward compatibility)
+    """
+    key = request.headers.get("x-api-key", "").strip()
+    if not key:
+        auth = request.headers.get("authorization", "").strip()
+        if auth.lower().startswith("bearer "):
+            key = auth[7:].strip()
+    if not key and isinstance(body, dict):
+        key = (body.get("api_key") or "").strip()
     if not key:
         # D1: BYOK is REQUIRED — no server-key fallback exists in any form.
-        raise HTTPException(400, "api_key required")
+        raise HTTPException(400, "api_key required in X-API-Key header or request body")
     return key
 
 
@@ -458,7 +474,7 @@ async def api_create_debate(request: Request):
     idea = (body.get("idea") or "").strip()
     if not idea:
         raise HTTPException(400, "idea is required")
-    api_key = _require_api_key(body)
+    api_key = _require_api_key(request, body)
     urls = body.get("urls") or []
     comment = (body.get("comment") or "").strip() or None
 
@@ -579,9 +595,17 @@ async def api_ack_result(run_id: str):
 @app.post("/api/debates/{run_id}/clarify")
 async def api_clarify(run_id: str, request: Request):
     rec = _lookup(run_id)
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
     answer = (body.get("answer") or "").strip()
-    api_key = (body.get("api_key") or "").strip() or rec.api_key
+    try:
+        api_key = _require_api_key(request, body)
+    except HTTPException:
+        api_key = rec.api_key
+    if not api_key:
+        raise HTTPException(400, "api_key required in X-API-Key header or request body")
     if not answer:
         raise HTTPException(400, "answer is required")
     _emit(rec, "clarify_received", {"answer_len": len(answer)})
@@ -595,15 +619,54 @@ async def api_clarify(run_id: str, request: Request):
     return {"status": "resumed", "run_id": run_id}
 
 
+async def verify_google_api_key(api_key: str) -> tuple[bool, str]:
+    """Validate Google Gemini API key against Google's metadata models API.
+    Zero token cost (metadata query only, no text generation).
+    """
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={urllib.parse.quote(api_key)}&pageSize=1"
+
+    def _call() -> tuple[bool, str]:
+        req = urllib.request.Request(url, headers={"User-Agent": "VentureBot/0.2"})
+        try:
+            with urllib.request.urlopen(req, timeout=8.0) as resp:
+                if resp.status == 200:
+                    return True, ""
+                return False, f"Google API returned status {resp.status}"
+        except urllib.error.HTTPError as e:
+            try:
+                err_body = json.loads(e.read().decode("utf-8"))
+                msg = err_body.get("error", {}).get("message", "") or str(e)
+            except Exception:
+                msg = str(e)
+            return False, msg
+        except Exception as e:
+            return False, f"Could not reach Google API: {e}"
+
+    return await asyncio.to_thread(_call)
+
+
 @app.post("/api/byok/verify")
 async def api_byok_verify(request: Request):
-    body = await request.json()
-    key = (body.get("api_key") or "").strip()
-    if not key:
-        raise HTTPException(400, "api_key required")
-    ok = any(p.match(key) for p in _KEY_PATTERNS)
-    provider = "openrouter" if (key.startswith("sk-or-") or key.startswith("sk-")) else "gemini"
-    return {"valid": ok, "provider": provider}
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    key = _require_api_key(request, body)
+
+    if key.startswith("sk-or-") or key.startswith("sk-"):
+        return {
+            "valid": False,
+            "provider": "openrouter",
+            "error": "OpenRouter is not supported. Idea Lint runs on Google Gemini (Free Tier from Google AI Studio supported).",
+        }
+
+    # Live 0-token check with Google
+    valid, error_msg = await verify_google_api_key(key)
+    return {
+        "valid": valid,
+        "provider": "gemini",
+        "error": error_msg if not valid else None,
+    }
 
 
 # -- Static assets + pages -------------------------------------------------

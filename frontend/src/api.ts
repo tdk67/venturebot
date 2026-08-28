@@ -2,7 +2,6 @@
 
 export interface CreateDebateRequest {
   idea: string;
-  api_key: string;
   urls?: string[];
   comment?: string;
 }
@@ -25,7 +24,7 @@ export interface RunResult {
 }
 
 export interface ByokVerifyRequest {
-  api_key: string;
+  api_key?: string;
 }
 
 export interface ByokVerifyResponse {
@@ -54,13 +53,17 @@ export function runKey(runId: string): string {
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
-async function _post(path: string, body: unknown): Promise<unknown> {
+async function _post(path: string, body: unknown, apiKey?: string): Promise<unknown> {
   const ctrl: AbortController | null = 'AbortController' in window ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), DEFAULT_TIMEOUT_MS) : 0;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKey) {
+    headers['X-API-Key'] = apiKey;
+  }
   try {
     const res = await fetch(path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
       signal: ctrl?.signal,
     });
@@ -81,17 +84,22 @@ async function _post(path: string, body: unknown): Promise<unknown> {
 
 /** Verify a user-supplied BYOK key against `/api/byok/verify` (T8). */
 export async function verifyByokKey(apiKey: string): Promise<ByokVerifyResponse> {
-  const data = (await _post(API.byokVerify, { api_key: apiKey })) as ByokVerifyResponse;
+  const data = (await _post(API.byokVerify, {}, apiKey)) as ByokVerifyResponse;
   return data;
 }
 
 /** Create a debate run. Returns the run_id. */
 export async function createDebate(idea: string, apiKey: string, urls?: string[], comment?: string): Promise<string> {
-  const payload: CreateDebateRequest = { idea, api_key: apiKey };
+  const payload: CreateDebateRequest = { idea };
   if (urls && urls.length > 0) payload.urls = urls;
   if (comment) payload.comment = comment;
-  const data = (await _post(API.createDebate, payload)) as CreateDebateResponse;
+  const data = (await _post(API.createDebate, payload, apiKey)) as CreateDebateResponse;
   return data.run_id;
+}
+
+/** Submit a clarification answer to resume a debate run. */
+export async function clarifyDebate(runId: string, answer: string, apiKey?: string): Promise<void> {
+  await _post(`/api/debates/${encodeURIComponent(runId)}/clarify`, { answer }, apiKey);
 }
 
 /** Fetch the finished result. Throws on not-ready (202) / gone (410) / 404. */

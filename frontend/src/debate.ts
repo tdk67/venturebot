@@ -638,11 +638,7 @@ function showClarifyBox(question: string): void {
     if (sendBtn) sendBtn.disabled = true;
     setStateLabel('resuming');
     try {
-      await fetch(`/api/debates/${encodeURIComponent(view.runId)}/clarify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ answer: ans, api_key: currentApiKey }),
-      });
+      await api.clarifyDebate(view.runId, ans, currentApiKey);
       appendFeedMessage('Human', `Answer: ${ans}`);
       if (input) input.value = '';
       box.classList.add('hidden');

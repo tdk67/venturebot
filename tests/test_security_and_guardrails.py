@@ -185,3 +185,82 @@ def test_pause_file_permissions_and_sweeper(tmp_path, monkeypatch):
     swept = sweep_paused_runs(max_age_seconds=0.01)
     assert run_id in swept
     assert not p.exists()
+
+
+def test_create_debate_with_x_api_key_header():
+    """Verify POST /api/debates accepts API key via X-API-Key header without key in body."""
+    resp = client.post(
+        "/api/debates",
+        headers={"X-API-Key": "AIzaSyTestKey1234567890"},
+        json={"idea": "Clean Header Idea"}
+    )
+    assert resp.status_code == 201
+    assert "run_id" in resp.json()
+
+
+def test_create_debate_with_authorization_bearer_header():
+    """Verify POST /api/debates accepts API key via Authorization: Bearer header."""
+    resp = client.post(
+        "/api/debates",
+        headers={"Authorization": "Bearer sk-or-v1-testkey123456789"},
+        json={"idea": "Bearer Header Idea"}
+    )
+    assert resp.status_code == 201
+    assert "run_id" in resp.json()
+
+
+def test_byok_verify_openrouter_rejected():
+    """Verify POST /api/byok/verify explicitly rejects OpenRouter keys with helpful message."""
+    resp = client.post(
+        "/api/byok/verify",
+        headers={"X-API-Key": "sk-or-v1-testkey123456789"},
+        json={}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["valid"] is False
+    assert "OpenRouter is not supported" in resp.json()["error"]
+
+
+def test_byok_verify_google_valid(monkeypatch):
+    """Verify POST /api/byok/verify validates Google Gemini key."""
+    from src import dashboard
+    async def mock_verify(key):
+        return True, ""
+    monkeypatch.setattr(dashboard, "verify_google_api_key", mock_verify)
+
+    resp = client.post(
+        "/api/byok/verify",
+        headers={"X-API-Key": "AIzaSyValidTestKey1234567890"},
+        json={}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["valid"] is True
+    assert resp.json()["provider"] == "gemini"
+
+
+def test_byok_verify_google_invalid(monkeypatch):
+    """Verify POST /api/byok/verify returns false and error for invalid Google key."""
+    from src import dashboard
+    async def mock_verify(key):
+        return False, "API key not valid. Please pass a valid API key."
+    monkeypatch.setattr(dashboard, "verify_google_api_key", mock_verify)
+
+    resp = client.post(
+        "/api/byok/verify",
+        headers={"X-API-Key": "AIzaSyInvalidKey123"},
+        json={}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["valid"] is False
+    assert "API key not valid" in resp.json()["error"]
+
+
+def test_missing_api_key_everywhere_400():
+    """Verify POST /api/debates returns 400 when no key is provided in headers or body."""
+    resp = client.post(
+        "/api/debates",
+        json={"idea": "No Key Idea"}
+    )
+    assert resp.status_code == 400
+    assert "api_key required" in resp.json()["detail"]
+

@@ -22,13 +22,12 @@ export function openSettingsModal(): void {
   if (hint) hint.classList.add('hidden');
   if (input) {
     input.value = '';
-    input.placeholder = st.saved ? `Current key: ${st.masked || '••••••••'}` : 'AIza... or sk-or-v1-...';
+    input.placeholder = st.saved ? `Current key: ${st.masked || '••••••••'}` : 'AIzaSy... or AQ...';
   }
 
   if (statusLine) {
     if (st.saved) {
-      const provName = st.provider === 'gemini' ? 'Google Gemini' : st.provider === 'openrouter' ? 'OpenRouter' : 'API';
-      statusLine.innerHTML = `<span class="text-emerald-400 font-semibold">✓ ${provName} key active</span> (${st.masked})`;
+      statusLine.innerHTML = `<span class="text-emerald-400 font-semibold">✓ Google Gemini key active</span> (${st.masked})`;
     } else {
       statusLine.innerHTML = `<span class="text-amber-400 font-semibold">⚠ No API key configured</span>`;
     }
@@ -51,12 +50,11 @@ function refreshHeaderKeyBadge(): void {
 
   const st = byok.keyState();
   if (st.saved && st.validated) {
-    const prov = st.provider === 'gemini' ? 'Gemini' : st.provider === 'openrouter' ? 'OpenRouter' : 'Key';
     badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition-colors cursor-pointer';
-    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> ${prov} Key: ${st.masked || 'Active'}`;
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Gemini Key: ${st.masked || 'Active'}`;
   } else {
     badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-600/80 flex items-center gap-1.5 transition-colors cursor-pointer animate-pulse';
-    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> 🔑 Set API Key (Required)`;
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> 🔑 Set Gemini Key (Required)`;
   }
 }
 
@@ -75,7 +73,7 @@ function wireSettingsModal(): void {
       const val = input.value.trim();
       if (!val) {
         if (hint) {
-          hint.textContent = 'Please paste your Google Gemini or OpenRouter API key first.';
+          hint.textContent = 'Please paste your Google Gemini API key first.';
           hint.className = 'text-xs text-amber-400 font-semibold mt-2';
           hint.classList.remove('hidden');
         }

@@ -163,12 +163,11 @@ export async function verify(
   }
 
   if (res.valid) {
-    const prov = res.provider || detectProvider(trimmed);
+    const prov = res.provider || 'gemini';
     await saveKey(trimmed, prov);
-    const provName = prov === 'gemini' ? 'Google Gemini' : prov === 'openrouter' ? 'OpenRouter' : 'API';
     return {
       ok: true,
-      message: `Valid ${provName} key verified and saved in this browser.`,
+      message: `✓ Valid Google Gemini API key verified with Google.`,
       provider: prov,
       masked: maskKey(trimmed),
     };
@@ -176,6 +175,6 @@ export async function verify(
 
   return {
     ok: false,
-    message: 'That key looks invalid. Please ensure you copied your full API key from Google AI Studio or OpenRouter.',
+    message: res.error || 'That key is invalid. Please copy your API key from Google AI Studio (Free tier supported).',
   };
 }

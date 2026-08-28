@@ -44,9 +44,9 @@ Idea Lint is designed from the ground up to respect founder privacy:
    - Data can be exported at any time to **JSON, CSV, Markdown, or PDF**.
 
 2. **100% Free Tier API Key Compatible ($0 Cost)**:
-   - Powered by Google Gemini (`AIza...`) from [Google AI Studio](https://aistudio.google.com/app/apikey).
+   - Powered by Google Gemini (`AIzaSy...` or `AQ...`) from [Google AI Studio](https://aistudio.google.com/app/apikey).
    - **No credit card required** — Google AI Studio's free tier provides 15 Requests Per Minute (RPM) and 1,500 Requests Per Day (RPD), plenty for multi-agent debates.
-   - OpenRouter keys (`sk-or-v1-...`) are also supported.
+   - Real-time 0-cost key validation via Google Generative Language metadata API.
    - Built-in **exponential backoff retry handling** gracefully absorbs transient rate-limits (`429`) without failing your run.
 
 3. **In-Memory Ephemeral Execution**:
@@ -133,23 +133,23 @@ python -m uvicorn src.dashboard:app --host 127.0.0.1 --port 8090
 | Endpoint | Method | Description |
 |---|---|---|
 | `/api/health` | `GET` | Server liveness check |
-| `/api/debates` | `POST` | Create a debate run (accepts `idea`, `api_key`, `urls`, `comment`) |
+| `/api/debates` | `POST` | Create a debate run (accepts `X-API-Key` header and `{ "idea", "urls", "comment" }`) |
 | `/api/debates/{id}` | `GET` | Get current execution status |
 | `/api/debates/{id}/events` | `GET` | Per-run SSE event stream |
 | `/api/debates/{id}/result` | `GET` | Fetch final structured result payload (`200` ready / `202` in-flight / `410` swept) |
 | `/api/debates/{id}/result/ack` | `POST` | Client acknowledges result receipt (initiates cleanup) |
 | `/api/debates/{id}/clarify` | `POST` | Submit founder answer to a durable clarification pause |
-| `/api/byok/verify` | `POST` | Validate BYOK key format (`AIza...` / `sk-or-v1-...`) |
+| `/api/byok/verify` | `POST` | Live 0-cost verification of Google Gemini API key |
 
 ---
 
 ## Testing & Verification
 
-The test suite covers the complete API contract, ADK agent workflows, rate-limiting, and error propagation:
+The test suite covers the complete API contract, ADK agent workflows, rate-limiting, security headers, legal compliance, and prompt injection guardrails:
 
 ```bash
-# Run the full test suite (199 tests)
-.venv\Scripts\pytest -q
+# Run the full test suite (218 tests)
+pytest
 ```
 
 ---
@@ -165,20 +165,23 @@ The test suite covers the complete API contract, ADK agent workflows, rate-limit
 - [x] **T6 — Client-Side Store (IndexedDB)**: Local-first schema migration, multi-run history, and JSON/CSV/Markdown backup.
 - [x] **T7 — Live Debate View & Scorecard**: Real-time SSE transcript, agent progress chips, and Judge score normalization.
 - [x] **T8 — Free Tier BYOK UX**: Client-side key validation with persistent local storage and automated retry backoff.
+- [x] **Security & Guardrails**: OWASP/BSI HTTP security headers, prompt injection defenses, German Impressum (§5 TMG) & Datenschutz (GDPR/TTDSG) pages.
 
 ### Planned / Upcoming (Post-Hackathon)
 - [ ] **T9 — Disconnect Recovery**: Automatic client-side reconnect with `Last-Event-ID` resume.
 - [ ] **T10 — Multi-Agent Sandbox Test Suite**: Extended port scanner and isolation test harness.
 - [ ] **T11 — Production Landing Finalization**: Interactive demo mode.
 - [ ] **T12 — Cloud Run Deployment**: Keyless Workload Identity deployment.
-- [ ] **Self-Improvement Layer (Client-Side)**: Local-first lesson capture and preference learning without server-side storage.
 
 ---
 
 ## Tech Stack
 
 - **Agent Engine**: [Google ADK](https://github.com/google/adk-python) (`LlmAgent`, `FunctionTool`, `SessionService`)
-- **Models**: Google Gemini 2.0 Flash (`gemini-2.0-flash`), Gemini 1.5 Pro
+- **LLM Models**:
+  - `gemini-3.7-flash`: Researcher (with Google Search tool), Advocate, Creative Ideator
+  - `gemini-3.1-pro-preview`: Feasibility Judge, PRD Writer, Security Auditor, Orchestrator
 - **Backend**: FastAPI, Uvicorn, Python 3.12+
 - **Frontend**: Vanilla TypeScript, Tailwind CSS, esbuild, IndexedDB
 - **Export Engine**: Markdown, DOMPurify, Native Print-to-PDF
+
