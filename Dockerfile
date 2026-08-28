@@ -1,49 +1,35 @@
-# VentureBot — unified dashboard + self-improvement layer (Stage 1: VPS / Stage 3: Cloud Run)
-#
-# Single container runs the FastAPI dashboard (SSE, SSO, HITL gates, memory API).
-# Phase 1 agents run in-process via google-adk; no separate Agent Engine needed
-# for the Stage-1/VPS and hackathon-demo deployment.
-#
-# Secrets are injected at runtime via environment (never baked into the image).
-# State (state.json, data/*.db) is NOT in the image — mount a volume or use GCP
-# storage in production.
+# Idea Lint — production container (Cloud Run / any OCI runtime)
+FROM python:3.12-slim
 
-FROM python:3.11-slim
-
-# System deps needed by google-adk / cryptography wheels
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# Install dependencies first (layer cache)
+# Dependencies first (layer caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY src/ ./src/
-COPY templates/ ./templates/
-COPY static/ ./static/
+# App code and static assets
+COPY config.json .
+COPY src ./src
+COPY templates ./templates
+COPY static ./static
+COPY scripts ./scripts
 
-# Runtime state is written here (mount a volume in production)
-RUN mkdir -p /app/data /app/workspace /app/sandbox
+# Non-root user with writable runtime and pause directories
+RUN useradd --create-home --uid 1000 vb \
+    && mkdir -p /app/data /app/data/pauses /app/workspace /app/archive \
+    && chown -R vb:vb /app
+USER vb
 
-# Point runtime state at the writable dirs (BASE_DIR is root-owned)
-ENV PYTHONUNBUFFERED=1 \
-    PORT=8080 \
-    VENTUREBOT_STATE=/app/data/state.json \
-    VENTUREBOT_DATA=/app/data \
+ENV VENTUREBOT_DATA=/app/data \
     VENTUREBOT_WORKSPACE=/app/workspace \
-    VENTUREBOT_SANDBOX=/app/sandbox
-
-# Non-root user for the web server (defense in depth; the sandbox already
-# drops to 65534 for generated-code execution)
-RUN useradd --create-home --uid 10001 appuser \
-    && chown -R appuser:appuser /app/data /app/workspace /app/sandbox
-USER appuser
+    VENTUREBOT_ARCHIVE_DIR=/app/archive \
+    VENTUREBOT_SANDBOX=/tmp/vb-sandbox \
+    VENTUREBOT_NO_AUTH=1
 
 EXPOSE 8080
 
-CMD ["uvicorn", "src.dashboard:app", "--host", "0.0.0.0", "--port", "8080", "--workers", "1"]
+CMD ["sh", "-c", "exec uvicorn src.dashboard:app --host 0.0.0.0 --port ${PORT:-8080}"]

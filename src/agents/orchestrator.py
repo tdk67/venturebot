@@ -1070,11 +1070,10 @@ async def run_orchestrator(
         _archive_result(result, run_id)
     except ClarifyPaused:
         # Durable pause: state is already persisted to disk by clarify().
-        # Do NOT archive (that would finalize the checkpoint / park the idea).
         result.status = "needs_clarification"
         store.set_status("waiting_user")
         store.log("System", "core",
-                  f"Debate paused  -- waiting for your answer (no time limit). Run {run_id}")
+                  f"Debate paused -- waiting for your answer (no time limit). Run {run_id}")
         emit("clarify_question", {
             "run_id": run_id,
             "question": result.clarification_question,
@@ -1086,13 +1085,38 @@ async def run_orchestrator(
             "idea_id": result.idea_id,
         })
     except Exception as e:
-        result.status = "failed"
-        result.error = f"{type(e).__name__}: {e}"
-        store.set_status("failed")
-        store.log("System", "core", f"Orchestrator failed: {result.error}")
-        # Loud failure (T2): the UI must get an explicit run_failed with a reason.
-        emit("run_failed", {"reason": result.error, "run_id": run_id})
-        _archive_result(result, run_id)
+        # ADK may wrap tool exceptions inside DynamicNodeFailError or runner exceptions
+        cause = getattr(e, "error", None) or getattr(e, "__cause__", None) or getattr(e, "__context__", None)
+        is_clarify = (
+            isinstance(e, ClarifyPaused)
+            or isinstance(cause, ClarifyPaused)
+            or "ClarifyPaused" in type(e).__name__
+            or (cause and "ClarifyPaused" in type(cause).__name__)
+            or bool(result.clarification_question)
+        )
+        if is_clarify:
+            result.status = "needs_clarification"
+            store.set_status("waiting_user")
+            store.log("System", "core",
+                      f"Debate paused -- waiting for your answer (no time limit). Run {run_id}")
+            emit("clarify_question", {
+                "run_id": run_id,
+                "question": result.clarification_question,
+                "idea_id": result.idea_id,
+            })
+            emit("run_paused", {
+                "run_id": run_id,
+                "question": result.clarification_question,
+                "idea_id": result.idea_id,
+            })
+        else:
+            result.status = "failed"
+            result.error = f"{type(e).__name__}: {e}"
+            store.set_status("failed")
+            store.log("System", "core", f"Orchestrator failed: {result.error}")
+            # Loud failure (T2): the UI must get an explicit run_failed with a reason.
+            emit("run_failed", {"reason": result.error, "run_id": run_id})
+            _archive_result(result, run_id)
 
     _RUNS.pop(run_id, None)
     return result

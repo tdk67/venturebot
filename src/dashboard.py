@@ -498,7 +498,15 @@ async def api_debate_events(run_id: str, request: Request):
         finally:
             sse_release(ip, tok)
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 def _sse(event: str, data: dict) -> str:

@@ -518,9 +518,15 @@ function stream(runId: string): Promise<void> {
     es.addEventListener('run_failed', onEvent('run_failed'));
     es.addEventListener('expired', onEvent('expired'));
 
+    let probeCount = 0;
+    let probeTimeout: number | null = null;
+
     es.onerror = () => {
       if (view && view.state === 'running') {
-        void probe(runId);
+        if (probeTimeout) clearTimeout(probeTimeout);
+        probeTimeout = window.setTimeout(() => {
+          void probe(runId);
+        }, 1500);
       }
     };
 
@@ -565,7 +571,26 @@ function stream(runId: string): Promise<void> {
     };
 
     async function probe(runIdProbe: string): Promise<void> {
+      probeCount++;
       try {
+        const st = await api.fetchStatus(runIdProbe, 4000);
+        if (st) {
+          if (st.status === 'failed') {
+            fail(st.error || 'Debate execution failed on the server');
+            es.close();
+            resolve();
+            return;
+          }
+          if (st.status === 'done') {
+            setStateLabel('done');
+            void settle();
+            return;
+          }
+          if (st.status === 'running' || st.status === 'queued' || st.status === 'needs_clarification') {
+            // Still in progress — keep EventSource reconnecting
+            return;
+          }
+        }
         const result = await api.fetchResult(runIdProbe, 4000);
         if (result?.result && (result.result as Record<string, unknown>).status !== 'failed') {
           setStateLabel('done');
@@ -573,12 +598,15 @@ function stream(runId: string): Promise<void> {
           return;
         }
       } catch {
-        // ignore
+        // ignore network jitter during reconnect
       }
-      if (view && view.state === 'running') {
-        fail('Stream disconnected or debate was stopped on the server.');
-        es.close();
-        resolve();
+
+      if (es.readyState === EventSource.CLOSED && probeCount >= 3) {
+        if (view && view.state === 'running') {
+          fail('Stream disconnected or debate was stopped on the server.');
+          es.close();
+          resolve();
+        }
       }
     }
   });

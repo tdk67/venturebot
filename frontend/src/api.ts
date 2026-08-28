@@ -110,6 +110,21 @@ export async function fetchResult(runId: string, timeoutMs = DEFAULT_TIMEOUT_MS)
   }
 }
 
+/** Fetch the run status from `/api/debates/{id}`. */
+export async function fetchStatus(runId: string, timeoutMs = 5000): Promise<{ run_id: string; status: string; error?: string } | null> {
+  const ctrl = 'AbortController' in window ? new AbortController() : null;
+  const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : 0;
+  try {
+    const res = await fetch(`/api/debates/${encodeURIComponent(runId)}`, { signal: ctrl?.signal });
+    if (!res.ok) return null;
+    return (await res.json()) as { run_id: string; status: string; error?: string };
+  } catch {
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** ACK the download so the server can wipe the ephemeral result (S7/D3). */
 export async function ackResult(runId: string): Promise<void> {
   await _post(`/api/debates/${encodeURIComponent(runId)}/result/ack`, {});

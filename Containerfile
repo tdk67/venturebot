@@ -1,7 +1,4 @@
-# VentureBot — production container (Cloud Run / any OCI runtime)
-# Build:  docker build -t venturebot .
-# Run:    docker run -p 8080:8080 -e GOOGLE_API_KEY=... venturebot
-
+# Idea Lint — production container (Cloud Run / any OCI runtime)
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -14,36 +11,25 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# App code
+# App code and static assets
 COPY config.json .
 COPY src ./src
 COPY templates ./templates
 COPY static ./static
 COPY scripts ./scripts
 
-# Non-root user; writable runtime dirs
+# Non-root user with writable runtime and pause directories
 RUN useradd --create-home --uid 1000 vb \
-    && mkdir -p /app/data /app/workspace /app/archive \
+    && mkdir -p /app/data /app/data/pauses /app/workspace /app/archive \
     && chown -R vb:vb /app
 USER vb
 
-# Runtime paths inside the container
 ENV VENTUREBOT_DATA=/app/data \
     VENTUREBOT_WORKSPACE=/app/workspace \
     VENTUREBOT_ARCHIVE_DIR=/app/archive \
-    VENTUREBOT_SANDBOX=/tmp/vb-sandbox
+    VENTUREBOT_SANDBOX=/tmp/vb-sandbox \
+    VENTUREBOT_NO_AUTH=1
 
-# Cloud Run injects PORT (default 8080 elsewhere)
 EXPOSE 8080
 
-# Optional state persistence: restore latest snapshot from GCS before boot,
-# keep syncing while running (see notes/GCP_DEPLOYMENT.md). No-op unless
-# GCS_DATA_BUCKET is set.
-CMD ["sh", "-c", "\
-    if [ -n \"$GCS_DATA_BUCKET\" ]; then \
-      python scripts/data_snapshot.py restore || echo \"[boot] no snapshot restored\"; \
-    fi; \
-    if [ -n \"$GCS_DATA_BUCKET\" ]; then \
-      python scripts/data_snapshot.py watch &  \
-    fi; \
-    exec uvicorn src.dashboard:app --host 0.0.0.0 --port ${PORT:-8080}"]
+CMD ["sh", "-c", "exec uvicorn src.dashboard:app --host 0.0.0.0 --port ${PORT:-8080}"]
