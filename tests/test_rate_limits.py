@@ -39,6 +39,7 @@ def _reset_limiter():
     rate_limit.clear_all()
 
 
+@pytest.fixture(autouse=True)
 def _fake_orchestrator(monkeypatch):
     """Install a non-live orchestrator that succeeds immediately."""
     async def fake(idea, *, api_key=None, external_run_id=None, **kwargs):

@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 
 from google.adk.tools.load_web_page import load_web_page
+from .input_guard import quarantine
 
 MAX_URLS_PER_CHECKPOINT = 5
 MAX_URL_LENGTH = 2048
@@ -25,7 +26,7 @@ def fetch_urls(urls: list[str], *, limit: int = MAX_URLS_PER_CHECKPOINT) -> str:
     """Fetch the given URLs and return a combined markdown digest.
 
     Returns '' if no valid URLs. Truncates each page's text to keep the
-    prompt manageable.
+    prompt manageable, and quarantines content so models treat it strictly as data.
     """
     valid = [u for u in urls if validate_url(u)][:limit]
     if not valid:
@@ -41,6 +42,7 @@ def fetch_urls(urls: list[str], *, limit: int = MAX_URLS_PER_CHECKPOINT) -> str:
         text = (text or "").strip()
         if len(text) > MAX_CONTENT_CHARS:
             text = text[:MAX_CONTENT_CHARS] + "\n...[truncated]"
-        sections.append(f"## {url}\n\n{text}")
+        guarded_text = quarantine(text, label="EXTERNAL_WEB_CONTENT")
+        sections.append(f"## {url}\n\n{guarded_text}")
 
     return "\n\n".join(sections)

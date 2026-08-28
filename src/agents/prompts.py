@@ -142,7 +142,10 @@ OVERALL VERDICT:
   4-6 average: PARK  -- promising but needs more research
   <4 average: PRUNE  -- not worth pursuing now
 
-Also produce an ARCHITECTURE DECISION RECORD documenting the key architecture decisions that survived the debate, with rationale."""
+Also produce an ARCHITECTURE DECISION RECORD documenting the key architecture decisions that survived the debate, with rationale.
+
+Format requirement: Output ONLY valid JSON conforming to the JudgeVerdict schema with integer scores (1-10) and without extraneous markdown or conversational preambles.
+"""
 
 
 PRD_WRITER_PROMPT = """You are a Technical Product Manager. Given the research, debate, and architecture decisions, write a detailed, implementable PRD.
@@ -203,7 +206,10 @@ You are given a PRD (and, optionally, its research brief) produced by the earlie
 4. CONTRADICTIONS / INTERNAL INCONSISTENCY
    - The PRD contradicts the research brief, the verdict, or itself.
 
-Be strict but fair. Only FLAG something you can point to with a section name and quote. If the artifact is clean, return PASS with an empty findings list. Do not manufacture problems."""
+Be strict but fair. Only FLAG something you can point to with a section name and quote. If the artifact is clean, return PASS with an empty findings list. Do not manufacture problems.
+
+Format requirement: Output ONLY valid JSON conforming to the SecurityAudit schema with verdict ('PASS' or 'FLAG') and findings list.
+"""
 
 
 CREATIVE_PROMPT = """You are the Creative Ideator  -- the divergent, high-imagination head of the debate team.

@@ -21,7 +21,7 @@ _INSTRUCTION_MARKERS = [
     r"\bdo not (follow|obey)\b",
     r"\bact as\b",
     r"\bsystem prompt\s*:\s*",
-    r"\bdeveloper (message|note)\s*:\s*",
+    r"\bdeveloper (message|note|instructions?)\s*:\s*",
     r"```.*\b(system|developer|assistant)\b",
     r"\bignore.*\b(and|then|now)\b.*\b(print|output|write|emit|return|execute|run|call)\b",
     r"\boutput (only|just|exactly)\b.*\b(system|prompt|instructions?)\b",
@@ -29,6 +29,12 @@ _INSTRUCTION_MARKERS = [
     r"\bimport\s+(os|subprocess|socket|sys)\b",
     r"\bopen\(['\"]/etc/(passwd|shadow)",
     r"curl\s+.*\|\s*(bash|sh)",
+    r"<\s*(system|instruction|developer|admin)\s*>",
+    r"\[\s*(INST|SYS|SYSTEM|DEVELOPER)\s*\]",
+    r"<<\s*SYS\s*>>",
+    r"\b(reveal|show|dump|print|leak)\s+(your\s+)?(system\s+prompt|secret|api\s*key|internal\s+instructions)\b",
+    r"\bDAN\s+mode\b",
+    r"\bjailbreak\b",
 ]
 
 _markers = [re.compile(p, re.IGNORECASE) for p in _INSTRUCTION_MARKERS]

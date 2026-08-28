@@ -330,6 +330,42 @@
         },
         "summary": "Dashboard"
       }
+    },
+    "/datenschutz": {
+      "get": {
+        "operationId": "datenschutz_page_datenschutz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Datenschutz Page"
+      }
+    },
+    "/impressum": {
+      "get": {
+        "operationId": "impressum_page_impressum_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Impressum Page"
+      }
     }
   }
 }

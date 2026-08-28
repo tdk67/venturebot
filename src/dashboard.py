@@ -46,6 +46,7 @@ from .rate_limit import (
 )
 from .ephemeral_store import EphemeralStore
 from .inflight_sweeper import sweep_workspaces
+from . import config
 
 # -- Security headers (G1-G3) ----------------------------------------------
 # Strict CSP: all scripts same-origin; no third-party scripts, no eval.
@@ -61,15 +62,34 @@ _CSP = (
     "form-action 'self'"
 )
 
+_PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), usb=(), payment=()"
+
 app = FastAPI(title="VentureBot API", version="0.2.0")
 
 # T5 — periodic TTL / workspace sweeper. Every SWEEP_INTERVAL seconds we drop
 # expired runs from the ephemeral store and wipe their workspaces, so idea
 # text, research and PRD content never linger on disk past the TTL (S6/D2).
-# The store's sweep_ttl() is the tested primitive; this loop just drives it.
-# Run only under the ASGI lifespan (uvicorn / TestClient-with-context); a plain
-# TestClient() never starts it, which is why the TTL tests are deterministic.
 SWEEP_INTERVAL_SECONDS = 60
+
+
+def sweep_paused_runs(max_age_seconds: float = 7 * 86400) -> list[str]:
+    """Wipe orphaned pause files older than max_age_seconds (GDPR Art. 5(1)(e) storage limitation)."""
+    p_dir = config.DATA_DIR / "paused_runs"
+    if not p_dir.exists():
+        return []
+    now = time.time()
+    swept: list[str] = []
+    try:
+        for p in p_dir.glob("*.json"):
+            try:
+                if now - p.stat().st_mtime > max_age_seconds:
+                    p.unlink(missing_ok=True)
+                    swept.append(p.stem)
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return swept
 
 try:
     from contextlib import asynccontextmanager
@@ -103,11 +123,6 @@ def _sweep_once() -> list[str]:
     """Tick the store + workspace sweepers once. Returns the run_ids swept.
     Deterministic and synchronous, so tests call it directly; the lifespan loop
     calls this repeatedly on its own interval.
-
-    Order matters: `STORE.sweep_ttl()` first fires the `expired` watcher for
-    each dropped run (so any still-open SSE sees it), and only then do we drop
-    the run's remaining in-memory `_RUNS` record and its workspace, so the
-    server holds nothing after expiry (S6/D2).
     """
     swept = STORE.sweep_ttl()
     for run_id in swept:
@@ -116,16 +131,33 @@ def _sweep_once() -> list[str]:
             sweep_workspaces({run_id})
         except Exception:
             pass
+    try:
+        sweep_paused_runs()
+    except Exception:
+        pass
     return swept
 
 
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
+    req_id = request.headers.get("x-request-id") or str(uuid.uuid4())
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = _CSP
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Permissions-Policy"] = _PERMISSIONS_POLICY
+    response.headers["X-Request-ID"] = req_id
+
+    # HSTS on secure connections (production / HTTPS)
+    is_https = (
+        request.url.scheme == "https"
+        or request.headers.get("x-forwarded-proto") == "https"
+        or getattr(config, "COOKIE_SECURE", False)
+    )
+    if is_https:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+
     return response
 
 
@@ -593,3 +625,15 @@ async def landing_page():
 async def dashboard():
     html = (Path(__file__).resolve().parent.parent / "templates" / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@app.get("/impressum", response_class=HTMLResponse)
+async def impressum_page():
+    html = (Path(__file__).resolve().parent.parent / "templates" / "impressum.html").read_text(encoding="utf-8")
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/datenschutz", response_class=HTMLResponse)
+async def datenschutz_page():
+    html = (Path(__file__).resolve().parent.parent / "templates" / "datenschutz.html").read_text(encoding="utf-8")
+    return HTMLResponse(html, headers={"Cache-Control": "public, max-age=3600"})

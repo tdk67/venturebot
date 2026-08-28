@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Datenschutzerklärung — Idea Lint</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<script src="/static/vendor/tailwind-3.4.16.min.js"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col">
+
+<header class="border-b border-slate-800">
+  <div class="max-w-4xl mx-auto px-6 py-4 flex justify-between items-center">
+    <a href="/" class="flex items-center gap-3">
+      <img src="/static/logo.svg" alt="Idea Lint" class="w-8 h-8">
+      <span class="text-xl font-black text-white">Idea Lint</span>
+    </a>
+    <a href="/app" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold rounded-lg transition-colors">Open App</a>
+  </div>
+</header>
+
+<main class="flex-1 max-w-4xl mx-auto px-6 py-12 w-full">
+  <div class="bg-slate-900 border border-slate-800 rounded-2xl p-8 shadow-xl">
+    <h1 class="text-3xl font-extrabold text-white mb-6 border-b border-slate-800 pb-4">Datenschutzerklärung (Privacy Policy)</h1>
+    
+    <div class="space-y-6 text-slate-300 text-sm leading-relaxed">
+      
+      <section>
+        <h2 class="text-lg font-bold text-white mb-2">1. Datenschutz auf einen Blick</h2>
+        <p class="mb-2">
+          Wir nehmen den Schutz Ihrer persönlichen Daten sehr ernst. Idea Lint folgt dem Grundsatz von <strong>Privacy by Design</strong> und <strong>Datensparsamkeit</strong> (Art. 5 Abs. 1 lit. c DSGVO):
+        </p>
+        <ul class="list-disc pl-5 space-y-1 text-slate-400">
+          <li><strong>Keine Benutzerkonten oder Registrierung</strong> erforderlich.</li>
+          <li><strong>Bring Your Own Key (BYOK)</strong>: Ihr API-Schlüssel wird nur im flüchtigen Arbeitsspeicher (RAM) für die Dauer der Analyse gehalten und niemals persistent auf unseren Servern gespeichert.</li>
+          <li><strong>Stateless Backend</strong>: Debattenverläufe und generierte PRDs werden clientseitig in Ihrem Browser (IndexedDB) gespeichert.</li>
+          <li><strong>Flüchtige Server-Laufzeit (TTL)</strong>: Temporäre Serverdaten werden nach Bestätigung (ACK) oder spätestens nach Ablauf von 24 Stunden unwiderruflich gelöscht.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-bold text-white mb-2">2. Verantwortliche Stelle</h2>
+        <p>Verantwortlicher für die Datenverarbeitung auf dieser Website ist:</p>
+        <div class="bg-slate-950 p-4 rounded-lg mt-2 text-slate-300">
+          <p>Idea Lint Project / VentureBot Team</p>
+          <p>Musterstraße 123, 10115 Berlin, Deutschland</p>
+          <p>E-Mail: <a href="mailto:contact@taskmind-ai.com" class="text-blue-400 hover:underline">contact@taskmind-ai.com</a></p>
+        </div>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-bold text-white mb-2">3. Erhebung und Verarbeitung personenbezogener Daten</h2>
+        
+        <h3 class="font-semibold text-white mt-3 mb-1">a) Server-Log-Dateien und Rate Limiting</h3>
+        <p>
+          Beim Aufruf unserer Dienste verarbeitet unser Webserver technisch notwendige Daten (IP-Adresse, Zeitstempel, Request-Header) ausschließlich im flüchtigen RAM zur Missbrauchserkennung und Durchsetzung von Rate Limits (max. 20 Anfragen/Stunde). Rechtsgrundlage ist Art. 6 Abs. 1 lit. f DSGVO (berechtigtes Interesse an der Betriebssicherheit).
+        </p>
+
+        <h3 class="font-semibold text-white mt-3 mb-1">b) Eingegebene Ideen &amp; API-Schlüssel</h3>
+        <p>
+          Wenn Sie eine Startup-Idee validieren lassen, wird der eingegebene Text zusammen mit Ihrem API-Schlüssel verarbeitet. Ihr API-Schlüssel wird nach Abschluss der Debatte sofort aus dem Speicher gelöscht. Rechtsgrundlage ist Art. 6 Abs. 1 lit. b DSGVO (Erfüllung des Nutzungsverhältnisses).
+        </p>
+
+        <h3 class="font-semibold text-white mt-3 mb-1">c) Lokale Speicherung im Browser (§ 25 Abs. 2 TTDSG)</h3>
+        <p>
+          Diese Anwendung verwendet <code>localStorage</code> (zur optionalen Speicherung Ihres API-Schlüssels) und <code>IndexedDB</code> (zur Speicherung Ihrer Ideen-Historie direkt auf Ihrem Endgerät). Diese Speicherung ist technisch erforderlich, um Ihnen die Debattenhistorie ohne serverseitige Benutzerprofile bereitzustellen (§ 25 Abs. 2 Nr. 2 TTDSG). Es werden <strong>keine Tracking-Cookies</strong> oder Werbe-Tracker eingesetzt.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-bold text-white mb-2">4. Einsatz von KI-Modellen &amp; Auftragsverarbeitung (EU AI Act &amp; DSGVO)</h2>
+        <p class="mb-2">
+          <strong>Transparenzhinweis nach Art. 50 EU AI Act (Verordnung EU 2024/1689):</strong><br>
+          Idea Lint nutzt autonome KI-Agenten auf Basis von Google Gemini (Google Ireland Limited / Google LLC). Die generierten Analysen, Bewertungen und PRDs sind rein KI-generierte Empfehlungen und ersetzen keine professionelle Rechts-, Finanz- oder Unternehmensberatung.
+        </p>
+        <p>
+          Zur Ausführung der Debatten wird der eingegebene Ideentext über Ihren BYOK-Schlüssel an die Google Gemini API übertragen. Die Datenübermittlung erfolgt auf Grundlage von Standardvertragsklauseln (SCCs) bzw. der Datenverarbeitungsvereinbarung (DPA) mit Google.
+        </p>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-bold text-white mb-2">5. Ihre Rechte als betroffene Person</h2>
+        <p class="mb-2">Sie haben im Rahmen der geltenden gesetzlichen Bestimmungen jederzeit das Recht auf:</p>
+        <ul class="list-disc pl-5 space-y-1 text-slate-400">
+          <li><strong>Auskunft</strong> über Ihre bei uns verarbeiteten personenbezogenen Daten (Art. 15 DSGVO)</li>
+          <li><strong>Berichtigung</strong> unrichtiger Daten (Art. 16 DSGVO)</li>
+          <li><strong>Löschung</strong> Ihrer Daten (Art. 17 DSGVO)</li>
+          <li><strong>Einschränkung der Verarbeitung</strong> (Art. 18 DSGVO)</li>
+          <li><strong>Datenübertragbarkeit</strong> (Art. 20 DSGVO)</li>
+          <li><strong>Widerspruch</strong> gegen die Verarbeitung (Art. 21 DSGVO)</li>
+          <li><strong>Beschwerderecht</strong> bei einer zuständigen Datenschutz-Aufsichtsbehörde (Art. 77 DSGVO).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2 class="text-lg font-bold text-white mb-2">6. Datensicherheit</h2>
+        <p>
+          Wir setzen moderne technische und organisatorische Sicherheitsmaßnahmen ein: TLS/HTTPS-Verschlüsselung, HTTP Strict Transport Security (HSTS), strikte Content Security Policy (CSP), Eingabefilter gegen Prompt-Injection und automatisierte Secret-Scans für generierten Code.
+        </p>
+      </section>
+
+    </div>
+  </div>
+</main>
+
+<footer class="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
+  <div class="max-w-4xl mx-auto px-6 flex justify-between items-center">
+    <span>© 2026 Idea Lint. Alle Rechte vorbehalten.</span>
+    <div class="flex gap-4">
+      <a href="/impressum" class="hover:text-slate-300 text-slate-400">Impressum</a>
+      <a href="/datenschutz" class="hover:text-slate-300 text-slate-400">Datenschutz</a>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
