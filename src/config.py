@@ -79,10 +79,6 @@ ORCHESTRATOR_MAX_TURNS      = _env_int("VENTUREBOT_ORCHESTRATOR_MAX_TURNS", _cfg
 ORCHESTRATOR_MAX_TOOL_CALLS = _env_int("VENTUREBOT_ORCHESTRATOR_MAX_TOOL_CALLS", _cfg.get("orchestrator_max_tool_calls", 50))
 ORCHESTRATOR_STALL_TURNS    = _env_int("VENTUREBOT_ORCHESTRATOR_STALL_TURNS", _cfg.get("orchestrator_stall_turns", 3))
 
-# -- Budget --------------------------------------------------------------
-
-DAILY_BUDGET_LIMIT_USD = _env_float("VENTUREBOT_DAILY_BUDGET_LIMIT", _cfg.get("daily_budget_limit_usd", 20.0))
-
 # -- Models: Phase 1 (Gemini / ADK) -------------------------------------
 
 MODEL_RESEARCHER  = _env("VENTUREBOT_MODEL_RESEARCHER", _cfg.get("model_researcher", "gemini-3.7-flash"))
@@ -101,24 +97,11 @@ MODEL_ORCHESTRATOR = _env("VENTUREBOT_MODEL_ORCHESTRATOR", _cfg.get("model_orche
 
 CREATIVE_TEMPERATURE = _env_float("VENTUREBOT_CREATIVE_TEMPERATURE", _cfg.get("creative_temperature", 1.0))
 
-# -- Models: Phase 2 (OpenRouter) ---------------------------------------
+# -- Deployment & Security ----------------------------------------------
 
-MODEL_PO         = _env("VENTUREBOT_MODEL_PO", _cfg.get("model_po", "deepseek/deepseek-v4-pro"))
-MODEL_TESTWRITER = _env("VENTUREBOT_MODEL_TESTWRITER", _cfg.get("model_testwriter", "deepseek/deepseek-chat-v3-0324"))
-MODEL_CODER      = _env("VENTUREBOT_MODEL_CODER", _cfg.get("model_coder", "deepseek/deepseek-chat-v3-0324"))
-MODEL_QA         = _env("VENTUREBOT_MODEL_QA", _cfg.get("model_qa", "deepseek/deepseek-v4-pro"))
-OPENROUTER_BASE  = _env("OPENROUTER_BASE_URL", _cfg.get("openrouter_base", "https://openrouter.ai/api/v1"))
-
-# -- Auth ---------------------------------------------------------------
-# Secrets  -- these come ONLY from the environment, never from config.json:
-
-GOOGLE_CLIENT_ID     = _env("GOOGLE_CLIENT_ID", _cfg.get("google_client_id", ""))
-GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()  # secret  -- no fallback to config.json
-ALLOWED_EMAILS       = _env_list("VENTUREBOT_ALLOWED_EMAILS", _cfg.get("allowed_emails", ""))
-SIGNUP_CLOSED        = _env_bool("VENTUREBOT_SIGNUP_CLOSED", _cfg.get("signup_closed", False))
 COOKIE_SECURE        = _env_bool("VENTUREBOT_COOKIE_SECURE", _cfg.get("cookie_secure", False))
 PUBLIC_BASE_URL      = _env("VENTUREBOT_PUBLIC_BASE_URL", _cfg.get("public_base_url", ""))
-NO_AUTH              = _env_bool("VENTUREBOT_NO_AUTH", _cfg.get("no_auth", True))
+NO_AUTH              = True
 
 # -- Scheduler -----------------------------------------------------------
 
@@ -135,22 +118,3 @@ def google_api_key() -> str:
             "GOOGLE_API_KEY, not GEMINI_API_KEY)."
         )
     return key
-
-
-def openrouter_api_key() -> str:
-    env_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-    if env_key:
-        return env_key
-    auth_path = Path.home() / ".pi" / "agent" / "auth.json"
-    if auth_path.exists():
-        try:
-            data = json.loads(auth_path.read_text(encoding="utf-8"))
-            key = data.get("openrouter", {}).get("key", "").strip()
-            if key:
-                return key
-        except (json.JSONDecodeError, OSError):
-            pass
-    raise RuntimeError(
-        "No OpenRouter API key found. Set OPENROUTER_API_KEY or ensure "
-        "~/.pi/agent/auth.json contains an 'openrouter' entry with a 'key'."
-    )

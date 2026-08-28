@@ -1,5 +1,5 @@
 {
-  "//": "VentureBot configuration -- COMMITTED to git. No secrets here.",
+  "//": "Idea Lint / VentureBot configuration -- COMMITTED to git. No secrets here.",
   "//2": "Every value can be overridden by a VENTUREBOT_* environment variable.",
 
   "// -- Paths ------------------------------------------------------": "",
@@ -7,19 +7,13 @@
   "state_file": "state.json",
   "data_dir": "data",
 
-  "// -- Loop budget ------------------------------------------------": "",
-  "max_iterations": 5,
-  "llm_timeout": 120,
-  "max_tokens": 4096,
-  "run_deadline_seconds": 900,
-
   "// -- Orchestrator loop budget -----------------------------------": "",
   "orchestrator_max_turns": 10,
   "orchestrator_max_tool_calls": 50,
   "orchestrator_stall_turns": 3,
-
-  "// -- Budget -----------------------------------------------------": "",
-  "daily_budget_limit_usd": 20.00,
+  "llm_timeout": 120,
+  "max_tokens": 4096,
+  "run_deadline_seconds": 900,
 
   "// -- Models: Phase 1 (Gemini / ADK) -----------------------------": "",
   "model_researcher": "gemini-3.7-flash",
@@ -36,24 +30,8 @@
   "// -- Temperatures -----------------------------------------------": "",
   "creative_temperature": 1.0,
 
-  "// -- Models: Phase 2 (OpenRouter) -------------------------------": "",
-  "model_po": "deepseek/deepseek-v4-pro",
-  "model_testwriter": "deepseek/deepseek-chat-v3-0324",
-  "model_coder": "deepseek/deepseek-chat-v3-0324",
-  "model_qa": "deepseek/deepseek-v4-pro",
-  "openrouter_base": "https://openrouter.ai/api/v1",
-
-  "// -- Auth -------------------------------------------------------": "",
-  "google_client_id": "442488405067-danioee2r9r0hrih94j6d7rjt6lraeoa.apps.googleusercontent.com",
-  "allowed_emails": "",
-  "signup_closed": false,
-  "cookie_secure": false,
-
   "// -- Deployment -------------------------------------------------": "",
   "public_base_url": "",
-  "no_auth": true,
-
-  "// -- Scheduler --------------------------------------------------": "",
-  "enable_scheduler": false,
-  "dream_review_hour": 3
+  "cookie_secure": false,
+  "no_auth": true
 }

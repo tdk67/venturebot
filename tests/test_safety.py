@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src import guard, input_guard, budget, run_manager  # noqa: E402
+from src import guard, input_guard, run_manager  # noqa: E402
 
 
 def test_guard_blocks_subprocess():
@@ -57,53 +57,6 @@ def test_input_guard_allows_benign():
 def test_input_guard_quarantines():
     res = input_guard.guard_input("some normal idea text")
     assert "BEGIN UNTRUSTED_USER_INPUT" in res["text"]
-
-
-def test_budget_enforcement():
-    # A huge estimated cost should breach a low limit
-    budget.raise_limit(0.01)
-    try:
-        budget.check_budget(estimated_input_tokens=1_000_000, model="gemini-3.1-pro")
-        breached = False
-    except budget.BudgetExceeded:
-        breached = True
-    assert breached is True
-
-
-def test_budget_raise_and_status():
-    budget.raise_limit(50.0)
-    assert budget.get_limit() == 50.0
-    s = budget.status()
-    assert s["limit"] == 50.0
-    assert "remaining" in s
-
-
-def test_sandbox_blocks_env_and_network():
-    """Integration: generated code cannot read .env or reach the network."""
-    import tempfile
-    from pathlib import Path
-    from src import sandbox
-
-    tmp = Path(tempfile.mkdtemp())
-    (tmp / "test_env.py").write_text(
-        "import os\n"
-        "def test_no_env():\n"
-        "    assert not os.path.exists('/root/venturebot/.env'), 'LEAK'\n"
-    )
-    (tmp / "test_net.py").write_text(
-        "import socket\n"
-        "def test_no_net():\n"
-        "    s = socket.socket()\n"
-        "    s.settimeout(3)\n"
-        "    s.connect(('8.8.8.8', 53))\n"
-    )
-    import shutil
-    import pytest
-    if not (shutil.which("docker") or (shutil.which("unshare") and shutil.which("setpriv"))):
-        pytest.skip("No sandbox backend available on host (requires docker or unshare+setpriv)")
-    ok_env, _ = sandbox.run_pytest_sandboxed(tmp, timeout=60)
-    # env test passes (env not readable); net test fails (blocked)
-    assert ok_env is False  # because test_net.py fails = network blocked
 
 
 def test_kill_switch_check_raises_after_stop():
