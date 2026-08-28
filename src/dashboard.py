@@ -247,37 +247,91 @@ def _orchestrator(idea: str, *, api_key: str | None, external_run_id: str | None
     )
 
 
+def _is_intermittent_error(exc: Exception) -> bool:
+    """Classify whether an exception is a transient network/server error suitable for retry."""
+    msg = str(exc).lower()
+    # Fatal / Client / Auth errors — never retry
+    if any(k in msg for k in ("api key", "401", "403", "permission", "unauthorized", "404", "not found", "400", "invalid argument", "input blocked")):
+        return False
+    if isinstance(exc, (asyncio.CancelledError, KeyboardInterrupt)):
+        return False
+    # Transient network / rate-limit / server errors — retryable
+    return any(k in msg for k in ("429", "resource exhausted", "rate limit", "quota", "500", "502", "503", "504", "unavailable", "overloaded", "timeout", "timed out", "connect", "connection reset", "econnreset"))
+
+
 async def _run_debate(rec: RunRecord, api_key: str, *, idea: str | None = None, urls: list[str] | None = None) -> None:
     """Drive ONE debate for a created run (T3).
 
     Responsibilities:
       * status running
       * pass idea+per-run key to the orchestrator (BYOK, memory only)
+      * retry intermittent errors up to 3 times with exponential backoff
       * store the result for the /result + ack contract (S7)
       * emit run_finished / run_failed (loud failures, T2)
       * DISCARD the key in `finally` so it is never reused or retained
       * redact the key from any error/event text
     """
+    async def _on_event(event: str, data: dict):
+        _emit(rec, event, data)
+
+    from .events import register_run_sink, unregister_run_sink
+    register_run_sink(rec.run_id, _on_event)
+
     try:
         rec.status = "running"
         _emit(rec, "run_started", {"run_id": rec.run_id})
-        result = await _orchestrator(
-            rec.idea if idea is None else idea,
-            api_key=api_key,
-            external_run_id=rec.run_id,
-            urls=urls,
-        )
-        rec.result = {
-            "run_id": rec.run_id,
-            "status": getattr(result, "status", "done"),
-            "verdict": getattr(result, "verdict", None),
-            "prd": getattr(result, "prd", None),
-            "transcript": getattr(result, "events", []),
-        }
+
+        result = None
+        max_retries = 3
+        for attempt in range(1, max_retries + 1):
+            try:
+                if attempt > 1:
+                    _emit(rec, "agent_turn", {
+                        "agent": "System",
+                        "text": f"⚠️ Intermittent network/API issue detected. Retrying attempt {attempt}/{max_retries}...",
+                        "run_id": rec.run_id,
+                    })
+                result = await _orchestrator(
+                    rec.idea if idea is None else idea,
+                    api_key=api_key,
+                    external_run_id=rec.run_id,
+                    urls=urls,
+                )
+                if getattr(result, "status", "done") == "failed" and getattr(result, "error", None):
+                    err_str = str(result.error).lower()
+                    if attempt < max_retries and any(kw in err_str for kw in ("429", "resource exhausted", "rate limit", "503", "unavailable", "overloaded", "timeout", "timed out")):
+                        await asyncio.sleep(2 ** (attempt - 1))
+                        continue
+                break
+            except Exception as e:
+                if attempt < max_retries and _is_intermittent_error(e):
+                    await asyncio.sleep(2 ** (attempt - 1))
+                    continue
+                raise
+
         rec.status = getattr(result, "status", "done")
-        if getattr(result, "error", None):
-            rec.error = _redact(str(result.error), api_key)
-        _emit(rec, "run_finished", {"run_id": rec.run_id, "status": rec.status})
+        if rec.status not in ("failed", "stopped"):
+            rec.result = {
+                "run_id": rec.run_id,
+                "status": rec.status,
+                "verdict": getattr(result, "verdict", None),
+                "verdict_text": getattr(result, "verdict_text", None),
+                "prd": getattr(result, "prd", None),
+                "research_brief": getattr(result, "research_brief", None),
+                "advocate_argument": getattr(result, "advocate_argument", None),
+                "critic_rebuttal": getattr(result, "critic_rebuttal", None),
+                "creative_angles": getattr(result, "creative_angles", None),
+                "security_audit": getattr(result, "security_audit", None),
+                "turns_used": getattr(result, "turns_used", 0),
+                "clarification_question": getattr(result, "clarification_question", None),
+                "transcript": getattr(result, "events", []),
+            }
+            _emit(rec, "run_finished", {"run_id": rec.run_id, "status": rec.status})
+        else:
+            if getattr(result, "error", None):
+                rec.error = _redact(str(result.error), api_key)
+            error_reason = rec.error or "Debate execution failed"
+            _emit(rec, "run_failed", {"reason": error_reason, "run_id": rec.run_id})
     except asyncio.CancelledError:
         rec.status = "failed"
         rec.error = "run cancelled"
@@ -288,6 +342,7 @@ async def _run_debate(rec: RunRecord, api_key: str, *, idea: str | None = None, 
         rec.error = _redact(f"{type(e).__name__}: {e}", api_key)
         _emit(rec, "run_failed", {"reason": rec.error, "run_id": rec.run_id})
     finally:
+        unregister_run_sink(rec.run_id)
         # D1/S2: the key never outlives its run. Stored/event/error text that
         # might have captured it is scrubbed too, and the record is cleared.
         _scrub_key_from_run(rec, api_key)
@@ -365,9 +420,9 @@ async def api_create_debate(request: Request):
     # lifecycle (ACK -> 410 gone, TTL sweeper) is enforced.
     STORE.register(rec)
 
-    # T1 is the API SKELETON: no live execution is launched here. The real
-    # orchestrator wiring + per-run key discard happen behind `_run_debate`
-    # (a later task launches it); this route only fulfills the API contract.
+    # Launch background debate execution
+    asyncio.create_task(_run_debate(rec, api_key, urls=urls))
+
     return {"run_id": run_id, "status": rec.status}
 
 
@@ -488,11 +543,11 @@ app.mount(
 
 @app.get("/", response_class=HTMLResponse)
 async def landing_page():
-    html = (Path(__file__).resolve().parent.parent / "templates" / "landing.html").read_text()
+    html = (Path(__file__).resolve().parent.parent / "templates" / "landing.html").read_text(encoding="utf-8")
     return HTMLResponse(html, headers={"Cache-Control": "public, max-age=300"})
 
 
 @app.get("/app", response_class=HTMLResponse)
 async def dashboard():
-    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html").read_text()
+    html = (Path(__file__).resolve().parent.parent / "templates" / "index.html").read_text(encoding="utf-8")
     return HTMLResponse(html, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

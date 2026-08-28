@@ -49,7 +49,7 @@ def load_state() -> dict:
         save_state(state)
         return state
     try:
-        with open(config.STATE_FILE) as f:
+        with open(config.STATE_FILE, encoding="utf-8") as f:
             data = json.load(f)
         for key, default in _initial_state().items():
             data.setdefault(key, default)
@@ -65,8 +65,8 @@ def save_state(state: dict) -> None:
         dir=os.path.dirname(config.STATE_FILE) or "."
     )
     try:
-        with os.fdopen(tmp_fd, "w") as f:
-            json.dump(state, f, indent=2)
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(state, f, indent=2, ensure_ascii=False)
         os.replace(tmp_path, config.STATE_FILE)
     except Exception:
         try:

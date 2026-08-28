@@ -49,7 +49,7 @@ def _today_key() -> str:
 def _load() -> dict:
     if _state_file.exists():
         try:
-            return json.loads(_state_file.read_text())
+            return json.loads(_state_file.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -57,7 +57,7 @@ def _load() -> dict:
 
 def _save(data: dict) -> None:
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    _state_file.write_text(json.dumps(data, indent=2))
+    _state_file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def get_limit() -> float:

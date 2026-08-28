@@ -97,6 +97,10 @@ def test_sandbox_blocks_env_and_network():
         "    s.settimeout(3)\n"
         "    s.connect(('8.8.8.8', 53))\n"
     )
+    import shutil
+    import pytest
+    if not (shutil.which("docker") or (shutil.which("unshare") and shutil.which("setpriv"))):
+        pytest.skip("No sandbox backend available on host (requires docker or unshare+setpriv)")
     ok_env, _ = sandbox.run_pytest_sandboxed(tmp, timeout=60)
     # env test passes (env not readable); net test fails (blocked)
     assert ok_env is False  # because test_net.py fails = network blocked

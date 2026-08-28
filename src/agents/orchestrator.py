@@ -261,7 +261,7 @@ def persist_pause(result: "OrchestratorResult", run_id: str) -> dict:
 def write_pause(payload: dict) -> None:
     """Write (or re-write) a pause snapshot dict atomically."""
     tmp = _pause_path(payload["run_id"]).with_suffix(".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False))
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     tmp.replace(_pause_path(payload["run_id"]))
 
 
@@ -270,7 +270,7 @@ def get_pause(run_id: str) -> dict | None:
     if not p.exists():
         return None
     try:
-        return json.loads(p.read_text())
+        return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return None
 
@@ -280,7 +280,7 @@ def any_pending_pause() -> dict | None:
     pauses = []
     for p in _pause_dir().glob("*.json"):
         try:
-            pauses.append(json.loads(p.read_text()))
+            pauses.append(json.loads(p.read_text(encoding="utf-8")))
         except Exception:
             continue
     if not pauses:
@@ -395,7 +395,7 @@ def _read_workspace_file(path: str, run_id: str | None = None) -> str | None:
         return None
     try:
         if full.is_file():
-            return full.read_text()
+            return full.read_text(encoding="utf-8")
     except OSError:
         pass
     return None
@@ -410,7 +410,7 @@ def _write_workspace_file(path: str, content: str, run_id: str | None = None) ->
     try:
         ws.mkdir(parents=True, exist_ok=True)
         full.parent.mkdir(parents=True, exist_ok=True)
-        full.write_text(content)
+        full.write_text(content, encoding="utf-8")
         store.set_workspace_files([p.name for p in ws.glob("*")])
         return "ok"
     except OSError as e:
@@ -905,7 +905,7 @@ async def run_orchestrator(
 
     orchestrator_agent = LlmAgent(
         name="orchestrator",
-        model=Gemini(model=config.MODEL_ORCHESTRATOR, api_key=api_key) if api_key else Gemini(model=config.MODEL_ORCHESTRATOR),
+        model=Gemini(model=config.MODEL_ORCHESTRATOR, client_kwargs={'api_key': api_key}) if api_key else Gemini(model=config.MODEL_ORCHESTRATOR),
         instruction=_orchestrator_instruction(),
         tools=[
             FunctionTool(tools_obj.load_memories),

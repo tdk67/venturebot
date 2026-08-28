@@ -1,10 +1,10 @@
-# VentureBot
+# Idea Lint
 
 **A self-improving, multi-agent research & development system** built on [Google ADK](https://github.com/google/adk-python).
-Takes a vague idea -> researches it -> debates it (Advocate vs Critic vs Judge) -> produces a scored PRD - with a human in the loop at every consequential gate.
+Takes a startup idea -> researches it (with live Google search grounding) -> debates it (Advocate vs Critic vs Judge) -> produces an actionable, scored PRD with a human in the loop at every consequential gate.
 
 ```
-Vague Idea
+Startup Idea
   |
 Orchestrator (autonomous ADK agent loop)
   +- Research Agent (google_search) -> Research Brief
@@ -27,162 +27,71 @@ Scored PRD + full debate transcript
 
 ## What it is
 
-VentureBot is a **debate-room for startup ideas**. Instead of a single LLM rubber-stamping your idea, a panel of agents with *deliberately asymmetric information access* argues it:
+Idea Lint is a **debate-room for startup ideas**. Instead of a single LLM rubber-stamping your idea, a panel of agents with *deliberately asymmetric information access* argues it:
 
 - the **Advocate** sees only evidence that supports the idea,
-- the **Critique** sees only counter-evidence (via live `google_search`),
-- the **Judge** sees both and must reach a scored verdict (PROCEED / PIVOT / PARK),
-- a **Creative Ideator** runs hot to propose angles nobody asked for - and gets re-checked by the evidence-bound Critic before it can influence anything.
+- the **Critic** sees only counter-evidence (via live `google_search`),
+- the **Judge** sees both and must reach a scored verdict (PROCEED / PARK / PRUNE),
+- a **Creative Ideator** runs hot to propose pivots and niches - and gets re-checked by the evidence-bound Critic before it can influence anything.
 
-An autonomous **orchestrator** (ADK `LlmAgent` with function tools) drives the whole loop, with a quality gate that stops it when the PRD + verdict are stable. Every expensive or irreversible step has a **human gate**. A **self-improvement layer** (SQLite memory: session facts, lessons, techniques, idea tree) makes later debates smarter than earlier ones - without ever re-running an old debate.
+An autonomous **orchestrator** (ADK `LlmAgent` with function tools) drives the whole loop, with a quality gate that stops it when the PRD + verdict are stable. Every expensive or irreversible step has a **human gate**.
 
-## Feature highlights
-
-- **Multi-agent debate** on Google ADK + Gemini, with structured Pydantic outputs
-- **Autonomous orchestrator** with turn/tool budgets, stall detection and quality gates
-- **Human-in-the-loop gates**: clarification (durable across server restarts), verdict rebuttal, PRD approval
-- **Steering**: inject guidance mid-run ("focus on the EU market; ignore competitor X")
-- **Idea history**: every debate is an immutable run under its idea; browse, resume, export (JSON/CSV/MD/PDF)
-- **Self-improvement**: auto-captured facts, LLM-analyzed turn reviews, nightly "dream review" consolidation, idea-tree pruning
-- **Safety stack**: input-injection guard, output guard (AST + secret scan), artifact scanner, sandboxed pytest (unprivileged UID + network isolation), hard daily budget, kill switch
-- **Hardened dashboard**: strict CSP, server-side sessions, Google login, SSE live feed
-- **Multi-user ready**: per-run workspace isolation, per-route ownership design, backend-amnesia architecture (see `notes/MULTI_USER_DESIGN.md`, `notes/MULTIUSER_SECURITY_REVIEW.md`)
+### Bring Your Own Key (BYOK) & Privacy-First Architecture
+Idea Lint uses a **BYOK (Bring Your Own Key)** architecture:
+- Users provide their own **Google Gemini API Key** (`AIza...`) or OpenRouter key (`sk-or-v1-...`) directly in the UI Settings modal.
+- The API key is stored securely in the browser's IndexedDB and LocalStorage, never persisted to a server database.
+- Ideas, debate transcripts, and PRDs live exclusively in the browser's client-side store with one-click JSON and Markdown export.
 
 ---
 
-## Architecture
+## Quick Start (Run Locally)
 
-### Repository layout
+### 1. Prerequisites
+- **Python 3.12+**
+- **Node.js 18+** (for bundling the TypeScript frontend)
+- A **Google Gemini API Key** from [Google AI Studio](https://aistudio.google.com/app/apikey) (or OpenRouter key)
 
-```
-/root/venturebot/
-+-- PRD.md                          <- product requirements (VB-PRD-2026-08-18)
-+-- IMPLEMENTATION_PLAN.md          <- detailed build plan + task breakdown
-+-- SAFETY_REVIEW.md                <- safety audit that gated all work
-+-- notes/                          <- design + review docs (see below)
-+-- .env                            <- live secrets (NEVER committed)
-+-- .env.example                    <- env var template
-|
-+-- src/
-|   +-- config.py                   <- env-driven config (models, budgets, paths, auth)
-|   +-- dashboard.py                <- FastAPI app: SSE, auth routes, HITL, all /api/* endpoints,
-|   |                                 security-headers/CSRF middleware, /static mount
-|   +-- store.py                    <- JSON file-backed state (single source of truth)
-|   +-- auth.py                     <- session validation + Google identity helpers
-|   +-- oauth.py                    <- Google OAuth code flow: PKCE + state + nonce, BE-side exchange
-|   +-- sessions.py                 <- server-side session store (sha256-hashed tokens,
-|   |                                 rotation on login, logout revocation) + users table
-|   +-- budget.py                   <- cumulative LLM spend enforcement
-|   +-- run_manager.py              <- kill switch (StopEvent + process group kill)
-|   +-- guard.py                    <- post-LLM output guard (AST check + secret scan)
-|   +-- input_guard.py              <- pre-LLM injection guard + quarantine convention
-|   +-- sandbox.py                  <- pytest isolation (unshare, setuid, rlimits)
-|   +-- steering.py                 <- user guidance inbox (drained at checkpoints)
-|   +-- url_fetch.py                <- fetches user-provided URLs for research material
-|   +-- gemini_usage.py             <- Gemini token/cost tracker
-|   +-- artifact_scanner.py         <- deterministic scanner + proof-read gate
-|   +-- scheduler.py                <- nightly dream-review cron (APScheduler)
-|   |
-|   `-- agents/
-|       +-- agents.py               <- LlmAgent definitions (Researcher->...->PRD Writer->Auditor)
-|       +-- orchestrator.py         <- autonomous orchestrator loop + tools
-|       |                             (per-run workspace: workspace/runs/{run_id}/, traversal-guarded)
-|       +-- pipeline.py             <- resumable, kill-switch-aware wiring
-|       +-- prompts.py              <- system prompts for all agents
-|       +-- schemas.py              <- Pydantic output schemas (ResearchBrief, JudgeVerdict)
-|       `-- clarify.py              <- HITL clarification tool (LongRunningFunctionTool)
-|
-|   `-- memory/                     <- self-improvement layer
-|       +-- sqlite_store.py         <- SQLite store (facts, lessons, techniques, profile, idea tree)
-|       +-- idea_tree.py            <- deterministic pruning rules (PRD section 5.5)
-|       +-- auto_capture.py         <- Fork 1: persist session facts (throttled)
-|       +-- review_fork.py          <- Fork 2: fire-and-forget LLM turn analysis
-|       +-- dream_review.py         <- Fork 3: nightly consolidation + pruning
-|       `-- _throttle.py            <- 120s per-session fork cooldown
-|
-+-- templates/index.html            <- dashboard SPA shell (login gate, HITL buttons, XSS-safe rendering)
-+-- static/app.js                   <- dashboard application logic (externalized for strict CSP)
-+-- static/vendor/                  <- pinned, self-hosted JS libs (tailwind, marked, dompurify)
-+-- tests/                          <- pytest suite (149 tests)
-`-- data/, state.json               <- runtime state (ideas DB, archives, checkpoints)
+### 2. Install Dependencies
+
+#### Backend
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+
+# On Linux/macOS:
+source .venv/bin/activate
+pip install -r requirements.txt
+
+# On Windows (PowerShell):
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-### Runtime architecture
-
-```
-Browser (SPA) ---- HTTPS ---- nginx ---- uvicorn (FastAPI, 127.0.0.1:8090)
-                                |
-                    +-----------+------------+
-                    |  security middleware   |  CSP script-src 'self', XCTO,
-                    |  (headers + CSRF)      |  Referrer-Policy, frame-ancestors none,
-                    |                        |  HSTS; Sec-Fetch-Site check on mutations
-                    `-----------+------------+
-                                |
-        +-----------------------+---------------------------+
-        |                       |                           |
-  Google OAuth             session store                debate engine
-  (code flow, PKCE,        (SQLite: sha256 token        (ADK orchestrator + agents,
-   state+nonce; secret     hashes, rotation,             per-run workspaces, budget,
-   stays server-side)      revocation, users table)      kill switch, HITL gates)
-                                |                           |
-                          state.json /                Gemini API (google_search
-                          data/venturebot.db          grounded research), memory
-                          (ideas, runs, archives)     store, sandboxed tools
+#### Frontend (TypeScript SPA)
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
 ```
 
----
-
-## Key design decisions
-
-### 1. Custom orchestrator over SequentialAgent
-The debate is not a fixed pipeline: the orchestrator decides per turn which sub-agent to call (research again? creative angle? straight to PRD?), with budgets (`ORCHESTRATOR_MAX_TURNS`, `MAX_TOOL_CALLS`) and a quality gate that stops on PRD + verdict + stall detection. Patterned after the ADK samples' `AgentTool` delegation (see Credits).
-
-### 2. Asymmetric information access (blind debate)
-Advocate and Critic see disjoint slices of evidence. This is the core product idea - it produces real argument instead of agreeable summarization, and the Judge's verdict cites both sides.
-
-### 3. Fail loud, fail honest
-Verdict parsing raises instead of silently PARKing; the artifact scanner never auto-passes; the budget enforcer blocks pre-call. A debate that can't be completed says so.
-
-### 4. Security as architecture, not afterthought
-Driven by an adversarial security review (`notes/MULTIUSER_SECURITY_REVIEW.md`, 6 design + 7 implementation findings, all P0s fixed):
-
-- **Per-run workspace isolation** - orchestrator file tools resolve strictly inside `workspace/runs/{run_id}/`; path traversal and cross-run access are blocked (a malicious prompt can't read another debate's files).
-- **Strict CSP + vendored JS** - `script-src 'self'`; marked/DOMPurify/Tailwind are pinned copies served from `/static/vendor/`, so a CDN compromise can't inject scripts. All inline event handlers removed.
-- **Log redaction at source** - the process log (journald) gets metadata only; debate content never leaves state.json.
-- **Server-side sessions** - cookies carry opaque random tokens; only sha256 hashes are stored; every login rotates; logout revokes. Session fixation is structurally impossible.
-- **OAuth done per OAuth 2.1** - authorization-code flow with PKCE, single-use state + nonce, secret server-side, no refresh tokens stored.
-- **CSRF beyond SameSite** - cross-site mutating requests are rejected via Sec-Fetch-Site.
-- **Planned (multi-user phase B)**: backend amnesia (ephemeral encrypted debate rows, ACK-before-wipe), per-route ownership with 404-not-403, BYOK keys in memory only, lesson-poisoning moderation. See `notes/MULTIUSER_TASKS.md` for the live task list.
-
-### 5. Local-first data ownership (target architecture)
-The design end-state keeps user data in the user's browser (IndexedDB + encrypted Google Drive `appDataFolder` backup); the backend stays an ephemeral compute node. The backend-amnesia trade-offs (including the v1 backup-key escrow caveat) are documented honestly in `notes/MULTI_USER_DESIGN.md`.
-
----
-
-## Install & Run
-
-### Prerequisites
-
-- Linux (systemd + nginx assumed for deployment), Python 3.12
-- A Google AI Studio API key (`GOOGLE_API_KEY`) for Gemini
-- (optional, for login) A Google Cloud OAuth client - see next section
-
-### Local setup
+### 3. Start the Server
 
 ```bash
-git clone <repo> venturebot && cd venturebot
-python3 -m venv venv
-./venv/bin/pip install -r requirements.txt   # google-adk, fastapi, uvicorn, apscheduler, google-auth, dotenv
+# On Linux/macOS:
+python -m uvicorn src.dashboard:app --host 127.0.0.1 --port 8090 --reload
 
-cp .env.example .env
-# fill in GOOGLE_API_KEY (required); auth vars optional for local dev
+# On Windows (PowerShell):
+.venv\Scripts\python.exe -m uvicorn src.dashboard:app --host 127.0.0.1 --port 8090 --reload
 ```
 
-```bash
-# development server (no login required by default: VENTUREBOT_NO_AUTH=1)
-./venv/bin/uvicorn src.dashboard:app --host 127.0.0.1 --port 8090
-# open http://127.0.0.1:8090
-```
+### 4. Open the App
+- Open your browser to: **`http://127.0.0.1:8090/`** (Landing page) or **`http://127.0.0.1:8090/app`** (Command Center)
+- Click **⚙️ Settings** or the **🔑 API Key** badge in the header.
+- Paste your Google Gemini API key (`AIza...`) and click **Validate & Save**.
+- Enter your startup idea in the pitch box and click **🚀 Start Debate**!
+
+---
 
 ### Google OAuth setup (client secret)
 

@@ -31,7 +31,7 @@ def create_agents(api_key: str | None = None) -> dict[str, LlmAgent]:
     If api_key is provided, all agents will use it instead of the default
     GOOGLE_API_KEY from environment. This enables Bring Your Own Key (BYOK).
     """
-    model_kwargs = {'api_key': api_key} if api_key else {}
+    model_kwargs = {'client_kwargs': {'api_key': api_key}} if api_key else {}
     
     researcher = LlmAgent(
         name="researcher",

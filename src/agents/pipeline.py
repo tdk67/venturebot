@@ -73,7 +73,7 @@ def _load_sessions() -> None:
     global _SESSIONS
     if _SESSIONS_FILE.exists():
         try:
-            data = json.loads(_SESSIONS_FILE.read_text())
+            data = json.loads(_SESSIONS_FILE.read_text(encoding="utf-8"))
             # We can only restore metadata, not the full session objects
             # (session_service, sid, user_id are runtime-only)
             # For now, just log that sessions were lost
@@ -95,7 +95,7 @@ def _save_sessions_metadata() -> None:
             }
             for run_id, session in _SESSIONS.items()
         }
-        _SESSIONS_FILE.write_text(json.dumps(metadata, indent=2))
+        _SESSIONS_FILE.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
     except OSError:
         pass  # Non-critical: metadata save failure shouldn't break the pipeline
 
@@ -149,8 +149,8 @@ def save_checkpoint(result: DebateResult, phase: str) -> None:
     config.CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
     tmp_fd, tmp_path = tempfile.mkstemp(dir=str(config.CHECKPOINT_DIR))
     try:
-        with os.fdopen(tmp_fd, "w") as f:
-            json.dump(snapshot, f, indent=2)
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, indent=2, ensure_ascii=False)
         os.replace(tmp_path, str(_checkpoint_path(run_id)))
     except Exception:
         try:
@@ -165,7 +165,7 @@ def load_checkpoint(run_id: str) -> dict | None:
     path = _checkpoint_path(run_id)
     try:
         if path.exists():
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         pass
     return None
@@ -179,7 +179,7 @@ def list_checkpoints() -> list[dict]:
         for p in sorted(config.CHECKPOINT_DIR.glob("*.json"),
                         key=lambda x: x.stat().st_mtime, reverse=True):
             try:
-                data = json.loads(p.read_text())
+                data = json.loads(p.read_text(encoding="utf-8"))
                 snapshots.append({
                     "run_id": data.get("run_id", p.stem),
                     "idea": data.get("idea", "")[:200],

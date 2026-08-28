@@ -32,7 +32,7 @@ def test_security_headers_on_html():
 
 
 def test_no_thirdparty_scripts_in_template():
-    html = (REPO / "templates" / "index.html").read_text()
+    html = (REPO / "templates" / "index.html").read_text(encoding="utf-8")
     for cdn in ("cdn.tailwindcss.com", "cdn.jsdelivr.net", "unpkg.com", "googleapis.com"):
         assert cdn not in html, f"third-party script host in template: {cdn}"
     assert 'src="/static/app.js"' in html
@@ -50,5 +50,5 @@ def test_app_js_served_and_vendor_files_pinned():
 
 
 def test_inline_script_block_removed_from_template():
-    html = (REPO / "templates" / "index.html").read_text()
+    html = (REPO / "templates" / "index.html").read_text(encoding="utf-8")
     assert "<script>" not in html.replace("<script src=", "<SCRIPT_SRC>")

@@ -1,94 +1,375 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Idea Lint — Startup Idea Validator</title>
+<title>Idea Lint — AI-Powered Startup Idea Validator</title>
+<meta name="description" content="Idea Lint evaluates startup ideas through adversarial multi-agent debate, producing actionable PRDs with verified research.">
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<script src="/static/vendor/tailwind-3.4.16.min.js"></script>
+<script src="/static/vendor/marked-12.0.2.min.js"></script>
+<script src="/static/vendor/purify-3.2.4.min.js"></script>
 <style>
-  body { background: #0f172a; color: #e2e8f0; }
-  .card { background: #020617; border: 1px solid #1e293b; border-radius: 1rem; padding: 1.5rem; }
-  .btn-primary { background: #059669; }
-  .btn-primary:hover { background: #047857; }
-  .input { background: #0f172a; border: 1px solid #334155; border-radius: .5rem; padding: .6rem .9rem; color: #e2e8f0; outline: none; }
-  .input:focus { border-color: #3b82f6; }
-  .hint { color: #f59e0b; font-size: .75rem; }
-  .status { font-size: .8rem; color: #94a3b8; }
+  /* Custom scrollbar for deep dark aesthetic */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #090d16; }
+  ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  
+  .gradient-text {
+    background: linear-gradient(135deg, #60a5fa 0%, #a855f7 50%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  
+  .md-body h1, .md-body h2, .md-body h3 { font-weight: 700; margin: 0.8em 0 0.4em; color: #f8fafc; }
+  .md-body h1 { font-size: 1.25rem; border-bottom: 1px solid #334155; padding-bottom: 0.3em; }
+  .md-body h2 { font-size: 1.1rem; color: #93c5fd; }
+  .md-body h3 { font-size: 0.95rem; color: #cbd5e1; }
+  .md-body p { margin: 0.4em 0; line-height: 1.6; }
+  .md-body ul, .md-body ol { margin: 0.4em 0; padding-left: 1.4em; }
+  .md-body ul { list-style-type: disc; }
+  .md-body ol { list-style-type: decimal; }
+  .md-body li { margin: 0.2em 0; }
+  .md-body code { background: #1e293b; padding: 0.15em 0.35em; border-radius: 0.3em; font-size: 0.85em; font-family: monospace; color: #e2e8f0; }
+  .md-body pre { background: #090d16; border: 1px solid #1e293b; padding: 0.8em; border-radius: 0.5em; overflow-x: auto; margin: 0.6em 0; }
+  .md-body pre code { background: none; padding: 0; color: #cbd5e1; }
+  .md-body a { color: #38bdf8; text-decoration: underline; text-underline-offset: 2px; }
+  .md-body table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 0.85rem; }
+  .md-body th, .md-body td { border: 1px solid #334155; padding: 0.4em 0.6em; text-align: left; }
+  .md-body th { background: #0f172a; font-weight: 600; color: #f1f5f9; }
+  .md-body blockquote { border-left: 3px solid #3b82f6; padding-left: 0.8em; color: #94a3b8; font-style: italic; margin: 0.5em 0; }
 </style>
 </head>
-<body class="min-h-screen">
-<main class="max-w-3xl mx-auto p-6">
-  <header class="mb-6 flex items-center justify-between">
+<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-blue-600 selection:text-white">
+
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+  <!-- Header -->
+  <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
     <div class="flex items-center gap-3">
-      <img src="/static/logo.svg" alt="" class="h-9" onerror="this.style.display='none'">
-      <h1 class="text-2xl font-black text-white">Venture<span class="text-blue-500">Bot</span></h1>
+      <img src="/static/logo.svg" alt="Idea Lint" class="h-10 w-auto">
+      <div>
+        <div class="flex items-center gap-2">
+          <span class="text-xs px-2 py-0.5 rounded-full bg-blue-900/60 text-blue-300 font-bold border border-blue-700/60 tracking-wider">COMMAND CENTER</span>
+          <span class="text-xs text-slate-500">v2.0 (BYOK)</span>
+        </div>
+        <p class="text-xs text-slate-400 mt-0.5">Multi-agent adversarial debate & PRD synthesizer</p>
+      </div>
     </div>
-    <span class="text-xs text-slate-500">Idea Lint — your ideas stay in this browser</span>
+
+    <div class="flex items-center gap-3 flex-wrap">
+      <!-- BYOK Key Trigger Badge -->
+      <button id="header-key-badge" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer" title="Manage your model API key">
+        <span class="w-2 h-2 rounded-full bg-slate-400"></span> API Key: Checking...
+      </button>
+
+      <button id="btn-open-settings" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-800 hover:border-slate-700 flex items-center gap-1.5 transition-colors">
+        ⚙️ Settings
+      </button>
+
+      <a href="/" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-800 transition-colors">
+        Landing Page
+      </a>
+    </div>
   </header>
 
-  <!-- BYOK key UX (T8): enter + verify the user's own key. The stored key is
-       never rendered back; the field only accepts NEW input. -->
-  <section id="key-card" class="card mb-6">
+  <!-- Pitch Card -->
+  <section class="mb-8 bg-slate-900/90 border border-slate-800 hover:border-slate-700/80 rounded-2xl p-6 shadow-xl transition-all">
     <div class="flex items-center justify-between mb-3">
-      <h2 class="text-sm font-bold text-slate-300">Your model API key</h2>
-      <span class="text-xs text-slate-500">stays in this browser</span>
+      <label for="idea-input" class="text-base font-bold text-white flex items-center gap-2">
+        <span class="text-blue-400">💡</span> Pitch an idea to the multi-agent debate
+      </label>
+      <span class="text-xs text-slate-500 font-medium">Runs on your Google Gemini / OpenRouter key</span>
     </div>
-    <p id="key-status" class="text-xs mb-2" data-state="unknown">No key set yet. Open the form to add one.</p>
-    <div id="key-form" class="hidden">
-      <div class="flex gap-3">
-        <input id="key-input" type="password" placeholder="sk-or-v1-… / AIza…"
-               class="input flex-1" autocomplete="off" spellcheck="false">
-        <button id="btn-key-verify" class="btn-primary px-4 py-2 rounded-lg font-bold text-white">Verify & save</button>
+
+    <div class="space-y-3">
+      <div class="flex flex-col sm:flex-row gap-3">
+        <input id="idea-input" type="text"
+               placeholder="e.g. AI-powered real-time code reviewer that runs inside pull request workflows"
+               class="flex-1 bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all">
+        <button id="btn-add" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-blue-900/30">
+          <span>🚀</span> Start Debate
+        </button>
       </div>
-      <p id="key-hint" class="hint hidden mt-2"></p>
+
+      <div>
+        <input id="url-input" type="text"
+               placeholder="Optional: comma-separated research URLs (competitor links, documentation, market signals)"
+               class="w-full bg-slate-950/70 border border-slate-800/80 focus:border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none transition-all">
+      </div>
+
+      <p id="duplicate-hint" class="text-xs text-amber-400 font-semibold hidden"></p>
     </div>
-    <button id="btn-key-open" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold mt-2">＋ Set API key</button>
-    <button id="btn-key-clear" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold mt-2">⌫ Remove key</button>
   </section>
 
-  <section class="card mb-6">
-    <label for="idea-input" class="block text-sm font-bold text-slate-300 mb-2">Add an idea to your list</label>
-    <div class="flex gap-3">
-      <input id="idea-input" type="text" placeholder="e.g. An app that helps gardeners track watering schedules"
-             class="input flex-1" autocomplete="off">
-      <button id="btn-add" class="btn-primary px-5 py-2 rounded-lg font-bold text-white">+ Add</button>
+  <!-- Clarification HITL Box -->
+  <div id="clarify-box" class="hidden mb-8 p-5 rounded-2xl bg-amber-950/40 border border-amber-500/50 shadow-lg animate-fadeIn">
+    <div class="flex items-center gap-2 text-amber-300 font-bold text-sm mb-2">
+      <span>🗣️</span> The Orchestrator requires your clarification:
     </div>
-    <p id="duplicate-hint" class="hint hidden mt-2"></p>
-  </section>
-
-  <div class="flex items-center justify-between mb-3">
-    <h2 class="text-lg font-bold text-slate-200">Your ideas</h2>
-    <div class="flex items-center gap-2">
-      <button id="btn-export" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold">⬇ Export JSON</button>
-      <button id="btn-import" class="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-xs font-bold">⬆ Import</button>
-      <input id="import-file" type="file" accept="application/json,.json" class="hidden">
-      <button id="btn-clear" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs font-bold">Clear all</button>
+    <div id="clarify-question" class="text-sm text-slate-100 bg-slate-950/80 p-3.5 rounded-xl border border-amber-500/20 mb-3 whitespace-pre-wrap font-sans"></div>
+    <div class="flex gap-2">
+      <input id="clarify-answer" type="text" placeholder="Type your answer to guide the debate..."
+             class="flex-1 px-4 py-2.5 text-sm rounded-xl bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500">
+      <button id="clarify-send" class="px-5 py-2.5 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-500 text-white transition-colors shadow-md">
+        Submit Answer
+      </button>
     </div>
   </div>
-  <p id="idea-count" class="text-xs text-slate-500 mb-3">0 ideas</p>
 
-  <div id="ideas-list" class="space-y-2"></div>
-  <p id="ideas-empty" class="text-xs text-slate-500">No ideas yet — add one above.</p>
-
-  <!-- Live debate view (T7) -->
-  <section id="debate-run" class="card mt-6 hidden">
-    <div class="flex items-center justify-between mb-3">
-      <h2 class="text-lg font-bold text-slate-200">Live debate</h2>
+  <!-- Verdict Card -->
+  <section id="verdict-card" class="hidden mb-8 p-6 rounded-2xl bg-slate-900/95 border-2 border-amber-500/50 shadow-2xl animate-fadeIn">
+    <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
       <div class="flex items-center gap-2">
-        <button id="btn-stop" class="px-3 py-1.5 rounded-lg bg-red-800 hover:bg-red-700 text-white text-xs font-bold hidden">■ Stop</button>
+        <span class="text-2xl">⚖️</span>
+        <h2 class="text-xl font-black text-amber-400">Judge's Verdict & Scorecard</h2>
       </div>
+      <span class="text-xs px-2.5 py-1 rounded-full bg-amber-950 text-amber-300 border border-amber-700 font-bold uppercase tracking-wider">Evaluation</span>
     </div>
-    <p id="debate-state" class="text-xs text-slate-400 mb-3" data-label="idle">idle · 0:00</p>
-    <div id="debate-agents" class="flex flex-wrap gap-2 mb-4"></div>
-    <div id="debate-error" class="hidden mb-4 p-3 rounded-lg bg-red-900/60 border border-red-700 text-sm text-red-100 font-semibold"></div>
-    <div id="debate-done" class="hidden mb-4 p-4 rounded-lg bg-emerald-900/40 border border-emerald-700">
-      <p id="debate-done-title" class="text-sm font-bold text-emerald-100"></p>
-      <a id="debate-prd-link" href="#" class="text-xs text-emerald-300 underline"></a>
-    </div>
+
+    <div id="verdict-scores" class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5"></div>
+    <div id="verdict-rationale" class="text-sm text-slate-200 mb-4 bg-slate-950 p-4 rounded-xl border border-slate-800 leading-relaxed"></div>
+    <div id="verdict-key-risks" class="hidden text-xs text-amber-300/90 bg-amber-950/30 p-3 rounded-lg border border-amber-800/40 mb-4"></div>
   </section>
 
-  <p id="status-line" class="status mt-6"></p>
-</main>
+  <!-- PRD Approval Card -->
+  <section id="prd-card" class="hidden mb-8 p-6 rounded-2xl bg-slate-900/95 border-2 border-emerald-500/50 shadow-2xl animate-fadeIn">
+    <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+      <div class="flex items-center gap-2">
+        <span class="text-2xl">📋</span>
+        <h2 class="text-xl font-black text-emerald-400">Product Requirements Document (PRD)</h2>
+      </div>
+      <div id="audit-badge"></div>
+    </div>
+    <div id="prd-text" class="md-body text-slate-200 text-sm bg-slate-950 p-5 rounded-xl border border-slate-800 max-h-[600px] overflow-y-auto mb-4"></div>
+  </section>
+
+  <!-- Two-Column Layout -->
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+
+    <!-- Sidebar -->
+    <aside class="lg:col-span-1 space-y-6">
+      <!-- Facets Filter Card -->
+      <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-4">
+        <h2 class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-3 flex items-center gap-2">
+          <span>📁</span> Filter Ideas
+        </h2>
+        <div id="facet-statuses" class="space-y-1"></div>
+      </div>
+
+      <!-- BYOK / Privacy Info Card -->
+      <div class="bg-slate-900/40 border border-slate-800/80 rounded-2xl p-4 text-xs text-slate-400 space-y-2">
+        <div class="font-bold text-slate-300 flex items-center gap-1.5">
+          <span>🔒</span> Private & Client-Side
+        </div>
+        <p class="leading-relaxed">
+          Your startup ideas, research briefs, and PRDs are stored exclusively in your browser's IndexedDB.
+        </p>
+        <p class="text-slate-500">
+          No user accounts or cloud storage lock-in. Export backups anytime.
+        </p>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="lg:col-span-3 space-y-8">
+
+      <!-- Live Debate View -->
+      <section id="debate-run" class="hidden bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
+        <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3 flex-wrap gap-2">
+          <div class="flex items-center gap-3">
+            <h2 class="text-lg font-bold text-white">Live Debate Stream</h2>
+            <span id="debate-state" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-950 text-blue-400 border border-blue-700/60" data-label="idle">
+              IDLE · 0:00
+            </span>
+          </div>
+          <button id="btn-stop" class="px-3.5 py-1.5 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/80 text-xs font-bold transition-colors hidden flex items-center gap-1">
+            ⏹ Stop Debate
+          </button>
+        </div>
+
+        <!-- Agent Progress Chips -->
+        <div class="mb-4">
+          <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Active Agents:</div>
+          <div id="debate-agents" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <!-- Error Banner -->
+        <div id="debate-error" class="hidden mb-4 p-4 rounded-xl bg-rose-950/70 border border-rose-700 text-sm text-rose-200 font-medium"></div>
+
+        <!-- Done Banner -->
+        <div id="debate-done" class="hidden mb-4 p-4 rounded-xl bg-emerald-950/60 border border-emerald-700/80 flex items-center justify-between">
+          <p id="debate-done-title" class="text-sm font-bold text-emerald-200"></p>
+          <span class="text-xs text-emerald-400">Saved to your Idea History</span>
+        </div>
+
+        <!-- Live Feed Transcript -->
+        <div id="debate-feed" class="space-y-3 max-h-[520px] overflow-y-auto pr-1"></div>
+      </section>
+
+      <!-- Past Ideas Manager -->
+      <section class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 class="text-xl font-black text-white">Your Ideas & PRDs</h2>
+            <p id="idea-count" class="text-xs text-slate-400 mt-0.5">0 ideas</p>
+          </div>
+
+          <div class="flex items-center gap-2 flex-wrap">
+            <input id="ideas-search" type="text" placeholder="Search ideas..."
+                   class="bg-slate-950 border border-slate-800 focus:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none w-36 sm:w-48">
+            <button id="btn-export" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors" title="Export all ideas as JSON backup">
+              ⬇ JSON
+            </button>
+            <button id="btn-export-csv" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors" title="Export ideas summary as CSV">
+              ⬇ CSV
+            </button>
+            <button id="btn-import" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors" title="Import ideas from JSON file">
+              ⬆ Import
+            </button>
+            <input id="import-file" type="file" accept="application/json,.json" class="hidden">
+            <button id="btn-clear" class="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-rose-950 hover:text-rose-300 text-slate-500 text-xs font-semibold transition-colors" title="Wipe local store">
+              Clear
+            </button>
+          </div>
+        </div>
+
+        <div id="ideas-list" class="space-y-2.5"></div>
+        <p id="ideas-empty" class="text-xs text-slate-500 text-center py-8">
+          No ideas yet. Pitch your first startup concept above to initiate a multi-agent debate.
+        </p>
+      </section>
+
+      <p id="status-line" class="text-xs text-slate-500 font-mono"></p>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- API KEY SETTINGS MODAL                                                    -->
+<!-- ========================================================================= -->
+<div id="settings-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+  <div class="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-slate-100">
+    
+    <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
+      <div class="flex items-center gap-2">
+        <span class="text-xl">🔑</span>
+        <h3 class="text-lg font-bold text-white">Model API Settings (BYOK)</h3>
+      </div>
+      <button id="btn-close-settings" class="text-slate-400 hover:text-white text-xl leading-none font-bold">✕</button>
+    </div>
+
+    <div class="space-y-4 text-sm">
+      <p class="text-slate-300 text-xs leading-relaxed">
+        Idea Lint uses your own API key so you have complete control over compute, billing, and rate limits.
+        Your key is stored securely in your browser's IndexedDB and sent only to execute debate runs.
+      </p>
+
+      <!-- Google Gemini Hint Box -->
+      <div class="bg-blue-950/40 border border-blue-700/50 rounded-xl p-4 text-xs space-y-2">
+        <div class="font-bold text-blue-300 flex items-center gap-1.5">
+          <span>✨</span> Google Gemini API Key (Recommended)
+        </div>
+        <p class="text-slate-300">
+          Get a free API key in seconds from Google AI Studio. Starts with <code class="text-blue-300">AIza...</code>
+        </p>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"
+           class="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold underline underline-offset-2">
+          Open Google AI Studio to get your API key →
+        </a>
+      </div>
+
+      <!-- Current status -->
+      <div>
+        <div class="text-xs font-semibold text-slate-400 mb-1">Current Status:</div>
+        <div id="settings-key-status" class="text-xs">No key configured</div>
+      </div>
+
+      <!-- Input -->
+      <div>
+        <label for="settings-key-input" class="block text-xs font-semibold text-slate-300 mb-1">
+          Paste Google Gemini (AIza...) or OpenRouter (sk-or-v1-...) Key:
+        </label>
+        <div class="flex gap-2">
+          <input id="settings-key-input" type="password" placeholder="AIzaSy..."
+                 class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500">
+          <button id="btn-toggle-key-visibility" type="button"
+                  class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-semibold">
+            Show
+          </button>
+        </div>
+        <p id="settings-key-hint" class="text-xs mt-1.5 hidden font-medium"></p>
+      </div>
+
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <button id="btn-settings-key-clear" type="button"
+                class="px-3 py-2 text-xs font-semibold rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/60 hidden">
+          Remove Key
+        </button>
+        <div class="flex-1"></div>
+        <button id="btn-settings-key-verify" type="button"
+                class="px-5 py-2.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition-colors">
+          Validate & Save
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========================================================================= -->
+<!-- IDEA WORKSPACE MODAL                                                      -->
+<!-- ========================================================================= -->
+<div id="idea-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/95 backdrop-blur-md">
+  <div class="sticky top-0 z-20 bg-slate-950/95 border-b border-slate-800 px-6 py-3.5 flex items-center justify-between">
+    <button id="btn-close-idea-modal" class="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold border border-slate-700 transition-colors flex items-center gap-1.5">
+      ← Back to All Ideas
+    </button>
+    <div class="flex items-center gap-4">
+      <span class="text-xs text-slate-500 font-bold uppercase tracking-wider">Idea Detail Workspace</span>
+      <button id="btn-close-idea-modal-x" class="text-slate-400 hover:text-white text-lg font-bold px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800" title="Close (Esc)">✕</button>
+    </div>
+  </div>
+
+  <div class="max-w-6xl mx-auto p-6 space-y-6">
+    <!-- Header -->
+    <div class="bg-slate-900/80 border border-slate-800 rounded-2xl p-6">
+      <div id="idea-modal-title-wrap" class="mb-2"></div>
+      <div id="idea-modal-meta" class="text-xs text-slate-400"></div>
+      <div id="idea-modal-pitch" class="mt-2"></div>
+    </div>
+
+    <!-- Runs history bar -->
+    <div>
+      <div class="text-xs uppercase font-bold text-slate-400 tracking-wider mb-2">Debate Runs:</div>
+      <div id="idea-modal-runs"></div>
+    </div>
+
+    <!-- Replay / Tabs Section -->
+    <div id="idea-modal-replay" class="hidden bg-slate-900/90 border border-slate-800 rounded-2xl p-6">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2 border-b border-slate-800 pb-3">
+        <h3 id="idea-modal-replay-title" class="text-lg font-bold text-blue-400"></h3>
+        <div class="flex items-center gap-2">
+          <button id="idea-run-md-btn" class="hidden px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-700 hover:bg-emerald-600 text-white transition-colors">
+            ⬇ .md Report
+          </button>
+          <button id="idea-run-pdf-btn" class="hidden px-3 py-1.5 text-xs font-bold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors">
+            🖨️ PDF Report
+          </button>
+        </div>
+      </div>
+
+      <!-- Tab Navigation -->
+      <div id="run-tabs" class="flex flex-wrap gap-1 mb-4 border-b border-slate-800"></div>
+
+      <!-- Tab Content Area -->
+      <div id="run-detail-content" class="md-body text-sm text-slate-200 bg-slate-950 p-5 rounded-xl border border-slate-800 min-h-[300px]"></div>
+    </div>
+
+    <!-- Modal Footer Actions -->
+    <div id="idea-modal-footer" class="flex items-center gap-3 pt-4 border-t border-slate-800"></div>
+  </div>
+</div>
 
 <script src="/static/app.js" defer></script>
 </body>

@@ -40,7 +40,7 @@ def _price(model: str) -> tuple[float, float]:
 def _load() -> dict:
     if LEDGER_FILE.exists():
         try:
-            return json.loads(LEDGER_FILE.read_text())
+            return json.loads(LEDGER_FILE.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
     return {"calls": [], "total_input_tokens": 0, "total_output_tokens": 0,
@@ -49,7 +49,7 @@ def _load() -> dict:
 
 def _save(data: dict) -> None:
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    LEDGER_FILE.write_text(json.dumps(data, indent=2))
+    LEDGER_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
 def record(model: str, input_tokens: int, output_tokens: int) -> float:

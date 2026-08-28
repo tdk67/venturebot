@@ -29,7 +29,7 @@ def _load_config_json() -> dict:
     path = BASE_DIR / "config.json"
     if path.is_file():
         try:
-            return json.loads(path.read_text())
+            return json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             pass
     return {}
@@ -144,7 +144,7 @@ def openrouter_api_key() -> str:
     auth_path = Path.home() / ".pi" / "agent" / "auth.json"
     if auth_path.exists():
         try:
-            data = json.loads(auth_path.read_text())
+            data = json.loads(auth_path.read_text(encoding="utf-8"))
             key = data.get("openrouter", {}).get("key", "").strip()
             if key:
                 return key

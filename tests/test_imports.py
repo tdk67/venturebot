@@ -24,7 +24,7 @@ def _undefined_names(path: Path) -> set[str]:
     somewhere in the module). This is a heuristic, not a full linter  -- but it
     catches the exact class of bug that broke the debate.
     """
-    tree = ast.parse(path.read_text())
+    tree = ast.parse(path.read_text(encoding="utf-8"))
     imported: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom):

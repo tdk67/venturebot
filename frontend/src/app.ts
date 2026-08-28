@@ -1,101 +1,180 @@
 /**
- * VentureBot frontend entry (composition root).
- *
- * Boots the app shell (IndexedDB idea list, T6), mounts the live debate view
- * (T7), and wires the BYOK key UX (T8): the user's key is stored in
- * localStorage only, verified via /api/byok/verify before the first run, and
- * never rendered back to the page. A run is blocked with a clear message until
- * a key is present.
- *
- * Key-privacy contract (T8): the platform root is the ONLY place that reads
- * the stored key from localStorage and hands it to `debate.start()`. The key
- * is never written into the DOM, never logged, and never sent anywhere except
- * create-debate and verify.
+ * app.ts — Main Entry & Composition Root for Idea Lint (T6/T7/T8).
  */
 import * as shell from './app-shell';
 import * as debate from './debate';
 import * as byok from './byok';
-import { byId } from './dom';
 import type { Idea } from './idb';
 
-// -- key entry UI ----------------------------------------------------------
+// ── Key UI & Settings Modal ──────────────────────────────────────────
 
-function setKeyStatus(state: string, text: string): void {
-  const el = byId('key-status');
-  el.dataset.state = state;
-  el.textContent = text;
-}
+export function openSettingsModal(): void {
+  const modal = document.getElementById('settings-modal');
+  if (!modal) return;
+  modal.classList.remove('hidden');
 
-function refreshKeyUi(): void {
   const st = byok.keyState();
-  const clear = byId('btn-key-clear');
-  clear.classList.toggle('hidden', !st.saved);
-  const label = st.saved && st.validated ? 'key set' : st.saved ? 'key saved (unverified)' : 'unknown';
-  setKeyStatus(label, st.saved ? 'API key saved in this browser only.' : 'No key set yet. Open the form to add one.');
+  const input = document.getElementById('settings-key-input') as HTMLInputElement | null;
+  const statusLine = document.getElementById('settings-key-status');
+  const clearBtn = document.getElementById('btn-settings-key-clear');
+  const hint = document.getElementById('settings-key-hint');
+
+  if (hint) hint.classList.add('hidden');
+  if (input) {
+    input.value = '';
+    input.placeholder = st.saved ? `Current key: ${st.masked || '••••••••'}` : 'AIza... or sk-or-v1-...';
+  }
+
+  if (statusLine) {
+    if (st.saved) {
+      const provName = st.provider === 'gemini' ? 'Google Gemini' : st.provider === 'openrouter' ? 'OpenRouter' : 'API';
+      statusLine.innerHTML = `<span class="text-emerald-400 font-semibold">✓ ${provName} key active</span> (${st.masked})`;
+    } else {
+      statusLine.innerHTML = `<span class="text-amber-400 font-semibold">⚠ No API key configured</span>`;
+    }
+  }
+
+  if (clearBtn) {
+    clearBtn.classList.toggle('hidden', !st.saved);
+  }
 }
 
-function wireKeyUi(): void {
-  const btnOpen = byId('btn-key-open');
-  const btnClear = byId('btn-key-clear');
-  const form = byId('key-form');
-  const hint = byId('key-hint');
-  const input = byId<HTMLInputElement>('key-input');
+export function closeSettingsModal(): void {
+  const modal = document.getElementById('settings-modal');
+  if (!modal) return;
+  modal.classList.add('hidden');
+}
 
-  btnOpen.addEventListener('click', () => {
-    form.classList.toggle('hidden');
-    if (!form.classList.contains('hidden')) input.focus();
-  });
+function refreshHeaderKeyBadge(): void {
+  const badge = document.getElementById('header-key-badge');
+  if (!badge) return;
 
-  byId('btn-key-verify').addEventListener('click', () => {
-    void (async () => {
-      hint.classList.add('hidden');
-      const value = input.value;
-      if (!value.trim()) {
-        hint.textContent = 'Please paste your API key first.';
-        hint.classList.remove('hidden');
+  const st = byok.keyState();
+  if (st.saved && st.validated) {
+    const prov = st.provider === 'gemini' ? 'Gemini' : st.provider === 'openrouter' ? 'OpenRouter' : 'Key';
+    badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition-colors cursor-pointer';
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> ${prov} Key: ${st.masked || 'Active'}`;
+  } else {
+    badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-600/80 flex items-center gap-1.5 transition-colors cursor-pointer animate-pulse';
+    badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> 🔑 Set API Key (Required)`;
+  }
+}
+
+function wireSettingsModal(): void {
+  document.getElementById('header-key-badge')?.addEventListener('click', openSettingsModal);
+  document.getElementById('btn-open-settings')?.addEventListener('click', openSettingsModal);
+  document.getElementById('btn-close-settings')?.addEventListener('click', closeSettingsModal);
+
+  const verifyBtn = document.getElementById('btn-settings-key-verify');
+  const input = document.getElementById('settings-key-input') as HTMLInputElement | null;
+  const hint = document.getElementById('settings-key-hint');
+  const clearBtn = document.getElementById('btn-settings-key-clear');
+
+  if (verifyBtn && input) {
+    verifyBtn.addEventListener('click', async () => {
+      const val = input.value.trim();
+      if (!val) {
+        if (hint) {
+          hint.textContent = 'Please paste your Google Gemini or OpenRouter API key first.';
+          hint.className = 'text-xs text-amber-400 font-semibold mt-2';
+          hint.classList.remove('hidden');
+        }
         return;
       }
-      const out = await byok.verify(value);
-      input.value = ''; // never echo the pasted value back into the DOM
-      hint.textContent = out.message;
-      hint.classList.remove('hidden');
-      refreshKeyUi();
-    })();
-  });
 
-  btnClear.addEventListener('click', () => {
-    byok.clearKey();
-    input.value = '';
-    hint.classList.add('hidden');
-    form.classList.add('hidden');
-    refreshKeyUi();
-  });
+      verifyBtn.textContent = 'Verifying...';
+      (verifyBtn as HTMLButtonElement).disabled = true;
 
-  refreshKeyUi();
+      const out = await byok.verify(val);
+      (verifyBtn as HTMLButtonElement).disabled = false;
+      verifyBtn.textContent = 'Validate & Save';
+
+      if (hint) {
+        hint.textContent = out.message;
+        hint.className = `text-xs font-semibold mt-2 ${out.ok ? 'text-emerald-400' : 'text-rose-400'}`;
+        hint.classList.remove('hidden');
+      }
+
+      if (out.ok) {
+        input.value = '';
+        input.placeholder = `Current key: ${out.masked || '••••••••'}`;
+        refreshHeaderKeyBadge();
+        setTimeout(() => {
+          closeSettingsModal();
+        }, 1200);
+      }
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', async () => {
+      if (confirm('Remove saved API key from this browser?')) {
+        await byok.clearKey();
+        if (input) input.value = '';
+        if (hint) hint.classList.add('hidden');
+        refreshHeaderKeyBadge();
+        openSettingsModal();
+      }
+    });
+  }
+
+  // Toggle password visibility
+  const toggleBtn = document.getElementById('btn-toggle-key-visibility');
+  if (toggleBtn && input) {
+    toggleBtn.addEventListener('click', () => {
+      if (input.type === 'password') {
+        input.type = 'text';
+        toggleBtn.textContent = 'Hide';
+      } else {
+        input.type = 'password';
+        toggleBtn.textContent = 'Show';
+      }
+    });
+  }
 }
 
-// -- run gating (T8) -------------------------------------------------------
+// ── Debate Run Hook ──────────────────────────────────────────────────
 
 function onRun(idea: Idea): void {
-  const status = byId('status-line');
-  const blocked = byok.keyState().saved && !byok.keyState().validated;
-  if (blocked) {
-    status.textContent =
-      'Your key is saved but not verified yet. Open the key form above and press "Verify & save" first.';
-    return;
-  }
   const key = byok.storedKey();
-  if (key === null) {
-    status.textContent = 'Set your model API key first (via the key button above).';
+  if (!key) {
+    openSettingsModal();
+    const hint = document.getElementById('settings-key-hint');
+    if (hint) {
+      hint.textContent = 'Please enter and validate your Google Gemini API key to start this debate.';
+      hint.className = 'text-xs text-amber-400 font-semibold mt-2';
+      hint.classList.remove('hidden');
+    }
     return;
   }
-  debate.start(idea, key);
+
+  // Scroll to debate section
+  document.getElementById('debate-run')?.scrollIntoView({ behavior: 'smooth' });
+
+  debate.start(idea, key, {
+    urls: idea.urls,
+    onFinish: (updatedIdea) => {
+      void shell.refresh();
+      // Show complete feedback
+      const statusLine = document.getElementById('status-line');
+      if (statusLine) {
+        statusLine.textContent = `Debate finished for "${updatedIdea.title}". Verdict: ${updatedIdea.verdict || 'DONE'}`;
+      }
+    },
+  });
 }
 
-// -- boot ------------------------------------------------------------------
+// ── Boot ─────────────────────────────────────────────────────────────
 
-shell.init({ onRun });
-wireKeyUi();
+async function boot(): Promise<void> {
+  await byok.initByok();
+  refreshHeaderKeyBadge();
+  wireSettingsModal();
+  shell.init({ onRun });
+}
 
-// Export for test harness access if needed.
+void boot();
+
+// Export for test inspection and UI handlers
+(window as unknown as Record<string, unknown>).__idealint = { shell, debate, byok, openSettingsModal, closeSettingsModal };
 (window as unknown as Record<string, unknown>).__venturebot = { shell, debate, byok };
