@@ -133,12 +133,11 @@ async def security_headers(request: Request, call_next):
 
 _VALID_STATUSES = {"queued", "running", "failed", "done"}
 
-# Recognized BYOK key formats (OpenRouter / Gemini). Verification is
-# format-only here — a network check lives in a later task (T3) so this
-# skeleton never makes outbound calls.
+# Format validation for BYOK keys: accepts standard OpenRouter format or any valid API key token (length >= 16).
 _KEY_PATTERNS = [
     re.compile(r"^sk-or-v1-[A-Za-z0-9_-]{16,}$"),  # OpenRouter
-    re.compile(r"^AIza[A-Za-z0-9_-]{20,}$"),       # Google AI Studio
+    re.compile(r"^sk-[A-Za-z0-9_-]{16,}$"),        # generic sk-
+    re.compile(r"^[A-Za-z0-9_-]{16,128}$"),        # General API key token (Google Gemini, etc.)
 ]
 
 
@@ -563,11 +562,7 @@ async def api_byok_verify(request: Request):
     if not key:
         raise HTTPException(400, "api_key required")
     ok = any(p.match(key) for p in _KEY_PATTERNS)
-    provider = None
-    if key.startswith("sk-or-"):
-        provider = "openrouter"
-    elif key.startswith("AIza"):
-        provider = "gemini"
+    provider = "openrouter" if (key.startswith("sk-or-") or key.startswith("sk-")) else "gemini"
     return {"valid": ok, "provider": provider}
 
 

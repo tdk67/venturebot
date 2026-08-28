@@ -62,6 +62,11 @@ export function storedKey(): string | null {
   return null;
 }
 
+function detectProvider(key: string): string {
+  if (key.startsWith('sk-or-') || key.startsWith('sk-')) return 'openrouter';
+  return 'gemini';
+}
+
 /** Initialize BYOK state from IndexedDB + localStorage. */
 export async function initByok(): Promise<KeyState> {
   let key = _memoryKey || readLocalStorage();
@@ -78,11 +83,7 @@ export async function initByok(): Promise<KeyState> {
 
   if (key && key.trim()) {
     const trimmed = key.trim();
-    const provider = trimmed.startsWith('AIza')
-      ? 'gemini'
-      : trimmed.startsWith('sk-or-')
-      ? 'openrouter'
-      : 'api';
+    const provider = detectProvider(trimmed);
     cached = {
       saved: true,
       validated: true, // auto-validate stored key format
@@ -121,13 +122,7 @@ export async function saveKey(key: string, provider?: string): Promise<void> {
   setLocalStorage(trimmed);
   await idb.setSetting(SETTING_KEY, trimmed);
 
-  const prov =
-    provider ||
-    (trimmed.startsWith('AIza')
-      ? 'gemini'
-      : trimmed.startsWith('sk-or-')
-      ? 'openrouter'
-      : 'api');
+  const prov = provider || detectProvider(trimmed);
 
   cached = {
     saved: true,
@@ -168,7 +163,7 @@ export async function verify(
   }
 
   if (res.valid) {
-    const prov = res.provider || (trimmed.startsWith('AIza') ? 'gemini' : 'openrouter');
+    const prov = res.provider || detectProvider(trimmed);
     await saveKey(trimmed, prov);
     const provName = prov === 'gemini' ? 'Google Gemini' : prov === 'openrouter' ? 'OpenRouter' : 'API';
     return {
@@ -181,6 +176,6 @@ export async function verify(
 
   return {
     ok: false,
-    message: 'That key looks invalid. For Google Gemini, the key should start with "AIza...". For OpenRouter, it starts with "sk-or-v1-...".',
+    message: 'That key looks invalid. Please ensure you copied your full API key from Google AI Studio or OpenRouter.',
   };
 }
