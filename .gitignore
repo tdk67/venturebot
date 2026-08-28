@@ -31,3 +31,5 @@ _auth_tests_disabled/
 # Cloud Run), but Firebase requires the directory to exist at deploy time.
 public/
 logs/
+
+*.bat

@@ -1,3 +1,0 @@
-set PYTHON_HOME=C:\Data\Apps\python-3.12.10
-set PATH=%PYTHON_HOME%;%PYTHON_HOME%\Scripts;%PYTHON_HOME%\DLLs;;%PYTHON_HOME%\Lib;%PATH%
-
