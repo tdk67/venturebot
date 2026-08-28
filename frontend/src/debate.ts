@@ -300,7 +300,23 @@ function stopElapsed(): void {
   }
 }
 
-// ── Verdict Gate UI ──────────────────────────────────────────────────
+function extractScoreNumber(raw: unknown): string | number {
+  if (raw === null || raw === undefined) return '—';
+  if (typeof raw === 'number') return raw;
+  if (typeof raw === 'string') {
+    const parsed = parseFloat(raw);
+    return isNaN(parsed) ? raw : parsed;
+  }
+  if (typeof raw === 'object' && raw !== null) {
+    const s = (raw as Record<string, unknown>).score;
+    if (typeof s === 'number') return s;
+    if (typeof s === 'string') {
+      const parsed = parseFloat(s);
+      return isNaN(parsed) ? s : parsed;
+    }
+  }
+  return '—';
+}
 
 function renderVerdictGate(payload: DebPayload): void {
   const card = document.getElementById('verdict-card');
@@ -310,17 +326,18 @@ function renderVerdictGate(payload: DebPayload): void {
   const scoresContainer = document.getElementById('verdict-scores');
   if (scoresContainer) {
     scoresContainer.innerHTML = '';
-    const sc = payload.scores || {};
-    const metrics: Array<[string, number | undefined, string]> = [
+    const sc = (payload.scores || {}) as Record<string, unknown>;
+    const metrics: Array<[string, unknown, string]> = [
       ['Novelty', sc.novelty, 'from-purple-600 to-indigo-600'],
       ['Feasibility', sc.feasibility, 'from-blue-600 to-cyan-600'],
       ['Market Fit', sc.market_fit, 'from-emerald-600 to-teal-600'],
     ];
 
-    for (const [name, score, grad] of metrics) {
+    for (const [name, rawScore, grad] of metrics) {
+      const scoreNum = extractScoreNumber(rawScore);
       const col = dom('div', 'bg-slate-900/90 border border-slate-800 p-3 rounded-xl text-center');
       col.appendChild(dom('div', 'text-xs text-slate-400 uppercase font-bold tracking-wider mb-1', name));
-      col.appendChild(dom('div', `text-2xl font-black bg-gradient-to-r ${grad} bg-clip-text text-transparent`, `${score ?? '—'}/10`));
+      col.appendChild(dom('div', `text-2xl font-black bg-gradient-to-r ${grad} bg-clip-text text-transparent`, `${scoreNum}/10`));
       scoresContainer.appendChild(col);
     }
   }
@@ -386,7 +403,7 @@ export function reset(): void {
 export function start(
   idea: Idea,
   apiKey: string,
-  options?: { urls?: string[]; onFinish?: (idea: Idea) => void },
+  options?: { urls?: string[]; comment?: string; onFinish?: (idea: Idea) => void },
 ): void {
   void startRun(idea, apiKey, options);
 }
@@ -394,7 +411,7 @@ export function start(
 export async function startRun(
   idea: Idea,
   apiKey: string,
-  options?: { urls?: string[]; onFinish?: (idea: Idea) => void },
+  options?: { urls?: string[]; comment?: string; onFinish?: (idea: Idea) => void },
 ): Promise<void> {
   reset();
 
@@ -428,7 +445,7 @@ export async function startRun(
 
   let runId: string;
   try {
-    runId = await api.createDebate(idea.title, apiKey, options?.urls || idea.urls);
+    runId = await api.createDebate(idea.title, apiKey, options?.urls || idea.urls, options?.comment);
   } catch (err) {
     if (view && view.state === 'running') {
       fail(`Could not start debate: ${String(err)}`);
@@ -494,6 +511,8 @@ function stream(runId: string): Promise<void> {
     es.addEventListener('phase_done', onEvent('phase_done'));
     es.addEventListener('agent_turn', onEvent('agent_turn'));
     es.addEventListener('clarify_question', onEvent('clarify_question'));
+    es.addEventListener('clarify', onEvent('clarify_question'));
+    es.addEventListener('run_paused', onEvent('clarify_question'));
     es.addEventListener('verdict', onEvent('verdict'));
     es.addEventListener('run_finished', onEvent('run_finished'));
     es.addEventListener('run_failed', onEvent('run_failed'));
@@ -524,8 +543,10 @@ function stream(runId: string): Promise<void> {
         if (payload.agent && payload.text) {
           appendFeedMessage(payload.agent, payload.text);
         }
-      } else if (name === 'clarify_question') {
-        showClarifyBox(payload.question || payload.text || '');
+      } else if (name === 'clarify_question' || name === 'clarify' || name === 'run_paused') {
+        const q = payload.question || payload.text || '';
+        showClarifyBox(q);
+        appendFeedMessage('Orchestrator', `⏸ **Clarification & Decision Gate**\n\n${q}`);
       } else if (name === 'verdict') {
         renderVerdictGate(payload);
         appendFeedMessage('Judge', payload.verdict_text || payload.text || `Verdict: ${payload.verdict}`);
@@ -567,31 +588,68 @@ function showClarifyBox(question: string): void {
   const box = document.getElementById('clarify-box');
   const qEl = document.getElementById('clarify-question');
   if (!box || !qEl) return;
-  qEl.textContent = question;
+  qEl.innerHTML = renderMarkdown(question);
   box.classList.remove('hidden');
   box.scrollIntoView({ behavior: 'smooth' });
+  setStateLabel('paused');
 
   const sendBtn = document.getElementById('clarify-send') as HTMLButtonElement | null;
   const input = document.getElementById('clarify-answer') as HTMLInputElement | null;
-  if (sendBtn && input && view) {
-    sendBtn.onclick = async () => {
-      const ans = input.value.trim();
-      if (!ans) return;
-      sendBtn.disabled = true;
-      try {
-        await fetch(`/api/debates/${encodeURIComponent(view!.runId)}/clarify`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ answer: ans }),
-        });
-        appendFeedMessage('Human', `Answer: ${ans}`);
-        input.value = '';
-        box.classList.add('hidden');
-      } catch (err) {
-        alert('Could not submit answer: ' + String(err));
-      } finally {
-        sendBtn.disabled = false;
+
+  // Render quick reply pills
+  let quickWrap = document.getElementById('clarify-quick-actions');
+  if (!quickWrap) {
+    quickWrap = dom('div', 'flex gap-2 mt-2 flex-wrap');
+    quickWrap.id = 'clarify-quick-actions';
+    box.appendChild(quickWrap);
+  }
+  quickWrap.innerHTML = '';
+
+  const submitAnswer = async (ans: string) => {
+    if (!ans || !view) return;
+    if (sendBtn) sendBtn.disabled = true;
+    setStateLabel('resuming');
+    try {
+      await fetch(`/api/debates/${encodeURIComponent(view.runId)}/clarify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answer: ans, api_key: currentApiKey }),
+      });
+      appendFeedMessage('Human', `Answer: ${ans}`);
+      if (input) input.value = '';
+      box.classList.add('hidden');
+    } catch (err) {
+      alert('Could not submit answer: ' + String(err));
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+    }
+  };
+
+  const actions = [
+    { label: '✅ [Approve] Proceed to PRD', val: '[Approve]' },
+    { label: '✏️ [Changes] Suggest Pivots', val: '[Changes]: ' },
+    { label: '🛑 [Reject] Abandon Idea', val: '[Reject]' },
+  ];
+
+  for (const act of actions) {
+    const b = dom('button', 'px-3 py-1.5 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-200 text-xs font-bold border border-amber-600/60 transition-colors', act.label);
+    b.onclick = () => {
+      if (act.val.endsWith(': ')) {
+        if (input) {
+          input.value = act.val;
+          input.focus();
+        }
+      } else {
+        void submitAnswer(act.val);
       }
+    };
+    quickWrap.appendChild(b);
+  }
+
+  if (sendBtn && input) {
+    sendBtn.onclick = () => {
+      const ans = input.value.trim();
+      if (ans) void submitAnswer(ans);
     };
   }
 }
@@ -608,11 +666,24 @@ async function completeRun(runId: string): Promise<void> {
 
   const resObj = (resultData?.result || {}) as Record<string, unknown>;
   const prdText = (resObj.prd as string) || '';
-  const verdict = (resObj.verdict as Record<string, unknown> | string) || '';
-  const verdictStr = typeof verdict === 'string' ? verdict : (verdict as { status?: string })?.status || 'PROCEED';
-  const scores = (typeof verdict === 'object' ? (verdict as { scores?: any })?.scores : undefined) as
-    | { novelty?: number; feasibility?: number; market_fit?: number }
-    | undefined;
+  const verdictRaw = resObj.verdict as Record<string, unknown> | string | undefined;
+  let verdictStr = 'PARK';
+  if (typeof verdictRaw === 'string') {
+    verdictStr = verdictRaw;
+  } else if (verdictRaw && typeof verdictRaw === 'object') {
+    verdictStr = (verdictRaw.verdict as string) || (verdictRaw.status as string) || 'PARK';
+  }
+
+  const rawScores = typeof verdictRaw === 'object' && verdictRaw !== null ? (verdictRaw as { scores?: any })?.scores : undefined;
+  let scores: { novelty?: number; feasibility?: number; market_fit?: number } | undefined;
+  if (rawScores) {
+    const getVal = (v: any) => (typeof v === 'object' && v !== null && 'score' in v ? v.score : typeof v === 'number' ? v : undefined);
+    scores = {
+      novelty: getVal(rawScores.novelty),
+      feasibility: getVal(rawScores.feasibility),
+      market_fit: getVal(rawScores.market_fit),
+    };
+  }
 
   // If no result was generated or the status is failed, fail loudly instead of falsely celebrating
   if (!resultData?.result || resObj.status === 'failed' || (!prdText && !resObj.verdict && !resObj.research_brief)) {

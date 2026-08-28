@@ -7,11 +7,11 @@ import type { Idea, IdeaRun } from './idb';
 import { byId, dom } from './dom';
 
 export interface ShellOptions {
-  onRun?: (idea: Idea) => void;
+  onRun?: (idea: Idea, options?: { comment?: string; urls?: string[] }) => void;
 }
 
 let ideas: Idea[] = [];
-let onRun: ((idea: Idea) => void) | null = null;
+let onRun: ((idea: Idea, options?: { comment?: string; urls?: string[] }) => void) | null = null;
 let activeFilter = 'ALL';
 let searchQuery = '';
 
@@ -56,7 +56,10 @@ function renderRow(idea: Idea): HTMLElement {
   }
   if (idea.scores) {
     const sc = idea.scores;
-    meta.appendChild(dom('span', 'text-emerald-400 font-mono', `N:${sc.novelty ?? '—'} F:${sc.feasibility ?? '—'} M:${sc.market_fit ?? '—'}`));
+    const n = typeof sc.novelty === 'object' && sc.novelty !== null ? (sc.novelty as any).score : sc.novelty;
+    const f = typeof sc.feasibility === 'object' && sc.feasibility !== null ? (sc.feasibility as any).score : sc.feasibility;
+    const m = typeof sc.market_fit === 'object' && sc.market_fit !== null ? (sc.market_fit as any).score : sc.market_fit;
+    meta.appendChild(dom('span', 'text-emerald-400 font-mono font-medium', `N:${n ?? '—'} F:${f ?? '—'} M:${m ?? '—'}`));
   }
   left.appendChild(meta);
   row.appendChild(left);
@@ -284,6 +287,19 @@ function renderModalDetail(): void {
   }
 
   // Wire buttons
+  const resumeTopBtn = document.getElementById('idea-run-resume-btn') as HTMLButtonElement | null;
+  if (resumeTopBtn) {
+    resumeTopBtn.onclick = () => {
+      if (modalIdea && onRun) {
+        const commentInput = document.getElementById('modal-resume-comment') as HTMLTextAreaElement | null;
+        const comment = commentInput?.value.trim() || undefined;
+        const targetIdea = modalIdea;
+        closeIdeaModal();
+        onRun(targetIdea, { comment });
+      }
+    };
+  }
+
   const mdBtn = document.getElementById('idea-run-md-btn') as HTMLButtonElement | null;
   if (mdBtn) {
     mdBtn.classList.remove('hidden');
@@ -407,23 +423,64 @@ function renderTranscriptTab(container: HTMLElement): void {
   container.appendChild(feed);
 }
 
+export function setOnRun(fn: (idea: Idea, options?: { comment?: string; urls?: string[] }) => void): void {
+  onRun = fn;
+}
+
 function renderModalFooter(): void {
   const footer = document.getElementById('idea-modal-footer');
   if (!footer || !modalIdea) return;
   footer.innerHTML = '';
 
+  const wrap = dom('div', 'w-full flex flex-col gap-3');
+
+  // Add guidance comment input for the next debate run
+  const commentBox = dom('div', 'w-full bg-slate-950/80 border border-slate-800 rounded-xl p-3');
+  const commentLabel = dom('label', 'block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5 flex items-center justify-between');
+  commentLabel.innerHTML = `<span>💬 Next Debate Direction / Feedback</span> <span class="text-[10px] text-slate-500 font-normal">Injected as priority human guidance</span>`;
+  commentBox.appendChild(commentLabel);
+
+  const commentInput = dom('textarea', 'w-full bg-slate-900 border border-slate-700 focus:border-blue-500 rounded-lg p-2.5 text-xs text-slate-100 placeholder-slate-500 outline-none transition-colors') as HTMLTextAreaElement;
+  commentInput.id = 'modal-resume-comment';
+  commentInput.rows = 2;
+  commentInput.placeholder = "E.g. [Approve]: adopt the hybrid architecture and generate cursor-optimized PRD; or propose new pivot directions...";
+  commentBox.appendChild(commentInput);
+
+  // Quick preset pills
+  const pills = dom('div', 'flex gap-2 mt-2 flex-wrap');
+  const presets = [
+    { label: '✅ [Approve]: Generate PRD with mitigations', val: '[Approve]: We adopt the proposed architecture and developer pivot. Proceed with PRD generation and Security Audit.' },
+    { label: '✏️ [Changes]: Focus on AI coders', val: '[Changes]: Focus exclusively on generating .cursorrules and PRD.md for vibe-coding workflows.' },
+  ];
+  for (const pr of presets) {
+    const pill = dom('button', 'px-2.5 py-1 text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-blue-300 rounded-md border border-slate-700 transition-colors', pr.label);
+    pill.onclick = (e) => {
+      e.preventDefault();
+      commentInput.value = pr.val;
+      commentInput.focus();
+    };
+    pills.appendChild(pill);
+  }
+  commentBox.appendChild(pills);
+  wrap.appendChild(commentBox);
+
+  const btnRow = dom('div', 'flex items-center justify-between gap-3 flex-wrap');
+
+  const leftBtns = dom('div', 'flex items-center gap-2');
   const resumeBtn = dom(
     'button',
-    'px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition-colors',
-    '▶ Re-run / Resume debate',
+    'px-4 py-2 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition-colors flex items-center gap-1.5',
+    '▶ Re-run / Resume Debate',
   );
   resumeBtn.onclick = () => {
     if (modalIdea && onRun) {
+      const comment = commentInput.value.trim() || undefined;
+      const targetIdea = modalIdea;
       closeIdeaModal();
-      onRun(modalIdea);
+      onRun(targetIdea, { comment });
     }
   };
-  footer.appendChild(resumeBtn);
+  leftBtns.appendChild(resumeBtn);
 
   const expBtn = dom(
     'button',
@@ -433,7 +490,9 @@ function renderModalFooter(): void {
   expBtn.onclick = () => {
     if (modalIdea && activeRun) downloadRunMarkdown(modalIdea, activeRun);
   };
-  footer.appendChild(expBtn);
+  leftBtns.appendChild(expBtn);
+
+  btnRow.appendChild(leftBtns);
 
   const delBtn = dom(
     'button',
@@ -447,7 +506,10 @@ function renderModalFooter(): void {
       await refresh();
     }
   };
-  footer.appendChild(delBtn);
+  btnRow.appendChild(delBtn);
+  wrap.appendChild(btnRow);
+
+  footer.appendChild(wrap);
 }
 
 function downloadRunMarkdown(idea: Idea, run: IdeaRun): void {
@@ -469,6 +531,10 @@ function printRunReport(idea: Idea, run: IdeaRun): void {
     return;
   }
   const bodyHtml = `
+    <div class="no-print" style="margin-bottom: 1.5rem; display: flex; justify-content: space-between; align-items: center; background: #f1f5f9; padding: 10px 16px; border-radius: 8px; border: 1px solid #cbd5e1;">
+      <button onclick="window.print()" style="padding: 8px 18px; background: #2563eb; color: #fff; border: none; border-radius: 6px; font-weight: bold; font-size: 13px; cursor: pointer; display: flex; items-center; gap: 6px;">🖨️ Print / Save as PDF</button>
+      <span style="color: #64748b; font-size: 12px;">Tip: Select <strong>"Save as PDF"</strong> in your browser print dialogue.</span>
+    </div>
     <h1>Idea Lint Debate: ${idea.title}</h1>
     <p><b>Status:</b> ${run.status || 'DONE'} &nbsp; <b>Verdict:</b> ${run.verdict || '—'}</p>
     ${run.prd_text ? `<h2>Product Requirements Document (PRD)</h2><div class="fmt">${renderMarkdown(run.prd_text)}</div>` : ''}
@@ -477,15 +543,26 @@ function printRunReport(idea: Idea, run: IdeaRun): void {
     ${(run.events || []).map((e) => `<h3>[${e.agent || 'System'}]</h3><div class="fmt">${renderMarkdown(e.text || '')}</div>`).join('')}
   `;
 
-  w.document.write(`<!doctype html><html><head><title>Idea Lint Debate Report</title>
-    <style>body{font-family:system-ui,sans-serif;max-width:800px;margin:2rem auto;padding:0 1rem;color:#111;line-height:1.5}
-    h1{border-bottom:2px solid #333}h2{border-bottom:1px solid #ccc;margin-top:2rem}
-    h3{margin-bottom:.25rem;color:#555}
-    .fmt ul,.fmt ol{padding-left:1.4em}.fmt li{margin:.2em 0}
-    .fmt table{border-collapse:collapse;margin:.5em 0}.fmt th,.fmt td{border:1px solid #999;padding:.25em .5em}
-    .fmt a{color:#0366d6}.fmt code{background:#f0f0f0;padding:0 .25em;border-radius:3px}
-    .fmt pre{background:#f5f5f5;padding:.75rem;border-radius:6px;white-space:pre-wrap}</style></head><body>${bodyHtml}
-    <script>window.onload=()=>window.print()<\/script></body></html>`);
+  w.document.write(`<!doctype html><html><head><title>Idea Lint Debate Report — ${idea.title.slice(0, 30)}</title>
+    <style>
+      body{font-family:system-ui,sans-serif;max-width:850px;margin:2rem auto;padding:0 1.5rem;color:#0f172a;line-height:1.6}
+      h1{border-bottom:2px solid #0f172a;padding-bottom:.5rem;font-size:1.6rem}
+      h2{border-bottom:1px solid #cbd5e1;margin-top:2rem;padding-bottom:.3rem;color:#1e293b;font-size:1.3rem}
+      h3{margin-bottom:.25rem;color:#475569;font-size:1rem;margin-top:1.2rem}
+      .fmt ul,.fmt ol{padding-left:1.4em}.fmt li{margin:.25em 0}
+      .fmt table{border-collapse:collapse;margin:.75em 0;width:100%}.fmt th,.fmt td{border:1px solid #cbd5e1;padding:.4em .6em;text-align:left}
+      .fmt th{background:#f8fafc}
+      .fmt a{color:#2563eb;text-decoration:underline}
+      .fmt code{background:#f1f5f9;padding:0.1em .3em;border-radius:4px;font-family:monospace;font-size:0.9em}
+      .fmt pre{background:#f8fafc;padding:.85rem;border-radius:6px;border:1px solid #e2e8f0;white-space:pre-wrap;font-size:0.85em}
+      @media print {
+        .no-print { display: none !important; }
+        body { max-width: 100%; margin: 0; padding: 0; }
+      }
+    </style></head><body>${bodyHtml}
+    <script>
+      setTimeout(() => { window.print(); }, 250);
+    <\/script></body></html>`);
   w.document.close();
 }
 

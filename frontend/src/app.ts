@@ -135,7 +135,11 @@ function wireSettingsModal(): void {
 
 // ── Debate Run Hook ──────────────────────────────────────────────────
 
-function onRun(idea: Idea): void {
+function onRun(idea: Idea, options?: { comment?: string; urls?: string[] }): void {
+  if (!idea || !idea.title) {
+    alert('Could not start debate: No idea selected.');
+    return;
+  }
   const key = byok.storedKey();
   if (!key) {
     openSettingsModal();
@@ -148,11 +152,16 @@ function onRun(idea: Idea): void {
     return;
   }
 
-  // Scroll to debate section
-  document.getElementById('debate-run')?.scrollIntoView({ behavior: 'smooth' });
+  // Ensure debate section is visible and scrolled into view
+  const sec = document.getElementById('debate-run');
+  if (sec) {
+    sec.classList.remove('hidden');
+    sec.scrollIntoView({ behavior: 'smooth' });
+  }
 
   debate.start(idea, key, {
-    urls: idea.urls,
+    urls: options?.urls || idea.urls,
+    comment: options?.comment,
     onFinish: (updatedIdea) => {
       void shell.refresh();
       // Show complete feedback

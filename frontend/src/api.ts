@@ -4,6 +4,7 @@ export interface CreateDebateRequest {
   idea: string;
   api_key: string;
   urls?: string[];
+  comment?: string;
 }
 
 export interface CreateDebateResponse {
@@ -85,9 +86,11 @@ export async function verifyByokKey(apiKey: string): Promise<ByokVerifyResponse>
 }
 
 /** Create a debate run. Returns the run_id. */
-export async function createDebate(idea: string, apiKey: string): Promise<string> {
-  const data = (await _post(API.createDebate, { idea, api_key: apiKey })) as CreateDebateResponse;
-  if (!data.run_id) throw new Error('create-debate returned no run_id');
+export async function createDebate(idea: string, apiKey: string, urls?: string[], comment?: string): Promise<string> {
+  const payload: CreateDebateRequest = { idea, api_key: apiKey };
+  if (urls && urls.length > 0) payload.urls = urls;
+  if (comment) payload.comment = comment;
+  const data = (await _post(API.createDebate, payload)) as CreateDebateResponse;
   return data.run_id;
 }
 

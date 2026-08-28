@@ -259,7 +259,16 @@ def _is_intermittent_error(exc: Exception) -> bool:
     return any(k in msg for k in ("429", "resource exhausted", "rate limit", "quota", "500", "502", "503", "504", "unavailable", "overloaded", "timeout", "timed out", "connect", "connection reset", "econnreset"))
 
 
-async def _run_debate(rec: RunRecord, api_key: str, *, idea: str | None = None, urls: list[str] | None = None) -> None:
+async def _run_debate(
+    rec: RunRecord,
+    api_key: str,
+    *,
+    idea: str | None = None,
+    urls: list[str] | None = None,
+    paused_state: dict | None = None,
+    clarify_answer: str | None = None,
+    resume_comment: str | None = None,
+) -> None:
     """Drive ONE debate for a created run (T3).
 
     Responsibilities:
@@ -296,6 +305,9 @@ async def _run_debate(rec: RunRecord, api_key: str, *, idea: str | None = None, 
                     api_key=api_key,
                     external_run_id=rec.run_id,
                     urls=urls,
+                    paused_state=paused_state,
+                    clarify_answer=clarify_answer,
+                    resume_comment=resume_comment,
                 )
                 if getattr(result, "status", "done") == "failed" and getattr(result, "error", None):
                     err_str = str(result.error).lower()
@@ -310,7 +322,27 @@ async def _run_debate(rec: RunRecord, api_key: str, *, idea: str | None = None, 
                 raise
 
         rec.status = getattr(result, "status", "done")
-        if rec.status not in ("failed", "stopped"):
+        if rec.status == "needs_clarification":
+            rec.result = {
+                "run_id": rec.run_id,
+                "status": rec.status,
+                "verdict": getattr(result, "verdict", None),
+                "verdict_text": getattr(result, "verdict_text", None),
+                "prd": getattr(result, "prd", None),
+                "research_brief": getattr(result, "research_brief", None),
+                "advocate_argument": getattr(result, "advocate_argument", None),
+                "critic_rebuttal": getattr(result, "critic_rebuttal", None),
+                "creative_angles": getattr(result, "creative_angles", None),
+                "security_audit": getattr(result, "security_audit", None),
+                "turns_used": getattr(result, "turns_used", 0),
+                "clarification_question": getattr(result, "clarification_question", None),
+                "transcript": getattr(result, "events", []),
+            }
+            _emit(rec, "clarify_question", {
+                "question": rec.result.get("clarification_question") or getattr(result, "clarification_question", ""),
+                "run_id": rec.run_id,
+            })
+        elif rec.status not in ("failed", "stopped"):
             rec.result = {
                 "run_id": rec.run_id,
                 "status": rec.status,
@@ -342,11 +374,10 @@ async def _run_debate(rec: RunRecord, api_key: str, *, idea: str | None = None, 
         rec.error = _redact(f"{type(e).__name__}: {e}", api_key)
         _emit(rec, "run_failed", {"reason": rec.error, "run_id": rec.run_id})
     finally:
-        unregister_run_sink(rec.run_id)
-        # D1/S2: the key never outlives its run. Stored/event/error text that
-        # might have captured it is scrubbed too, and the record is cleared.
-        _scrub_key_from_run(rec, api_key)
-        rec.api_key = ""
+        if rec.status != "needs_clarification":
+            unregister_run_sink(rec.run_id)
+            _scrub_key_from_run(rec, api_key)
+            rec.api_key = ""
 
 
 def _scrub_key_from_run(rec: RunRecord, api_key: str) -> None:
@@ -398,6 +429,7 @@ async def api_create_debate(request: Request):
         raise HTTPException(400, "idea is required")
     api_key = _require_api_key(body)
     urls = body.get("urls") or []
+    comment = (body.get("comment") or "").strip() or None
 
     run_id = str(uuid.uuid4())  # 122-bit unguessable (S3)
 
@@ -421,7 +453,7 @@ async def api_create_debate(request: Request):
     STORE.register(rec)
 
     # Launch background debate execution
-    asyncio.create_task(_run_debate(rec, api_key, urls=urls))
+    asyncio.create_task(_run_debate(rec, api_key, urls=urls, resume_comment=comment))
 
     return {"run_id": run_id, "status": rec.status}
 
@@ -510,11 +542,18 @@ async def api_clarify(run_id: str, request: Request):
     rec = _lookup(run_id)
     body = await request.json()
     answer = (body.get("answer") or "").strip()
+    api_key = (body.get("api_key") or "").strip() or rec.api_key
     if not answer:
         raise HTTPException(400, "answer is required")
-    # T2 wires the answer into a paused run; the skeleton records it.
     _emit(rec, "clarify_received", {"answer_len": len(answer)})
-    return {"status": "queued", "run_id": run_id}
+
+    # Resume the paused orchestrator run
+    from .agents.orchestrator import get_pause
+    paused_state = get_pause(run_id)
+    if paused_state:
+        asyncio.create_task(_run_debate(rec, api_key, paused_state=paused_state, clarify_answer=answer))
+
+    return {"status": "resumed", "run_id": run_id}
 
 
 @app.post("/api/byok/verify")

@@ -615,6 +615,13 @@ class OrchestratorTools:
         self.result.verdict_text = verdict_text
         self.result.verdict = _parse_verdict(verdict_text)
         store.update_task("t4", "done")
+        emit("verdict", {
+            "verdict": self.result.verdict.get("verdict", "PARK"),
+            "verdict_text": verdict_text,
+            "scores": self.result.verdict.get("scores", {}),
+            "key_risks": self.result.verdict.get("key_risks", []),
+            "run_id": self.run_id,
+        })
         emit("phase_done", {"phase": "judge", "run_id": self.run_id})
         return verdict_text
 
@@ -729,6 +736,10 @@ class OrchestratorTools:
         """
         self.result.clarification_question = question
         self.result.clarification_state = "awaiting_response"
+        emit("clarify_question", {
+            "question": question,
+            "run_id": self.run_id,
+        })
         emit("clarify", {
             "question": question,
             "run_id": self.run_id,
@@ -1064,6 +1075,11 @@ async def run_orchestrator(
         store.set_status("waiting_user")
         store.log("System", "core",
                   f"Debate paused  -- waiting for your answer (no time limit). Run {run_id}")
+        emit("clarify_question", {
+            "run_id": run_id,
+            "question": result.clarification_question,
+            "idea_id": result.idea_id,
+        })
         emit("run_paused", {
             "run_id": run_id,
             "question": result.clarification_question,
