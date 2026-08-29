@@ -14,6 +14,7 @@ export interface RunStatus {
   run_id: string;
   status: string;
   error?: string;
+  events?: Array<{ event: string; data: Record<string, unknown>; ts?: number }>;
 }
 
 export interface RunResult {
@@ -119,13 +120,13 @@ export async function fetchResult(runId: string, timeoutMs = DEFAULT_TIMEOUT_MS)
 }
 
 /** Fetch the run status from `/api/debates/{id}`. */
-export async function fetchStatus(runId: string, timeoutMs = 5000): Promise<{ run_id: string; status: string; error?: string } | null> {
+export async function fetchStatus(runId: string, timeoutMs = 5000): Promise<RunStatus | null> {
   const ctrl = 'AbortController' in window ? new AbortController() : null;
   const timer = ctrl ? setTimeout(() => ctrl.abort(), timeoutMs) : 0;
   try {
     const res = await fetch(`/api/debates/${encodeURIComponent(runId)}`, { signal: ctrl?.signal });
     if (!res.ok) return null;
-    return (await res.json()) as { run_id: string; status: string; error?: string };
+    return (await res.json()) as RunStatus;
   } catch {
     return null;
   } finally {

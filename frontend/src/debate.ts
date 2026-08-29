@@ -499,7 +499,11 @@ function stream(runId: string): Promise<void> {
       resolve();
     };
 
+    let seenEventCount = 0;
+    let isPolling = false;
+
     const onEvent = (name: string) => (e: MessageEvent) => {
+      seenEventCount++;
       let payload: DebPayload = {};
       try {
         payload = JSON.parse(e.data) as DebPayload;
@@ -523,15 +527,63 @@ function stream(runId: string): Promise<void> {
     es.addEventListener('run_stopped', onEvent('run_stopped'));
     es.addEventListener('expired', onEvent('expired'));
 
-    let probeCount = 0;
-    let probeTimeout: number | null = null;
+    const pollFallback = async () => {
+      if (isPolling || !view || view.state !== 'running') return;
+      isPolling = true;
+      try {
+        es.close();
+      } catch {}
+
+      while (view && view.state === 'running') {
+        try {
+          const st = await api.fetchStatus(runId, 4000);
+          if (st) {
+            if (st.events && Array.isArray(st.events)) {
+              while (seenEventCount < st.events.length) {
+                const ev = st.events[seenEventCount++];
+                if (ev && ev.event) {
+                  handle(ev.event, (ev.data || {}) as DebPayload);
+                }
+              }
+            }
+            if (st.status === 'failed') {
+              fail(st.error || 'Debate execution failed on the server');
+              resolve();
+              return;
+            }
+            if (st.status === 'stopped') {
+              if (view) {
+                view.state = 'stopped';
+                stopElapsed();
+                setStateLabel('stopped');
+                appendFeedMessage('System', 'Debate stopped.');
+              }
+              resolve();
+              return;
+            }
+            if (st.status === 'done') {
+              setStateLabel('done');
+              void settle();
+              return;
+            }
+          }
+          const result = await api.fetchResult(runId, 4000);
+          if (result?.result && (result.result as Record<string, unknown>).status !== 'failed') {
+            setStateLabel('done');
+            void settle();
+            return;
+          }
+        } catch {
+          // ignore transient poll error
+        }
+        await new Promise((r) => setTimeout(r, 1200));
+      }
+    };
 
     es.onerror = () => {
       if (view && view.state === 'running') {
-        if (probeTimeout) clearTimeout(probeTimeout);
-        probeTimeout = window.setTimeout(() => {
-          void probe(runId);
-        }, 1500);
+        // Automatically switch to robust polling fallback on 503 / proxy / disconnect
+        void pollFallback();
       }
     };
 
@@ -583,59 +635,6 @@ function stream(runId: string): Promise<void> {
         resolve();
       }
     };
-
-    async function probe(runIdProbe: string): Promise<void> {
-      probeCount++;
-      try {
-        const st = await api.fetchStatus(runIdProbe, 4000);
-        if (st) {
-          if (st.status === 'failed') {
-            fail(st.error || 'Debate execution failed on the server');
-            es.close();
-            resolve();
-            return;
-          }
-          if (st.status === 'stopped') {
-            if (view) {
-              view.state = 'stopped';
-              stopElapsed();
-              setStateLabel('stopped');
-              appendFeedMessage('System', 'Debate stopped.');
-            }
-            es.close();
-            resolve();
-            return;
-          }
-          if (st.status === 'done') {
-            setStateLabel('done');
-            void settle();
-            return;
-          }
-          if (st.status === 'running' || st.status === 'queued' || st.status === 'needs_clarification') {
-            if (probeCount >= 3 && es.readyState !== EventSource.OPEN) {
-              appendFeedMessage('System', '⚠️ Live event connection disrupted (SSE rate limited/disconnected). Retrying...');
-            }
-            return;
-          }
-        }
-        const result = await api.fetchResult(runIdProbe, 4000);
-        if (result?.result && (result.result as Record<string, unknown>).status !== 'failed') {
-          setStateLabel('done');
-          void settle();
-          return;
-        }
-      } catch {
-        // ignore network jitter during reconnect
-      }
-
-      if (probeCount >= 6 || (es.readyState === EventSource.CLOSED && probeCount >= 3)) {
-        if (view && view.state === 'running') {
-          fail('Live event stream disconnected or rate-limited by server (429). Please refresh or check connection.');
-          es.close();
-          resolve();
-        }
-      }
-    }
   });
 }
 

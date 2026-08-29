@@ -543,6 +543,7 @@ async def api_get_debate(run_id: str):
         "status": rec.status,
         "created_at": rec.created_at,
         "error": rec.error,
+        "events": rec.events,
     }
 
 
