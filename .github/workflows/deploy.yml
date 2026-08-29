@@ -95,6 +95,9 @@ jobs:
             "--service-account=$SA"
             "--min-instances=0"
             "--memory=1Gi"
+            "--no-cpu-throttling"
+            "--session-affinity"
+            "--timeout=600"
             "--allow-unauthenticated"
             "--set-env-vars=VENTUREBOT_NO_AUTH=1,VENTUREBOT_COOKIE_SECURE=true"
           )
