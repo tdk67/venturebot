@@ -476,18 +476,19 @@ export function stopRun(): void {
   document.getElementById('btn-stop')?.classList.add('hidden');
 }
 
-// ── SSE Streaming & Result Handling ──────────────────────────────────
+// ── Polling & Result Handling ────────────────────────────────────────
 
 function stream(runId: string): Promise<void> {
   return new Promise((resolve) => {
     if (!view || view.state !== 'running') return resolve();
 
-    const es = new EventSource(`/api/debates/${encodeURIComponent(runId)}/events`);
     const controller = new AbortController();
     view.controller = controller;
 
+    let seenEventCount = 0;
+    let consecutiveErrors = 0;
+
     const settle = async () => {
-      es.close();
       if (view) {
         stopElapsed();
         try {
@@ -497,94 +498,6 @@ function stream(runId: string): Promise<void> {
         }
       }
       resolve();
-    };
-
-    let seenEventCount = 0;
-    let isPolling = false;
-
-    const onEvent = (name: string) => (e: MessageEvent) => {
-      seenEventCount++;
-      let payload: DebPayload = {};
-      try {
-        payload = JSON.parse(e.data) as DebPayload;
-      } catch {
-        payload = {};
-      }
-      handle(name, payload);
-    };
-
-    es.addEventListener('agent_started', onEvent('agent_started'));
-    es.addEventListener('agent_finished', onEvent('agent_finished'));
-    es.addEventListener('phase_started', onEvent('phase_started'));
-    es.addEventListener('phase_done', onEvent('phase_done'));
-    es.addEventListener('agent_turn', onEvent('agent_turn'));
-    es.addEventListener('clarify_question', onEvent('clarify_question'));
-    es.addEventListener('clarify', onEvent('clarify_question'));
-    es.addEventListener('run_paused', onEvent('clarify_question'));
-    es.addEventListener('verdict', onEvent('verdict'));
-    es.addEventListener('run_finished', onEvent('run_finished'));
-    es.addEventListener('run_failed', onEvent('run_failed'));
-    es.addEventListener('run_stopped', onEvent('run_stopped'));
-    es.addEventListener('expired', onEvent('expired'));
-
-    const pollFallback = async () => {
-      if (isPolling || !view || view.state !== 'running') return;
-      isPolling = true;
-      try {
-        es.close();
-      } catch {}
-
-      while (view && view.state === 'running') {
-        try {
-          const st = await api.fetchStatus(runId, 4000);
-          if (st) {
-            if (st.events && Array.isArray(st.events)) {
-              while (seenEventCount < st.events.length) {
-                const ev = st.events[seenEventCount++];
-                if (ev && ev.event) {
-                  handle(ev.event, (ev.data || {}) as DebPayload);
-                }
-              }
-            }
-            if (st.status === 'failed') {
-              fail(st.error || 'Debate execution failed on the server');
-              resolve();
-              return;
-            }
-            if (st.status === 'stopped') {
-              if (view) {
-                view.state = 'stopped';
-                stopElapsed();
-                setStateLabel('stopped');
-                appendFeedMessage('System', 'Debate stopped.');
-              }
-              resolve();
-              return;
-            }
-            if (st.status === 'done' || st.status === 'needs_approval' || st.status === 'needs_verdict') {
-              setStateLabel('done');
-              void settle();
-              return;
-            }
-          }
-          const result = await api.fetchResult(runId, 4000);
-          if (result?.result && (result.result as Record<string, unknown>).status !== 'failed') {
-            setStateLabel('done');
-            void settle();
-            return;
-          }
-        } catch {
-          // ignore transient poll error
-        }
-        await new Promise((r) => setTimeout(r, 1200));
-      }
-    };
-
-    es.onerror = () => {
-      if (view && view.state === 'running') {
-        // Automatically switch to robust polling fallback on 503 / proxy / disconnect
-        void pollFallback();
-      }
     };
 
     const handle = (name: string, payload: DebPayload): void => {
@@ -630,18 +543,74 @@ function stream(runId: string): Promise<void> {
           setStateLabel('stopped');
           appendFeedMessage('System', 'Debate stopped on the server.');
         }
-        es.close();
         resolve();
       } else if (name === 'run_failed') {
         fail(payload.reason ?? 'Debate execution failed');
-        es.close();
         resolve();
       } else if (name === 'expired') {
         fail('Run expired on the server');
-        es.close();
         resolve();
       }
     };
+
+    const poll = async () => {
+      while (view && view.state === 'running') {
+        try {
+          const st = await api.fetchStatus(runId, 4000);
+          if (st) {
+            consecutiveErrors = 0;
+            if (st.events && Array.isArray(st.events)) {
+              while (seenEventCount < st.events.length) {
+                const ev = st.events[seenEventCount++];
+                if (ev && ev.event) {
+                  handle(ev.event, (ev.data || {}) as DebPayload);
+                }
+              }
+            }
+            if (st.status === 'failed') {
+              fail(st.error || 'Debate execution failed on the server');
+              resolve();
+              return;
+            }
+            if (st.status === 'stopped') {
+              if (view) {
+                view.state = 'stopped';
+                stopElapsed();
+                setStateLabel('stopped');
+                appendFeedMessage('System', 'Debate stopped.');
+              }
+              resolve();
+              return;
+            }
+            if (st.status === 'done' || st.status === 'needs_approval' || st.status === 'needs_verdict') {
+              setStateLabel('done');
+              void settle();
+              return;
+            }
+          } else {
+            consecutiveErrors++;
+          }
+          const result = await api.fetchResult(runId, 4000);
+          if (result?.result && (result.result as Record<string, unknown>).status !== 'failed') {
+            setStateLabel('done');
+            void settle();
+            return;
+          }
+        } catch {
+          consecutiveErrors++;
+        }
+
+        if (consecutiveErrors >= 10) {
+          fail('Lost connection to the debate server. Please check your network and refresh.');
+          resolve();
+          return;
+        }
+
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    };
+
+    void poll();
   });
 }
 
