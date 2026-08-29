@@ -561,7 +561,7 @@ function stream(runId: string): Promise<void> {
               resolve();
               return;
             }
-            if (st.status === 'done') {
+            if (st.status === 'done' || st.status === 'needs_approval' || st.status === 'needs_verdict') {
               setStateLabel('done');
               void settle();
               return;
@@ -595,7 +595,9 @@ function stream(runId: string): Promise<void> {
           markAgent(payload.agent, 'active');
           appendFeedMessage('System', `▶ ${payload.agent} began analysis (${payload.model || 'Gemini'})...`);
         }
-        setStateLabel('running');
+        if (view.state === 'running') {
+          setStateLabel('running');
+        }
       } else if (name === 'agent_finished') {
         if (payload.agent) {
           markAgent(payload.agent, 'done');
@@ -614,7 +616,12 @@ function stream(runId: string): Promise<void> {
         renderVerdictGate(payload);
         appendFeedMessage('Judge', payload.verdict_text || payload.text || `Verdict: ${payload.verdict}`);
       } else if (name === 'run_finished') {
-        setStateLabel('done');
+        if (view) {
+          view.state = 'done';
+          stopElapsed();
+          setStateLabel('done');
+          document.getElementById('btn-stop')?.classList.add('hidden');
+        }
         void settle();
       } else if (name === 'run_stopped') {
         if (view) {
