@@ -2,7 +2,7 @@
  * app-shell.ts — Idea Lint UI Shell & Idea Workspace Modal (T6/T7).
  */
 import * as store from './store';
-import { renderMarkdown } from './debate';
+import { renderMarkdown, stopRun } from './debate';
 import type { Idea, IdeaRun } from './idb';
 import { dom } from './dom';
 
@@ -684,6 +684,7 @@ function wire(): void {
     }
   });
 
+  document.getElementById('btn-stop')?.addEventListener('click', stopRun);
   document.getElementById('btn-close-idea-modal')?.addEventListener('click', closeIdeaModal);
   document.getElementById('btn-close-idea-modal-x')?.addEventListener('click', closeIdeaModal);
 

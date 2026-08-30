@@ -426,7 +426,10 @@ export async function startRun(
   }
 
   const stopBtn = document.getElementById('btn-stop');
-  if (stopBtn) stopBtn.classList.remove('hidden');
+  if (stopBtn) {
+    stopBtn.classList.remove('hidden');
+    stopBtn.onclick = () => stopRun();
+  }
 
   const chips = buildChips();
   currentApiKey = apiKey || byok.storedKey() || '';
