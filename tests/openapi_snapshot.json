@@ -415,6 +415,18 @@
         },
         "summary": "Robots Txt"
       }
+    },
+    "/sitemap.xml": {
+      "get": {
+        "description": "Serve the XML sitemap for search engine indexing.",
+        "operationId": "sitemap_xml_sitemap_xml_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sitemap Xml"
+      }
     }
   }
 }

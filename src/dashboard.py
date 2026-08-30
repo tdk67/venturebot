@@ -788,3 +788,10 @@ async def robots_txt():
     """Serve robots.txt from static/ at the canonical root URL bots expect."""
     content = (Path(__file__).resolve().parent.parent / "static" / "robots.txt").read_text(encoding="utf-8")
     return Response(content, media_type="text/plain", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@app.get("/sitemap.xml", response_class=Response)
+async def sitemap_xml():
+    """Serve the XML sitemap for search engine indexing."""
+    content = (Path(__file__).resolve().parent.parent / "static" / "sitemap.xml").read_text(encoding="utf-8")
+    return Response(content, media_type="application/xml", headers={"Cache-Control": "public, max-age=86400"})
