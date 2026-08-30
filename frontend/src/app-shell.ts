@@ -653,6 +653,9 @@ function wire(): void {
   document.getElementById('idea-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') void addIdea();
   });
+  document.getElementById('url-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') void addIdea();
+  });
 
   const search = document.getElementById('ideas-search') as HTMLInputElement | null;
   if (search) {

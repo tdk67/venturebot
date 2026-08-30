@@ -23,6 +23,7 @@ export function openSettingsModal(): void {
   if (input) {
     input.value = '';
     input.placeholder = st.saved ? `Current key: ${st.masked || '••••••••'}` : 'AIzaSy... or AQ...';
+    setTimeout(() => input.focus(), 50);
   }
 
   if (statusLine) {
@@ -50,10 +51,10 @@ function refreshHeaderKeyBadge(): void {
 
   const st = byok.keyState();
   if (st.saved && st.validated) {
-    badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition-colors cursor-pointer';
+    badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/40 flex items-center gap-1.5 transition-colors cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500';
     badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-400"></span> Gemini Key: ${st.masked || 'Active'}`;
   } else {
-    badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-600/80 flex items-center gap-1.5 transition-colors cursor-pointer animate-pulse';
+    badge.className = 'px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-950/80 hover:bg-amber-900 text-amber-300 border border-amber-600/80 flex items-center gap-1.5 transition-colors cursor-pointer animate-pulse focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500';
     badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-amber-400"></span> 🔑 Set Gemini Key (Required)`;
   }
 }
@@ -63,46 +64,68 @@ function wireSettingsModal(): void {
   document.getElementById('btn-open-settings')?.addEventListener('click', openSettingsModal);
   document.getElementById('btn-close-settings')?.addEventListener('click', closeSettingsModal);
 
-  const verifyBtn = document.getElementById('btn-settings-key-verify');
+  const verifyBtn = document.getElementById('btn-settings-key-verify') as HTMLButtonElement | null;
   const input = document.getElementById('settings-key-input') as HTMLInputElement | null;
   const hint = document.getElementById('settings-key-hint');
   const clearBtn = document.getElementById('btn-settings-key-clear');
 
-  if (verifyBtn && input) {
-    verifyBtn.addEventListener('click', async () => {
-      const val = input.value.trim();
-      if (!val) {
-        if (hint) {
-          hint.textContent = 'Please paste your Google Gemini API key first.';
-          hint.className = 'text-xs text-amber-400 font-semibold mt-2';
-          hint.classList.remove('hidden');
-        }
-        return;
-      }
-
-      verifyBtn.textContent = 'Verifying...';
-      (verifyBtn as HTMLButtonElement).disabled = true;
-
-      const out = await byok.verify(val);
-      (verifyBtn as HTMLButtonElement).disabled = false;
-      verifyBtn.textContent = 'Validate & Save';
-
+  const doVerify = async () => {
+    if (!verifyBtn || !input) return;
+    const val = input.value.trim();
+    if (!val) {
       if (hint) {
-        hint.textContent = out.message;
-        hint.className = `text-xs font-semibold mt-2 ${out.ok ? 'text-emerald-400' : 'text-rose-400'}`;
+        hint.textContent = 'Please paste your Google Gemini API key first.';
+        hint.className = 'text-xs text-amber-400 font-semibold mt-2';
         hint.classList.remove('hidden');
       }
+      return;
+    }
 
-      if (out.ok) {
-        input.value = '';
-        input.placeholder = `Current key: ${out.masked || '••••••••'}`;
-        refreshHeaderKeyBadge();
-        setTimeout(() => {
-          closeSettingsModal();
-        }, 1200);
+    verifyBtn.textContent = 'Verifying...';
+    verifyBtn.disabled = true;
+
+    const out = await byok.verify(val);
+    verifyBtn.disabled = false;
+    verifyBtn.textContent = 'Validate & Save';
+
+    if (hint) {
+      hint.textContent = out.message;
+      hint.className = `text-xs font-semibold mt-2 ${out.ok ? 'text-emerald-400' : 'text-rose-400'}`;
+      hint.classList.remove('hidden');
+    }
+
+    if (out.ok) {
+      input.value = '';
+      input.placeholder = `Current key: ${out.masked || '••••••••'}`;
+      refreshHeaderKeyBadge();
+      setTimeout(() => {
+        closeSettingsModal();
+      }, 1200);
+    }
+  };
+
+  if (verifyBtn) {
+    verifyBtn.addEventListener('click', () => void doVerify());
+  }
+
+  if (input) {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        void doVerify();
       }
     });
   }
+
+  // Escape key closes settings modal
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const modal = document.getElementById('settings-modal');
+      if (modal && !modal.classList.contains('hidden')) {
+        closeSettingsModal();
+      }
+    }
+  });
 
   if (clearBtn) {
     clearBtn.addEventListener('click', async () => {

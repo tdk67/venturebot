@@ -658,7 +658,8 @@ function showClarifyBox(question: string): void {
   ];
 
   for (const act of actions) {
-    const b = dom('button', 'px-3 py-1.5 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-200 text-xs font-bold border border-amber-600/60 transition-colors', act.label);
+    const b = dom('button', 'px-3 py-1.5 rounded-lg bg-amber-900/60 hover:bg-amber-800 text-amber-200 text-xs font-bold border border-amber-600/60 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400', act.label);
+    b.setAttribute('type', 'button');
     b.onclick = () => {
       if (act.val.endsWith(': ')) {
         if (input) {
@@ -677,6 +678,14 @@ function showClarifyBox(question: string): void {
       const ans = input.value.trim();
       if (ans) void submitAnswer(ans);
     };
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const ans = input.value.trim();
+        if (ans) void submitAnswer(ans);
+      }
+    };
+    setTimeout(() => input.focus(), 50);
   }
 }
 

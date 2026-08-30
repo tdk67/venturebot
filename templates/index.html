@@ -5,6 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Idea Lint — AI-Powered Startup Idea Validator</title>
 <meta name="description" content="Idea Lint evaluates startup ideas through adversarial multi-agent debate, producing actionable PRDs with verified research.">
+<link rel="canonical" href="https://idea-lint.my/app">
+<meta name="theme-color" content="#020617">
+
+<!-- Open Graph / Facebook -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://idea-lint.my/app">
+<meta property="og:title" content="Idea Lint — AI-Powered Startup Idea Validator">
+<meta property="og:description" content="Evaluate startup ideas with multi-agent AI debate. Produces actionable PRDs with real research.">
+<meta property="og:image" content="https://idea-lint.my/static/thumbnail.jpg">
+<meta property="og:site_name" content="Idea Lint">
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:url" content="https://idea-lint.my/app">
+<meta name="twitter:title" content="Idea Lint — AI-Powered Startup Idea Validator">
+<meta name="twitter:description" content="Evaluate startup ideas with multi-agent AI debate. Produces actionable PRDs with real research.">
+<meta name="twitter:image" content="https://idea-lint.my/static/thumbnail.jpg">
+
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <script src="/static/vendor/tailwind-3.4.16.min.js"></script>
 <script src="/static/vendor/marked-12.0.2.min.js"></script>
@@ -41,9 +59,14 @@
   .md-body blockquote { border-left: 3px solid #3b82f6; padding-left: 0.8em; color: #94a3b8; font-style: italic; margin: 0.5em 0; }
 </style>
 </head>
-<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-blue-600 selection:text-white">
+<body class="bg-slate-950 text-slate-100 min-h-screen selection:bg-blue-600 selection:text-white antialiased">
 
-<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+<!-- Skip to content for keyboard/screen reader users -->
+<a href="#main-app" class="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-blue-600 focus:text-white focus:font-bold focus:rounded-lg focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-white">
+  Skip to main content
+</a>
+
+<div id="main-app" class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
 
   <!-- Header -->
   <header class="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-5">
@@ -87,32 +110,35 @@
       <div class="flex flex-col sm:flex-row gap-3">
         <input id="idea-input" type="text"
                placeholder="e.g. AI-powered real-time code reviewer that runs inside pull request workflows"
-               class="flex-1 bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all">
-        <button id="btn-add" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-blue-900/30">
+               class="flex-1 bg-slate-950 border border-slate-800 focus:border-blue-500 rounded-xl px-4 py-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-all"
+               aria-required="true">
+        <button id="btn-add" class="px-6 py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-sm rounded-xl transition-all flex items-center justify-center gap-2 shrink-0 shadow-lg shadow-blue-900/30 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
           <span>🚀</span> Start Debate
         </button>
       </div>
 
       <div>
+        <label for="url-input" class="sr-only">Optional research URLs</label>
         <input id="url-input" type="text"
                placeholder="Optional: comma-separated research URLs (competitor links, documentation, market signals)"
-               class="w-full bg-slate-950/70 border border-slate-800/80 focus:border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none transition-all">
+               class="w-full bg-slate-950/70 border border-slate-800/80 focus:border-slate-700 rounded-lg px-3.5 py-2 text-xs text-slate-300 placeholder-slate-600 focus:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 transition-all">
       </div>
 
-      <p id="duplicate-hint" class="text-xs text-amber-400 font-semibold hidden"></p>
+      <p id="duplicate-hint" class="text-xs text-amber-400 font-semibold hidden" role="alert"></p>
     </div>
   </section>
 
   <!-- Clarification HITL Box -->
-  <div id="clarify-box" class="hidden mb-8 p-5 rounded-2xl bg-amber-950/40 border border-amber-500/50 shadow-lg animate-fadeIn">
+  <div id="clarify-box" class="hidden mb-8 p-5 rounded-2xl bg-amber-950/40 border border-amber-500/50 shadow-lg animate-fadeIn" role="region" aria-label="Clarification Request" aria-live="polite">
     <div class="flex items-center gap-2 text-amber-300 font-bold text-sm mb-2">
-      <span>🗣️</span> The Orchestrator requires your clarification:
+      <span>🗣️</span> <span id="clarify-label">The Orchestrator requires your clarification:</span>
     </div>
     <div id="clarify-question" class="text-sm text-slate-100 bg-slate-950/80 p-3.5 rounded-xl border border-amber-500/20 mb-3 whitespace-pre-wrap font-sans"></div>
     <div class="flex gap-2">
+      <label for="clarify-answer" class="sr-only">Your answer to clarify the debate</label>
       <input id="clarify-answer" type="text" placeholder="Type your answer to guide the debate..."
-             class="flex-1 px-4 py-2.5 text-sm rounded-xl bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500">
-      <button id="clarify-send" class="px-5 py-2.5 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-500 text-white transition-colors shadow-md">
+             class="flex-1 px-4 py-2.5 text-sm rounded-xl bg-slate-900 border border-slate-700 text-slate-100 focus:outline-none focus:border-amber-500 focus-visible:ring-2 focus-visible:ring-amber-500">
+      <button id="clarify-send" class="px-5 py-2.5 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-500 text-white transition-colors shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400">
         Submit Answer
       </button>
     </div>
@@ -176,15 +202,15 @@
     <div class="lg:col-span-3 space-y-8">
 
       <!-- Live Debate View -->
-      <section id="debate-run" class="hidden bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
+      <section id="debate-run" class="hidden bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl" role="region" aria-label="Active Debate Stream">
         <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3 flex-wrap gap-2">
           <div class="flex items-center gap-3">
             <h2 class="text-lg font-bold text-white">Live Debate Stream</h2>
-            <span id="debate-state" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-950 text-blue-400 border border-blue-700/60" data-label="idle">
+            <span id="debate-state" class="px-2.5 py-0.5 rounded-full text-xs font-bold bg-blue-950 text-blue-400 border border-blue-700/60" data-label="idle" aria-live="polite">
               IDLE · 0:00
             </span>
           </div>
-          <button id="btn-stop" class="px-3.5 py-1.5 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/80 text-xs font-bold transition-colors hidden flex items-center gap-1">
+          <button id="btn-stop" class="px-3.5 py-1.5 rounded-lg bg-rose-950 hover:bg-rose-900 text-rose-300 border border-rose-800/80 text-xs font-bold transition-colors hidden flex items-center gap-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
             ⏹ Stop Debate
           </button>
         </div>
@@ -192,20 +218,20 @@
         <!-- Agent Progress Chips -->
         <div class="mb-4">
           <div class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Active Agents:</div>
-          <div id="debate-agents" class="flex flex-wrap gap-2"></div>
+          <div id="debate-agents" class="flex flex-wrap gap-2" role="list"></div>
         </div>
 
         <!-- Error Banner -->
-        <div id="debate-error" class="hidden mb-4 p-4 rounded-xl bg-rose-950/70 border border-rose-700 text-sm text-rose-200 font-medium"></div>
+        <div id="debate-error" class="hidden mb-4 p-4 rounded-xl bg-rose-950/70 border border-rose-700 text-sm text-rose-200 font-medium" role="alert" aria-live="assertive"></div>
 
         <!-- Done Banner -->
-        <div id="debate-done" class="hidden mb-4 p-4 rounded-xl bg-emerald-950/60 border border-emerald-700/80 flex items-center justify-between">
+        <div id="debate-done" class="hidden mb-4 p-4 rounded-xl bg-emerald-950/60 border border-emerald-700/80 flex items-center justify-between" role="status" aria-live="polite">
           <p id="debate-done-title" class="text-sm font-bold text-emerald-200"></p>
           <span class="text-xs text-emerald-400">Saved to your Idea History</span>
         </div>
 
         <!-- Live Feed Transcript -->
-        <div id="debate-feed" class="space-y-3 max-h-[520px] overflow-y-auto pr-1"></div>
+        <div id="debate-feed" class="space-y-3 max-h-[520px] overflow-y-auto pr-1" role="log" aria-live="polite" aria-label="Debate transcript feed"></div>
       </section>
 
       <!-- Past Ideas Manager -->
@@ -217,19 +243,20 @@
           </div>
 
           <div class="flex items-center gap-2 flex-wrap">
+            <label for="ideas-search" class="sr-only">Search saved ideas</label>
             <input id="ideas-search" type="text" placeholder="Search ideas..."
-                   class="bg-slate-950 border border-slate-800 focus:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none w-36 sm:w-48">
-            <button id="btn-export" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors" title="Export all ideas as JSON backup">
+                   class="bg-slate-950 border border-slate-800 focus:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 outline-none focus-visible:ring-1 focus-visible:ring-blue-500 w-36 sm:w-48">
+            <button id="btn-export" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Export all ideas as JSON backup" aria-label="Export all ideas as JSON backup">
               ⬇ JSON
             </button>
-            <button id="btn-export-csv" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors" title="Export ideas summary as CSV">
+            <button id="btn-export-csv" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Export ideas summary as CSV" aria-label="Export ideas summary as CSV">
               ⬇ CSV
             </button>
-            <button id="btn-import" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors" title="Import ideas from JSON file">
+            <button id="btn-import" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Import ideas from JSON file" aria-label="Import ideas from JSON file">
               ⬆ Import
             </button>
-            <input id="import-file" type="file" accept="application/json,.json" class="hidden">
-            <button id="btn-clear" class="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-rose-950 hover:text-rose-300 text-slate-500 text-xs font-semibold transition-colors" title="Wipe local store">
+            <input id="import-file" type="file" accept="application/json,.json" class="hidden" aria-label="Upload ideas JSON file">
+            <button id="btn-clear" class="px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-rose-950 hover:text-rose-300 text-slate-500 text-xs font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500" title="Wipe local store" aria-label="Wipe all locally stored ideas">
               Clear
             </button>
           </div>
@@ -249,15 +276,18 @@
 <!-- ========================================================================= -->
 <!-- API KEY SETTINGS MODAL                                                    -->
 <!-- ========================================================================= -->
-<div id="settings-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+<!-- ========================================================================= -->
+<!-- API KEY SETTINGS MODAL                                                    -->
+<!-- ========================================================================= -->
+<div id="settings-modal" class="fixed inset-0 z-50 hidden flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
   <div class="relative bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl text-slate-100">
     
     <div class="flex items-center justify-between mb-4 border-b border-slate-800 pb-3">
       <div class="flex items-center gap-2">
-        <span class="text-xl">🔑</span>
-        <h3 class="text-lg font-bold text-white">Model API Settings (BYOK)</h3>
+        <span class="text-xl" aria-hidden="true">🔑</span>
+        <h3 id="settings-modal-title" class="text-lg font-bold text-white">Model API Settings (BYOK)</h3>
       </div>
-      <button id="btn-close-settings" class="text-slate-400 hover:text-white text-xl leading-none font-bold">✕</button>
+      <button id="btn-close-settings" class="text-slate-400 hover:text-white text-xl leading-none font-bold p-1 rounded hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" aria-label="Close settings dialog">✕</button>
     </div>
 
     <div class="space-y-4 text-sm">
@@ -275,7 +305,7 @@
           Get a free API key in seconds from Google AI Studio. Starts with <code class="text-blue-300">AIza...</code> or <code class="text-blue-300">AQ...</code>
         </p>
         <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"
-           class="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold underline underline-offset-2">
+           class="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded">
           Open Google AI Studio to get your API key →
         </a>
       </div>
@@ -283,7 +313,7 @@
       <!-- Current status -->
       <div>
         <div class="text-xs font-semibold text-slate-400 mb-1">Current Status:</div>
-        <div id="settings-key-status" class="text-xs">No key configured</div>
+        <div id="settings-key-status" class="text-xs" aria-live="polite">No key configured</div>
       </div>
 
       <!-- Input -->
@@ -293,23 +323,24 @@
         </label>
         <div class="flex gap-2">
           <input id="settings-key-input" type="password" placeholder="AIzaSy... or AQ..."
-                 class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500">
+                 class="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-100 font-mono focus:outline-none focus:border-blue-500 focus-visible:ring-2 focus-visible:ring-blue-500">
           <button id="btn-toggle-key-visibility" type="button"
-                  class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-semibold">
+                  class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  aria-label="Toggle password visibility">
             Show
           </button>
         </div>
-        <p id="settings-key-hint" class="text-xs mt-1.5 hidden font-medium"></p>
+        <p id="settings-key-hint" class="text-xs mt-1.5 hidden font-medium" role="alert"></p>
       </div>
 
       <div class="flex items-center justify-between pt-2 border-t border-slate-800">
         <button id="btn-settings-key-clear" type="button"
-                class="px-3 py-2 text-xs font-semibold rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/60 hidden">
+                class="px-3 py-2 text-xs font-semibold rounded-xl bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/60 hidden focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500">
           Remove Key
         </button>
         <div class="flex-1"></div>
         <button id="btn-settings-key-verify" type="button"
-                class="px-5 py-2.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition-colors">
+                class="px-5 py-2.5 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400">
           Validate & Save
         </button>
       </div>
@@ -320,14 +351,14 @@
 <!-- ========================================================================= -->
 <!-- IDEA WORKSPACE MODAL                                                      -->
 <!-- ========================================================================= -->
-<div id="idea-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/95 backdrop-blur-md">
+<div id="idea-modal" class="fixed inset-0 z-50 hidden overflow-y-auto bg-slate-950/95 backdrop-blur-md" role="dialog" aria-modal="true" aria-labelledby="idea-modal-heading">
   <div class="sticky top-0 z-20 bg-slate-950/95 border-b border-slate-800 px-6 py-3.5 flex items-center justify-between">
-    <button id="btn-close-idea-modal" class="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold border border-slate-700 transition-colors flex items-center gap-1.5">
+    <button id="btn-close-idea-modal" class="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold border border-slate-700 transition-colors flex items-center gap-1.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
       ← Back to All Ideas
     </button>
     <div class="flex items-center gap-4">
-      <span class="text-xs text-slate-500 font-bold uppercase tracking-wider">Idea Detail Workspace</span>
-      <button id="btn-close-idea-modal-x" class="text-slate-400 hover:text-white text-lg font-bold px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800" title="Close (Esc)">✕</button>
+      <span id="idea-modal-heading" class="text-xs text-slate-500 font-bold uppercase tracking-wider">Idea Detail Workspace</span>
+      <button id="btn-close-idea-modal-x" class="text-slate-400 hover:text-white text-lg font-bold px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500" title="Close (Esc)" aria-label="Close Idea Workspace">✕</button>
     </div>
   </div>
 
