@@ -4,7 +4,7 @@
 import * as store from './store';
 import { renderMarkdown } from './debate';
 import type { Idea, IdeaRun } from './idb';
-import { byId, dom } from './dom';
+import { dom } from './dom';
 
 export interface ShellOptions {
   onRun?: (idea: Idea, options?: { comment?: string; urls?: string[] }) => void;

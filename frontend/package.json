@@ -5,9 +5,11 @@
   "description": "VentureBot rewrite frontend — plain TypeScript, no framework (decision D6). Bundled with esbuild to static/app.js (keeps CSP script-src 'self').",
   "type": "module",
   "scripts": {
-    "build": "esbuild src/app.ts --bundle --minify --target=es2020 --outfile=../static/app.js"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && esbuild src/app.ts --bundle --minify --target=es2020 --outfile=../static/app.js"
   },
   "devDependencies": {
-    "esbuild": "0.28.2"
+    "esbuild": "0.28.2",
+    "typescript": "^7.0.2"
   }
 }

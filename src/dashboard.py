@@ -632,7 +632,7 @@ def _sse(event: str, data: dict) -> str:
 @app.get("/api/debates/{run_id}/result")
 async def api_get_result(run_id: str):
     rec = _lookup(run_id)
-    if rec.result is None:
+    if rec.result is None or rec.status != "done":
         raise HTTPException(202, "not ready")  # S7: not ready yet
     return {"run_id": rec.run_id, "result": rec.result}
 

@@ -95,3 +95,21 @@ def test_turn_prompt_includes_answer_and_idea():
     assert "German and English" in prompt
     # answered question no longer shown as pending
     assert "Pending clarification" not in prompt
+
+
+def test_result_during_clarify_pause_returns_202_not_ready():
+    """While a run is paused for clarification (needs_clarification), /result must return
+    HTTP 202 (not ready), ensuring the frontend stays on the clarification gate and does
+    not prematurely finalize or close the debate."""
+    from fastapi.testclient import TestClient
+    from src.dashboard import app, STORE, RunRecord
+
+    c = TestClient(app)
+    rec = RunRecord(run_id="clarify-probe", idea="Test Idea", api_key="sk-test")
+    rec.status = "needs_clarification"
+    rec.result = {"verdict": "PARK", "clarification_question": "Should we pivot?"}
+    STORE.register(rec)
+
+    r = c.get("/api/debates/clarify-probe/result")
+    assert r.status_code == 202, f"Expected 202 Not Ready during clarification pause, got {r.status_code}"
+

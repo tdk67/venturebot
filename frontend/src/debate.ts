@@ -4,7 +4,7 @@
 import * as api from './api';
 import * as store from './store';
 import * as byok from './byok';
-import { byId, dom } from './dom';
+import { dom } from './dom';
 import type { Idea, IdeaRun } from './idb';
 
 declare global {
@@ -49,6 +49,7 @@ interface AgentChip {
 
 interface DebPayload {
   agent?: string;
+  model?: string;
   phase?: string;
   duration?: number;
   reason?: string;
@@ -588,7 +589,11 @@ function stream(runId: string): Promise<void> {
               resolve();
               return;
             }
-            if (st.status === 'done' || st.status === 'needs_approval' || st.status === 'needs_verdict') {
+            if (st.status === 'needs_clarification') {
+              setStateLabel('paused');
+              // Run is paused waiting for user clarification; keep polling so when
+              // user submits their answer, we pick up the resumed events.
+            } else if (st.status === 'done') {
               setStateLabel('done');
               void settle();
               return;
@@ -596,17 +601,11 @@ function stream(runId: string): Promise<void> {
           } else {
             consecutiveErrors++;
           }
-          const result = await api.fetchResult(runId, 4000);
-          if (result?.result && (result.result as Record<string, unknown>).status !== 'failed') {
-            setStateLabel('done');
-            void settle();
-            return;
-          }
         } catch {
           consecutiveErrors++;
         }
 
-        if (consecutiveErrors >= 10) {
+        if (consecutiveErrors >= 15) {
           fail('Lost connection to the debate server. Please check your network and refresh.');
           resolve();
           return;
