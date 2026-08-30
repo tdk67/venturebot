@@ -3,6 +3,7 @@
  */
 import * as api from './api';
 import * as store from './store';
+import * as byok from './byok';
 import { byId, dom } from './dom';
 import type { Idea, IdeaRun } from './idb';
 
@@ -65,6 +66,7 @@ interface DebPayload {
 interface RunView {
   idea: Idea;
   runId: string;
+  apiKey: string;
   state: RunState;
   startedAt: number;
   elapsedTimer: ReturnType<typeof setInterval> | null;
@@ -75,6 +77,7 @@ interface RunView {
 }
 
 let view: RunView | null = null;
+let currentApiKey = '';
 
 // ── Markdown & JSON rendering helper ────────────────────────────────
 
@@ -425,10 +428,12 @@ export async function startRun(
   if (stopBtn) stopBtn.classList.remove('hidden');
 
   const chips = buildChips();
+  currentApiKey = apiKey || byok.storedKey() || '';
 
   view = {
     idea,
     runId: '',
+    apiKey: currentApiKey,
     state: 'running',
     startedAt: Date.now(),
     elapsedTimer: null,
@@ -465,12 +470,13 @@ export function stopRun(): void {
   if (view?.controller) view.controller.abort();
   if (view) {
     const runId = view.runId;
+    const key = view.apiKey || currentApiKey || byok.storedKey() || '';
     view.state = 'stopped';
     stopElapsed();
     setStateLabel('stopped');
     appendFeedMessage('System', 'Debate stopped by user.');
     if (runId) {
-      void api.stopDebate(runId, currentApiKey);
+      void api.stopDebate(runId, key);
     }
   }
   document.getElementById('btn-stop')?.classList.add('hidden');
@@ -639,8 +645,9 @@ function showClarifyBox(question: string): void {
     if (!ans || !view) return;
     if (sendBtn) sendBtn.disabled = true;
     setStateLabel('resuming');
+    const key = view.apiKey || currentApiKey || byok.storedKey() || '';
     try {
-      await api.clarifyDebate(view.runId, ans, currentApiKey);
+      await api.clarifyDebate(view.runId, ans, key);
       appendFeedMessage('Human', `Answer: ${ans}`);
       if (input) input.value = '';
       box.classList.add('hidden');
