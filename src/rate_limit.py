@@ -29,6 +29,12 @@ RUN_WINDOW_SECONDS = 3600
 MAX_SSE_PER_IP = 16
 MAX_BODY_BYTES = 32 * 1024  # 32 KiB
 
+# 404 scanner suppression: after MAX_404_PER_WINDOW 404 responses in
+# WINDOW_404_SECONDS from the same IP, that IP is rate-limited with 429
+# until the window expires. Resets on any successful response.
+MAX_404_PER_WINDOW = 20
+WINDOW_404_SECONDS = 60
+
 # Injectable clock so tests can be deterministic about the rolling hour.
 _clock = time.time
 
@@ -54,6 +60,9 @@ _active_runs: dict[str, set[str]] = defaultdict(set)
 # ip -> set of open SSE connection tokens (never any data).
 _sse_tokens: dict[str, set[int]] = defaultdict(set)
 _sse_counter = 1000
+
+# ip -> deque of timestamps of 404 responses (scanner suppression).
+_404_window: dict[str, deque] = defaultdict(deque)
 
 
 def client_ip(request) -> str:
@@ -147,6 +156,25 @@ def sse_release(ip: str, tok: int) -> None:
                 _sse_tokens.pop(ip, None)
 
 
+def record_404(ip: str) -> None:
+    """Record a 404 response for this IP (scanner suppression)."""
+    with _lock:
+        _404_window[ip].append(_now())
+
+
+def is_404_blocked(ip: str) -> bool:
+    """True when this IP has exceeded MAX_404_PER_WINDOW 404s in WINDOW_404_SECONDS.
+
+    Call BEFORE processing a request from this IP to short-circuit scanner floods
+    with a 429 before they reach any route handler.
+    """
+    with _lock:
+        q = _404_window[ip]
+        while q and _now() - q[0] > WINDOW_404_SECONDS:
+            q.popleft()
+        return len(q) >= MAX_404_PER_WINDOW
+
+
 def clear_all() -> None:
     """Reset every counter/queue (test isolation only; no production call)."""
     global _sse_counter
@@ -155,3 +183,4 @@ def clear_all() -> None:
         _run_window.clear()
         _sse_tokens.clear()
         _sse_counter = 1000
+        _404_window.clear()

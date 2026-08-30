@@ -403,6 +403,18 @@
         },
         "summary": "Impressum Page"
       }
+    },
+    "/robots.txt": {
+      "get": {
+        "description": "Serve robots.txt from static/ at the canonical root URL bots expect.",
+        "operationId": "robots_txt_robots_txt_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Robots Txt"
+      }
     }
   }
 }

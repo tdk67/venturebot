@@ -44,6 +44,8 @@ from .rate_limit import (
     check_hourly,
     client_ip,
     has_active_run,
+    is_404_blocked,
+    record_404,
     sse_acquire,
     sse_release,
     end_concurrent,
@@ -79,6 +81,9 @@ _DOCS_CSP = (
 )
 
 _PERMISSIONS_POLICY = "camera=(), microphone=(), geolocation=(), usb=(), payment=()"
+
+# IPs exempted from 404 rate limiting (loopback + test sentinel)
+_EXEMPT_IPS: frozenset[str] = frozenset({"testclient", "127.0.0.1", "::1", "localhost"})
 
 app = FastAPI(title="VentureBot API", version="0.2.0")
 
@@ -158,7 +163,25 @@ def _sweep_once() -> list[str]:
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     req_id = request.headers.get("x-request-id") or str(uuid.uuid4())
+
+    # Scanner suppression: if this IP has triggered > MAX_404_PER_WINDOW 404s
+    # in the last WINDOW_404_SECONDS, short-circuit with a 429 immediately.
+    # Loopback / test-client addresses are always exempt.
+    ip = client_ip(request)
+    if ip not in _EXEMPT_IPS and is_404_blocked(ip):
+        return Response(
+            content='{"detail":"rate limit: too many not-found requests"}',
+            status_code=429,
+            media_type="application/json",
+            headers={"Retry-After": "60"},
+        )
+
     response = await call_next(request)
+
+    # Track 404s for scanner suppression.
+    if response.status_code == 404:
+        record_404(ip)
+
     path = request.url.path
     if path.startswith("/docs") or path.startswith("/redoc") or path == "/openapi.json":
         response.headers["Content-Security-Policy"] = _DOCS_CSP
@@ -758,3 +781,10 @@ async def impressum_page():
 async def datenschutz_page():
     html = (Path(__file__).resolve().parent.parent / "templates" / "datenschutz.html").read_text(encoding="utf-8")
     return HTMLResponse(html, headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/robots.txt", response_class=Response)
+async def robots_txt():
+    """Serve robots.txt from static/ at the canonical root URL bots expect."""
+    content = (Path(__file__).resolve().parent.parent / "static" / "robots.txt").read_text(encoding="utf-8")
+    return Response(content, media_type="text/plain", headers={"Cache-Control": "public, max-age=86400"})
