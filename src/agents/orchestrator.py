@@ -114,21 +114,18 @@ Call audit(). It proof-reads the PRD and returns PASS or FLAG with findings.
 If FLAG, fix the flagged issues (call write_prd() with instructions), then
 re-audit. Do NOT skip this step.
 
-### 10. PRESENT TO HUMAN
-Call clarify() with a summary of the PRD, the scores, and ask:
-"[Approve] [Changes] [Reject]"
-- If Changes: go back to RESEARCH with the human's feedback.
-- If Reject: stop  -- the run is done.
-- If Approve: stop  -- the run is a success.
+### 10. COMPLETION
+Once the PRD is drafted, passes scan_prd(), and is audited with audit(), your job is COMPLETE.
+Do NOT call clarify() again once the PRD is audited. Conclude your turn — the dashboard automatically presents the complete PRD, scorecard, and security audit directly to the user.
 
 ## STOPPING RULES
 
-You MUST stop and present whatever you have when ANY of these is true:
-1. The human has approved or rejected  -> done.
-2. You've used 10 turns AND have a PRD + verdict  -> present, don't loop forever.
-3. You've made NO progress for 3 consecutive turns (same file contents, no
-   new information gathered, no new quality issues found)  -> present what you
-   have and explain what's missing.
+You MUST stop when ANY of these is true:
+1. You have a completed PRD and security audit  -> done.
+2. The human has approved  -> done.
+3. You've used 10 turns AND have a PRD + verdict  -> done.
+4. You've made NO progress for 3 consecutive turns (same file contents, no
+   new information gathered, no new quality issues found)  -> done.
 4. If you're genuinely stuck  -- clarify() is always available. Never loop in
    confusion.
 
@@ -1231,7 +1228,7 @@ def _build_turn_prompt(
     if result.clarification_question and not result.clarification_answer:
         parts.append(f"\n⚠️  Pending clarification: {result.clarification_question}")
 
-    parts.append("\nTake the NEXT step in the engineering process. If you have a PRD and audit, and they are clean  -- present to the human. If the PRD needs revision, call write_prd() with specific instructions. If you need information, call research() or clarify().")
+    parts.append("\nTake the NEXT step in the engineering process. If you have a PRD and audit, and they are clean, your job is complete — do NOT call clarify() again. Conclude your turn. If the PRD needs revision, call write_prd() with specific instructions. If you need domain information or user verdict approval, call clarify().")
 
     return "\n".join(parts)
 

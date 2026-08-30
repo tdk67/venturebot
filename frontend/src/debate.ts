@@ -470,20 +470,45 @@ export async function startRun(
   await stream(runId);
 }
 
-export function stopRun(): void {
+export async function stopRun(): Promise<void> {
   if (view?.controller) view.controller.abort();
   if (view) {
     const runId = view.runId;
     const key = view.apiKey || currentApiKey || byok.storedKey() || '';
+    const curIdea = view.idea;
+    const onFinish = view.onFinish;
+    const events = [...view.events];
+    const startedAt = view.startedAt;
+
     view.state = 'stopped';
     stopElapsed();
     setStateLabel('stopped');
     appendFeedMessage('System', 'Debate stopped by user.');
+    document.getElementById('btn-stop')?.classList.add('hidden');
+    document.getElementById('clarify-box')?.classList.add('hidden');
+
     if (runId) {
       void api.stopDebate(runId, key);
     }
+
+    try {
+      const runRecord: IdeaRun = {
+        run_id: runId,
+        run_number: (curIdea.runs || []).length + 1,
+        status: 'stopped',
+        started_at: startedAt,
+        finished_at: Date.now(),
+        verdict: 'STOPPED',
+        events,
+      };
+      const updatedIdea = await store.saveRunResult(curIdea.id, runRecord);
+      if (updatedIdea && onFinish) {
+        onFinish(updatedIdea);
+      }
+    } catch (err) {
+      console.warn('[debate] Failed to save stopped run record:', err);
+    }
   }
-  document.getElementById('btn-stop')?.classList.add('hidden');
 }
 
 // ── Polling & Result Handling ────────────────────────────────────────
