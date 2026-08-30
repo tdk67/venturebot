@@ -458,8 +458,9 @@ async def _run_debate(
         elif rec.status == "stopped":
             _emit(rec, "run_stopped", {"reason": "Debate stopped by user", "run_id": rec.run_id})
         elif rec.status != "failed":
+            rec.status = "done"
             rec.result = _build_result_dict(rec, result)
-            _emit(rec, "run_finished", {"run_id": rec.run_id, "status": rec.status})
+            _emit(rec, "run_finished", {"run_id": rec.run_id, "status": "done"})
         else:
             if getattr(result, "error", None):
                 rec.error = _format_error_msg(_redact(str(result.error), api_key))

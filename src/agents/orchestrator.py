@@ -1083,19 +1083,8 @@ async def run_orchestrator(
 
         # Final status
         if result.status == "running":
-            if result.prd and result.verdict:
-                avg = _overall_average(result.verdict)
-                v = result.verdict.get("verdict", "PARK")
-                if v == "PROCEED" or (avg is not None and avg >= 7):
-                    # PRD is ready, but we need human approval
-                    result.status = "needs_approval"
-                    logger.info("Orchestrator complete: PRD ready (avg %s) -- awaiting human approval", avg)
-                else:
-                    result.status = "needs_verdict"
-                    logger.info("Orchestrator complete: verdict %s (avg %s) -- awaiting human decision", v, avg)
-            else:
-                result.status = "needs_verdict"
-                logger.info("Orchestrator complete: incomplete -- awaiting human decision")
+            result.status = "done"
+            logger.info("Orchestrator complete -- run done")
 
         emit("run_finished", {
             "status": result.status,

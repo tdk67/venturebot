@@ -541,6 +541,7 @@ function stream(runId: string): Promise<void> {
           stopElapsed();
           setStateLabel('done');
           document.getElementById('btn-stop')?.classList.add('hidden');
+          document.getElementById('clarify-box')?.classList.add('hidden');
         }
         void settle();
       } else if (name === 'run_stopped') {
@@ -593,7 +594,11 @@ function stream(runId: string): Promise<void> {
               setStateLabel('paused');
               // Run is paused waiting for user clarification; keep polling so when
               // user submits their answer, we pick up the resumed events.
-            } else if (st.status === 'done') {
+            } else if (st.status === 'done' || st.status === 'needs_approval' || st.status === 'needs_verdict') {
+              if (view) {
+                document.getElementById('clarify-box')?.classList.add('hidden');
+                document.getElementById('btn-stop')?.classList.add('hidden');
+              }
               setStateLabel('done');
               void settle();
               return;
@@ -751,6 +756,7 @@ async function completeRun(runId: string): Promise<void> {
   setStateLabel('done');
   ensureErrorHidden();
   document.getElementById('btn-stop')?.classList.add('hidden');
+  document.getElementById('clarify-box')?.classList.add('hidden');
 
   if (prdText) {
     renderPrdCard(prdText, resObj.security_audit as Record<string, unknown>);
