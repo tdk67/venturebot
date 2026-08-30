@@ -382,6 +382,7 @@ async def _run_debate(
         _emit(rec, event, data)
 
     from .events import register_run_sink, unregister_run_sink
+    from .agents.orchestrator import ClarifyPaused, DebatePaused
     register_run_sink(rec.run_id, _on_event)
 
     try:
@@ -441,15 +442,28 @@ async def _run_debate(
                 rec.error = _format_error_msg(_redact(str(result.error), api_key))
             error_reason = rec.error or "Debate execution failed"
             _emit(rec, "run_failed", {"reason": error_reason, "run_id": rec.run_id})
+    except (DebatePaused, ClarifyPaused) as e:
+        # Clean HITL pause — not an error. State is already persisted by
+        # persist_pause() before the raise. Log at INFO so Cloud Run never
+        # surfaces a false-positive ERROR entry.
+        logger.info("Debate paused for human input (run=%s): %s", rec.run_id, e.question)
+        rec.status = "needs_clarification"
     except asyncio.CancelledError:
         rec.status = "failed"
         rec.error = "run cancelled"
         _emit(rec, "run_failed", {"reason": "run cancelled", "run_id": rec.run_id})
     except Exception as e:
         # Loud failure (S2/T2): surface an explicit reason, key redacted.
-        rec.status = "failed"
-        rec.error = _format_error_msg(_redact(f"{type(e).__name__}: {e}", api_key))
-        _emit(rec, "run_failed", {"reason": rec.error, "run_id": rec.run_id})
+        # Check if this is a wrapped DebatePaused from inside ADK's runner
+        # (DynamicNodeFailError wraps the original tool exception as __cause__).
+        cause = getattr(e, "error", None) or getattr(e, "__cause__", None) or getattr(e, "__context__", None)
+        if isinstance(cause, DebatePaused) or getattr(cause, "is_debate_pause", False):
+            logger.info("Debate paused (wrapped by ADK runner, run=%s)", rec.run_id)
+            rec.status = "needs_clarification"
+        else:
+            rec.status = "failed"
+            rec.error = _format_error_msg(_redact(f"{type(e).__name__}: {e}", api_key))
+            _emit(rec, "run_failed", {"reason": rec.error, "run_id": rec.run_id})
     finally:
         if rec.status != "needs_clarification":
             unregister_run_sink(rec.run_id)

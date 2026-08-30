@@ -194,18 +194,34 @@ class OrchestratorResult:
     _tools: object | None = field(default=None, repr=False)
 
 
-class ClarifyPaused(Exception):
-    """Raised by the clarify() tool to tear the run down durably.
+class DebatePaused(BaseException):
+    """Sentinel raised to signal a deliberate HITL pause in the debate lifecycle.
 
-    The debate PAUSES (all state persisted to disk) until the human answers.
-    There is no timeout on purpose: the user may answer in 2 minutes or next
-    week, possibly after the server restarted. Resumption rebuilds everything
-    from the persisted pause record.
+    Extends BaseException (NOT Exception) so that:
+      * Bare ``except Exception`` blocks in ADK's runner never accidentally catch
+        it and log it as an ERROR -- it propagates cleanly to the explicit handler
+        in ``dashboard.py`` which logs it at INFO level.
+      * Python's default ``logging.exception()`` machinery skips it (no traceback
+        noise in Cloud Run stderr).
+
+    The debate state is persisted to disk BEFORE this is raised; resumption
+    rebuilds the orchestrator from the persisted pause record.
     """
+
+    is_debate_pause: bool = True  # structural marker for isinstance-free checks
 
     def __init__(self, question: str):
         super().__init__(question)
         self.question = question
+        self.__suppress_context__ = True  # suppress chained-exception noise in tracebacks
+
+
+class ClarifyPaused(DebatePaused):
+    """Backwards-compatible alias for DebatePaused raised by the clarify() tool.
+
+    Keeping this subclass means all existing ``except ClarifyPaused`` and
+    ``isinstance(e, ClarifyPaused)`` call-sites continue to work unchanged.
+    """
 
 
 # -- Durable pause store ------------------------------------------------
